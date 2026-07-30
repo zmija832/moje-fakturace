@@ -2,8 +2,9 @@
 
 namespace App\Domain\BusinessContext;
 
+use App\Domain\BusinessContext\Exceptions\MissingBusinessContext;
+use App\Enums\BusinessConnection;
 use App\Models\Business;
-use LogicException;
 
 class ActiveBusinessContext
 {
@@ -11,9 +12,7 @@ class ActiveBusinessContext
 
     public function set(Business $business): void
     {
-        if (! in_array($business->connection_name, config('business.allowed_connections'), true)) {
-            throw new LogicException('Subjekt používá nepovolené databázové připojení.');
-        }
+        BusinessConnection::fromConfiguredValue($business->connection_name);
 
         $this->business = $business;
     }
@@ -56,6 +55,6 @@ class ActiveBusinessContext
     public function requireBusiness(): Business
     {
         return $this->business
-            ?? throw new LogicException('Není zvolen aktivní fakturační subjekt.');
+            ?? throw new MissingBusinessContext;
     }
 }

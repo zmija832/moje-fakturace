@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
+use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\BusinessContext\BusinessSwitcher;
 use App\Listeners\AuthenticationAuditSubscriber;
 use Illuminate\Support\Facades\Event;
@@ -17,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(ActiveBusinessContext::class);
+        $this->app->scoped(BusinessConnectionResolver::class);
     }
 
     /**

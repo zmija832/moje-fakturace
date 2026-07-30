@@ -1,8 +1,9 @@
 # Moje fakturace
 
 Soukromá webová fakturační aplikace pro dva fyzicky oddělené podnikatelské
-subjekty. Aktuálně je dokončena Etapa 2: centrální databáze, přihlášení,
-oprávnění, audit a bezpečný přepínač aktivního subjektu.
+subjekty. Aktuálně je dokončena Etapa 2 a první bezpečnostní základ Etapy 3:
+centrální databáze, přihlášení, oprávnění, audit, bezpečný přepínač aktivního
+subjektu a fail-closed připojení budoucích business modelů.
 
 Klienti, faktury, platby, PDF, e-mail, pravidelné fakturace a exporty zatím
 nejsou implementované.
@@ -152,12 +153,39 @@ Přepnutí na cizí subjekt nebo subjekt s nepovoleným připojením skončí HT
 zapíše se do centrálního auditu. Bez aktivního subjektu jsou účetní routy
 zablokované.
 
+## Business modely a databázová izolace
+
+Budoucí modely podnikatelských dat musejí dědit z abstraktního
+`App\Models\Business\BusinessModel`. Tento model získává připojení výhradně přes
+stávající `ActiveBusinessContext` a `BusinessConnectionResolver`. Jedinými
+povolenými hodnotami enumu `BusinessConnection` jsou `business_1` a
+`business_2`; konfigurační allow-list je odvozen přímo z tohoto enumu.
+
+Business model nesmí používat výchozí Laravel connection ani si nastavovat
+connection podle HTTP požadavku. Výchozí connection aplikace zůstává `central`
+pro uživatele, oprávnění a bezpečnostní audit. Pokud aktivní business context
+chybí nebo obsahuje jiné připojení, model selže vlastní výjimkou ještě před SQL
+operací. Pokus o ruční přesměrování modelu na jiné připojení je rovněž odmítnut.
+
+Produkční business tabulky, business migrace a CRUD obrazovky nejsou v tomto
+kroku implementované.
+
 ## Testy
 
 Testy jsou záměrně nastavené na skutečný MySQL, ne na SQLite. Výchozí lokální
 konfigurace v `phpunit.xml` očekává MySQL na `127.0.0.1:3307` a testovací
 databáze uvedené výše. Přizpůsobte pouze lokální testovací hodnoty; nikdy
 nepoužívejte produkční databázi.
+
+Před `migrate:fresh` nebo vytvořením dočasných business testovacích tabulek
+testovací základ ověří prostředí `testing`, neprázdné a navzájem rozdílné názvy
+všech tří databází a jednoznačný marker `test`. Názvy s markerem `local`,
+`prod` nebo `production` jsou odmítnuty. Při selhání této kontroly se
+destruktivní databázová operace nespustí.
+
+Izolační testy používají pouze dočasnou testovací tabulku vytvořenou zvlášť v
+testovacích databázích `business_1` a `business_2`; po testu ji odstraní. Žádná
+produkční business migrace kvůli těmto testům nevzniká.
 
 ```bash
 php artisan test

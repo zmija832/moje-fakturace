@@ -4,10 +4,14 @@ namespace Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Tests\Concerns\EnsuresSafeTestDatabases;
 
 abstract class TestCase extends BaseTestCase
 {
-    use RefreshDatabase;
+    use EnsuresSafeTestDatabases;
+    use RefreshDatabase {
+        refreshDatabase as protected refreshDatabaseWithoutSafetyChecks;
+    }
 
     protected $connectionsToTransact = ['central'];
 
@@ -16,6 +20,12 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
+    }
+
+    public function refreshDatabase(): void
+    {
+        $this->ensureSafeTestDatabases();
+        $this->refreshDatabaseWithoutSafetyChecks();
     }
 
     protected function migrateFreshUsing(): array

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\BusinessConnection;
 use App\Models\Business;
 use App\Models\User;
 use Illuminate\Console\Command;
@@ -31,7 +32,9 @@ class ConfigureBusinessesCommand extends Command
             return self::FAILURE;
         }
 
-        foreach (['business_1', 'business_2'] as $index => $connectionName) {
+        foreach (BusinessConnection::cases() as $index => $connection) {
+            $connectionName = $connection->connectionName();
+
             $this->newLine();
             $this->info('Nastavení subjektu '.($index + 1));
 
@@ -50,7 +53,7 @@ class ConfigureBusinessesCommand extends Command
                 'registration_number' => ['required', 'digits:8'],
                 'short_label' => ['required', 'string', 'max:32'],
                 'visual_identifier' => ['required', 'in:briefcase,home-business'],
-                'connection_name' => ['required', 'in:business_1,business_2'],
+                'connection_name' => ['required', 'in:'.implode(',', BusinessConnection::values())],
                 'sort_order' => ['required', 'integer', 'between:1,2'],
                 'is_active' => ['required', 'boolean'],
             ]);
