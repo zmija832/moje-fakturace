@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Produkční business tabulky zatím nejsou implementované |
+| Stav business schématu | Implementována první společná tabulka `company_settings` |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -198,6 +198,37 @@ subjektu určuje fyzická databáze. Výjimkou jsou centrální tabulky, kde je
 Pro veřejné URL a route parametry se mají používat náhodné UUID. Interní
 primární klíče mohou být číselné. UUID samo o sobě nenahrazuje autorizaci ani
 správně nastavený business context.
+
+## 2.6 Aktuální business schéma
+
+První společná business migrace je v `database/migrations/business` a vytváří
+tabulku `company_settings` shodně v `business_1` i `business_2`.
+
+Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
+singleton. Databáze vynucuje:
+
+- unikátní `singleton_key`;
+- konstantní hodnotu `singleton_key = '1'` pomocí `CHECK` constraintu;
+- nejvýše jeden řádek v každé fyzické business databázi.
+
+GET formuláře nevytváří data. Při neexistujícím řádku služba vrátí neuložený
+výchozí model a první řádek vytvoří až autorizovaný PUT v transakci.
+
+Business migrace se spouštějí výhradně příkazem:
+
+```text
+php artisan app:migrate-businesses
+php artisan app:migrate-businesses --business=business_1
+php artisan app:migrate-businesses --business=business_2
+```
+
+Wrapper přijímá pouze hodnoty z `BusinessConnection`, používá pouze adresář
+business migrací, nepoužívá `migrate:fresh` a po každé migraci ověřuje návrat
+Laravel default connection na `central`.
+
+Centrální `businesses.display_name` a `businesses.registration_number` zatím
+zůstávají projekcí pro přepínač. Synchronizace z autoritativního
+`company_settings` není implementována.
 
 # 3. Business Context
 
@@ -421,7 +452,7 @@ vytvořením všech možných vrstev.
 | `app/Listeners/` | Reakce na framework nebo doménové události |
 | `config/` | Serverová konfigurace a allow-listy; žádná business data |
 | `database/migrations/central/` | Výhradně migrace centrálního schématu |
-| `database/migrations/business/` | Budoucí společné migrace pro obě business databáze |
+| `database/migrations/business/` | Společné migrace spouštěné shodně nad oběma business databázemi |
 | `database/factories/` | Factory určené především pro testy |
 | `database/seeders/` | Explicitní bezpečné seedery bez známých účtů |
 | `resources/views/` | Blade šablony |
@@ -452,6 +483,7 @@ Illuminate\Database\Eloquent\Model
     │     └── centrální audity
     │
     └── BusinessModel
+          ├── CompanySetting
           └── budoucí Client, Invoice, BankAccount, ...
 ```
 
@@ -595,6 +627,20 @@ Test:
 6. ověří obousměrnou neviditelnost záznamů;
 7. ověří nepřítomnost tabulky v `central`;
 8. po testu dočasné tabulky odstraní.
+
+Integrační testy `company_settings` používají skutečnou business migraci.
+Ověřují také:
+
+- vytvoření tabulky v obou business databázích a její nepřítomnost v `central`;
+- shodné sloupce obou schémat;
+- odmítnutí `central` a neznámého connection migračním wrapperem;
+- zachování existující sentinel tabulky jako důkaz, že wrapper nepoužívá
+  `migrate:fresh`;
+- databázovou singleton ochranu;
+- role administrátora a read-only uživatele;
+- validační pravidla formuláře;
+- ignorování podvržených `connection`, `connection_name` a `singleton_key`;
+- fyzickou izolaci nastavení obou subjektů.
 
 ## 7.4 Povinné typy budoucích testů
 
@@ -744,7 +790,7 @@ Následující tabulka je plán, nikoliv tvrzení, že jsou moduly již implemen
 
 | Modul | Účel | Databázová oblast |
 |---|---|---|
-| Company Settings | Autoritativní údaje vystavovatele, měna, splatnost, daňový režim a texty dokladů | Business DB |
+| Company Settings | Autoritativní údaje vystavovatele, měna, splatnost, daňový režim a texty dokladů; základ implementován | Business DB |
 | Bankovní účty | Tuzemské účty, IBAN, BIC, měna, aktivita a výchozí účet | Business DB |
 | Klienti | Firmy a osoby, IČO, DIČ, kontakty, výchozí obchodní nastavení | Business DB |
 | Adresy klientů | Fakturační, doručovací a další adresy | Business DB |
@@ -768,9 +814,11 @@ Následující tabulka je plán, nikoliv tvrzení, že jsou moduly již implemen
 
 ## 9.1 Company Settings
 
-Nastavení subjektu bude autoritativní zdroj údajů vystavovatele. Centrální
-zobrazovaný název je pouze projekce. Tabulka má být singleton v každé business
-databázi, nikoliv jedna společná tabulka s `business_id`.
+Nastavení subjektu je první implementovaný business modul a autoritativní zdroj
+údajů vystavovatele. Centrální zobrazovaný název je pouze projekce. Tabulka je
+singleton v každé business databázi, nikoliv jedna společná tabulka s
+`business_id`. Modul zatím neobsahuje logo, ARES, samostatnou správu sazeb DPH
+ani synchronizaci centrální projekce.
 
 ## 9.2 Bankovní účty
 

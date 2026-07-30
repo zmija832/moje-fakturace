@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\BusinessSwitchController;
+use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,6 +37,11 @@ Route::middleware(['auth', 'business.context'])->group(function (): void {
     Route::put('/nastaveni/heslo', [PasswordController::class, 'update'])->name('password.update');
 
     Route::middleware('business.required')->group(function (): void {
+        Route::get('/nastaveni/subjekt', [CompanySettingsController::class, 'edit'])
+            ->name('company-settings.edit');
+        Route::put('/nastaveni/subjekt', [CompanySettingsController::class, 'update'])
+            ->name('company-settings.update');
+
         Route::view('/vydane-faktury', 'coming-soon', ['module' => 'Vydané faktury'])
             ->name('invoices.index');
         Route::view('/klienti', 'coming-soon', ['module' => 'Klienti'])

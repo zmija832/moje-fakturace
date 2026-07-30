@@ -1,9 +1,10 @@
 # Moje fakturace
 
 Soukromá webová fakturační aplikace pro dva fyzicky oddělené podnikatelské
-subjekty. Aktuálně je dokončena Etapa 2 a první bezpečnostní základ Etapy 3:
-centrální databáze, přihlášení, oprávnění, audit, bezpečný přepínač aktivního
-subjektu a fail-closed připojení budoucích business modelů.
+subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a první
+business modul: centrální databáze, přihlášení, oprávnění, audit, bezpečný
+přepínač aktivního subjektu, fail-closed business modely a nastavení
+fakturačního subjektu.
 
 Klienti, faktury, platby, PDF, e-mail, pravidelné fakturace a exporty zatím
 nejsou implementované.
@@ -97,22 +98,36 @@ odpovídajících etapách.
    `.env` je ignorovaný Gitem. Nikdy do něj nekopírujte produkční údaje v
    prostředí, kde by mohl být zveřejněn nebo sdílen.
 
-7. Spusťte pouze centrální migrace:
+7. Spusťte centrální migrace:
 
    ```bash
    php artisan migrate --database=central --path=database/migrations/central
    ```
 
-   V Etapě 2 neexistují žádné migrace podnikatelských účetních tabulek.
+8. Spusťte společné business migrace bezpečným aplikačním příkazem:
 
-8. Nainstalujte a sestavte frontend:
+   ```bash
+   php artisan app:migrate-businesses
+   ```
+
+   Příkaz používá pouze migrace z `database/migrations/business`, postupně je
+   spustí nad `business_1` a `business_2` a nepřijme jiné connection name.
+   Jednu databázi lze migrovat explicitně:
+
+   ```bash
+   php artisan app:migrate-businesses --business=business_1
+   ```
+
+   V produkci příkaz vyžaduje interaktivní potvrzení nebo `--force`.
+
+9. Nainstalujte a sestavte frontend:
 
    ```bash
    npm install
    npm run build
    ```
 
-9. Spusťte lokální server:
+10. Spusťte lokální server:
 
    ```bash
    php artisan serve
@@ -167,8 +182,30 @@ pro uživatele, oprávnění a bezpečnostní audit. Pokud aktivní business con
 chybí nebo obsahuje jiné připojení, model selže vlastní výjimkou ještě před SQL
 operací. Pokus o ruční přesměrování modelu na jiné připojení je rovněž odmítnut.
 
-Produkční business tabulky, business migrace a CRUD obrazovky nejsou v tomto
-kroku implementované.
+První společná business migrace vytváří `company_settings` v obou business
+databázích. Další business tabulky zatím nejsou implementované.
+
+## Nastavení fakturačního subjektu
+
+Po zvolení aktivního subjektu je stránka dostupná na:
+
+```text
+/nastaveni/subjekt
+```
+
+Údaje v `company_settings` jsou autoritativním zdrojem údajů vystavovatele pro
+danou business databázi. Tabulka je singleton: unikátní `singleton_key` spolu s
+databázovým `CHECK` omezením dovolí pouze jeden řádek s konstantní hodnotou
+`1`.
+
+Zobrazení formuláře databázi nemění. Pokud nastavení neexistuje, zobrazí se
+bezpečný výchozí stav a první řádek vznikne až při uložení. Změny může ukládat
+pouze uživatel s rolí `admin` u aktivního subjektu; ostatní členové mohou
+stránku pouze zobrazit.
+
+Centrální tabulka `businesses` zůstává minimální projekcí pro přepínač.
+Automatická synchronizace názvu nebo IČO z `company_settings` do `central`
+zatím není implementována.
 
 ## Testy
 
@@ -183,9 +220,10 @@ všech tří databází a jednoznačný marker `test`. Názvy s markerem `local`
 `prod` nebo `production` jsou odmítnuty. Při selhání této kontroly se
 destruktivní databázová operace nespustí.
 
-Izolační testy používají pouze dočasnou testovací tabulku vytvořenou zvlášť v
-testovacích databázích `business_1` a `business_2`; po testu ji odstraní. Žádná
-produkční business migrace kvůli těmto testům nevzniká.
+Základní izolační testy používají dočasnou tabulku vytvořenou zvlášť v
+testovacích databázích `business_1` a `business_2`; po testu ji odstraní.
+Testy modulu nastavení navíc spouštějí skutečnou společnou business migraci a
+ověřují shodu schémat, singleton, role i fyzickou izolaci dat.
 
 ```bash
 php artisan test
@@ -216,4 +254,4 @@ přidat v některé z dalších etap.
 - zápis pouze do `storage` a `bootstrap/cache`;
 - před migrací ověřená samostatná záloha každé databáze.
 
-Produkční nasazení není součástí Etapy 2.
+Produkční nasazení není součástí aktuální etapy.

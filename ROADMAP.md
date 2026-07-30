@@ -15,14 +15,15 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 
 ## Etapa 3 – Nastavení a klienti
 
-- [ ] Připravit společné migrace business databází
-- [ ] Doplnit bezpečný příkaz pro migraci obou business databází
-- [ ] Implementovat nastavení fakturačního subjektu
+- [x] Připravit společné migrace business databází
+- [x] Doplnit bezpečný příkaz pro migraci obou business databází
+- [x] Implementovat nastavení fakturačního subjektu
+- [x] Doplnit policy, validaci a izolační testy nastavení subjektu
 - [ ] Implementovat bankovní účty
 - [ ] Implementovat číselné řady
 - [ ] Implementovat sazby DPH a daňová nastavení
 - [ ] Implementovat klienty, adresy a kontaktní osoby
-- [ ] Doplnit policies, validaci a business audit
+- [ ] Doplnit business audit
 - [ ] Ověřit izolaci všech modulů v obou databázích
 
 ## Etapa 4 – Faktury
