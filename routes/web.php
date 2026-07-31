@@ -9,6 +9,7 @@ use App\Http\Controllers\BusinessSwitchController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentSequenceController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard');
@@ -68,6 +69,27 @@ Route::middleware(['auth', 'business.context'])->group(function (): void {
         Route::patch('/nastaveni/bankovni-ucty/{uuid}/archivovat', [BankAccountController::class, 'archive'])
             ->whereUuid('uuid')
             ->name('bank-accounts.archive');
+
+        Route::get('/nastaveni/ciselne-rady', [DocumentSequenceController::class, 'index'])
+            ->name('document-sequences.index');
+        Route::get('/nastaveni/ciselne-rady/nova', [DocumentSequenceController::class, 'create'])
+            ->name('document-sequences.create');
+        Route::post('/nastaveni/ciselne-rady', [DocumentSequenceController::class, 'store'])
+            ->name('document-sequences.store');
+        Route::get('/nastaveni/ciselne-rady/{uuid}', [DocumentSequenceController::class, 'show'])
+            ->whereUuid('uuid')->name('document-sequences.show');
+        Route::get('/nastaveni/ciselne-rady/{uuid}/upravit', [DocumentSequenceController::class, 'edit'])
+            ->whereUuid('uuid')->name('document-sequences.edit');
+        Route::put('/nastaveni/ciselne-rady/{uuid}', [DocumentSequenceController::class, 'update'])
+            ->whereUuid('uuid')->name('document-sequences.update');
+        Route::patch('/nastaveni/ciselne-rady/{uuid}/nastavit-vychozi', [DocumentSequenceController::class, 'setDefault'])
+            ->whereUuid('uuid')->name('document-sequences.set-default');
+        Route::patch('/nastaveni/ciselne-rady/{uuid}/deaktivovat', [DocumentSequenceController::class, 'deactivate'])
+            ->whereUuid('uuid')->name('document-sequences.deactivate');
+        Route::patch('/nastaveni/ciselne-rady/{uuid}/aktivovat', [DocumentSequenceController::class, 'activate'])
+            ->whereUuid('uuid')->name('document-sequences.activate');
+        Route::patch('/nastaveni/ciselne-rady/{uuid}/archivovat', [DocumentSequenceController::class, 'archive'])
+            ->whereUuid('uuid')->name('document-sequences.archive');
 
         Route::view('/vydane-faktury', 'coming-soon', ['module' => 'Vydané faktury'])
             ->name('invoices.index');

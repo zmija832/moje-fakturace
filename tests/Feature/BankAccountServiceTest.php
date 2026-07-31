@@ -16,11 +16,13 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\Process;
+use Tests\Concerns\BuildsBusinessProcessEnvironment;
 use Tests\Concerns\InteractsWithBusinessDatabases;
 use Tests\TestCase;
 
 class BankAccountServiceTest extends TestCase
 {
+    use BuildsBusinessProcessEnvironment;
     use InteractsWithBusinessDatabases;
 
     protected function setUp(): void
@@ -290,12 +292,12 @@ class BankAccountServiceTest extends TestCase
             new Process(
                 [PHP_BINARY, base_path('tests/Support/set-bank-account-default.php'), 'business_1', $first->uuid, $barrier],
                 base_path(),
-                $this->childProcessEnvironment(),
+                $this->businessChildProcessEnvironment(),
             ),
             new Process(
                 [PHP_BINARY, base_path('tests/Support/set-bank-account-default.php'), 'business_1', $second->uuid, $barrier],
                 base_path(),
-                $this->childProcessEnvironment(),
+                $this->businessChildProcessEnvironment(),
             ),
         ];
 
@@ -348,39 +350,6 @@ class BankAccountServiceTest extends TestCase
     private function service(): BankAccountService
     {
         return app(BankAccountService::class);
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function childProcessEnvironment(): array
-    {
-        $environment = [
-            'APP_ENV' => 'testing',
-            'APP_KEY' => (string) config('app.key'),
-            'CACHE_STORE' => 'array',
-            'DB_CONNECTION' => 'central',
-            'SESSION_DRIVER' => 'array',
-        ];
-
-        foreach ([
-            'central' => 'CENTRAL',
-            'business_1' => 'BUSINESS_1',
-            'business_2' => 'BUSINESS_2',
-        ] as $connection => $environmentSuffix) {
-            foreach ([
-                'host' => 'HOST',
-                'port' => 'PORT',
-                'database' => 'DATABASE',
-                'username' => 'USERNAME',
-                'password' => 'PASSWORD',
-            ] as $configKey => $environmentKey) {
-                $environment["DB_{$environmentSuffix}_{$environmentKey}"] =
-                    (string) config("database.connections.{$connection}.{$configKey}");
-            }
-        }
-
-        return $environment;
     }
 
     /**

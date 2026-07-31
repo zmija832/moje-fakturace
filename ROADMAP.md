@@ -21,17 +21,17 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Implementovat nastavení fakturačního subjektu
 - [x] Doplnit policy, validaci a izolační testy nastavení subjektu
 - [x] Implementovat bankovní účty
-- [ ] Implementovat číselné řady
+- [x] Implementovat konfiguraci, defaulty a transakční alokaci číselných řad
 - [ ] Implementovat sazby DPH a daňová nastavení
 - [x] Implementovat klienty, fakturační a jednu dodací adresu a kontaktní osobu
 - [ ] Doplnit business audit
-- [ ] Ověřit izolaci všech modulů v obou databázích
+- [x] Ověřit izolaci aktuálně implementovaných modulů v obou databázích
 
 ## Etapa 4 – Faktury
 
 - [ ] Implementovat faktury a jejich položky
 - [ ] Ukládat historický snapshot dodavatele a odběratele
-- [ ] Přidělovat čísla dokladů bezpečně v transakci
+- [ ] Napojit faktury na hotový transakční allocator číselných řad
 - [ ] Implementovat výpočty cen, slev a DPH
 - [ ] Doplnit stavy faktur a archivaci
 - [ ] Přidat zálohové faktury a dobropisy

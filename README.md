@@ -183,8 +183,9 @@ chybí nebo obsahuje jiné připojení, model selže vlastní výjimkou ještě 
 operací. Pokus o ruční přesměrování modelu na jiné připojení je rovněž odmítnut.
 
 Společné business migrace vytvářejí `company_settings`, `bank_accounts`,
-`bank_account_defaults` a `clients` shodně v obou business databázích. Tyto
-tabulky nikdy nevznikají v `central`.
+`bank_account_defaults`, `clients`, `document_sequences`,
+`document_sequence_defaults` a `document_number_allocations` shodně v obou
+business databázích. Tyto tabulky nikdy nevznikají v `central`.
 
 Po architektonické revizi sdílejí veřejné business modely úzký trait pro
 serverové UUID a formulářové requesty používají jednu technickou normalizaci
@@ -275,6 +276,35 @@ této etapě nevznikly.
 ARES, VIES, registr plátců DPH, import klientů, slučování duplicit, více adres,
 více kontaktních osob a business audit nejsou implementované.
 
+## Číselné řady dokladů
+
+Modul je dostupný na `/nastaveni/ciselne-rady`. Každá fyzická business databáze
+obsahuje samostatnou konfiguraci řad, nejvýše jednu výchozí aktivní řadu pro
+každý typ dokladu a neměnnou evidenci skutečně přidělených čísel. Podporované
+typy jsou vydaná faktura, zálohová faktura, dobropis a příjmový doklad; samotné
+doklady ještě nejsou implementované.
+
+Výsledné číslo vzniká přesně jako `prefix + rok + nulami doplněné pořadové
+číslo + suffix`. Aplikace nepřidává skryté oddělovače, proto musí být součástí
+prefixu nebo suffixu. Rok lze vynechat nebo zapsat jako `YY` či `YYYY`.
+Čítač se buď nikdy neresetuje, nebo používá čtyřmístnou periodu odvozenou z
+výslovně předaného data dokladu. Náhled nic nezapisuje.
+
+Skutečnou alokaci provádí pouze `DocumentNumberAllocator`; veřejná HTTP route
+pro ni neexistuje. Resolver zvolí aktivní business connection, transakce zamkne
+řadu pomocí `lockForUpdate()`, vytvoří neměnný allocation záznam a až poté
+posune čítač. Unikátní databázové indexy chrání pořadové i formátované číslo.
+Correlation UUID zajišťuje idempotenci opakovaného workflow.
+
+Přidělené číslo se nikdy nevrací, nemaže ani nepřečíslovává. Jakmile byla řada
+použita, nelze změnit její typ, formát, počáteční číslo ani způsob resetu; pro
+nový formát vzniká nová řada. Deaktivace a jednosměrná archivace transakčně
+odstraní případnou výchozí vazbu, allocations však zachovají.
+
+Obecný business audit stále není implementovaný. Audit změn číselných řad musí
+být doplněn před produkčním používáním faktur; konfigurace ani přidělená čísla
+se zatím nekopírují do centrálního auditu.
+
 ## Testy
 
 Testy jsou záměrně nastavené na skutečný MySQL, ne na SQLite. Výchozí lokální
@@ -293,7 +323,8 @@ testovacích databázích `business_1` a `business_2`; po testu ji odstraní.
 Testy business modulů navíc spouštějí skutečné společné migrace a ověřují shodu
 schémat, singleton nastavení subjektu, cizí klíče bankovních účtů, role,
 validaci, souběžnou změnu výchozího účtu, klientské vyhledávání a fyzickou
-izolaci dat.
+izolaci dat. Číselné řady navíc mají skutečný víceprocesový test transakční
+alokace nad MySQL; dvě nezávislá PHP workflow nesmějí získat stejné číslo.
 
 ```bash
 php artisan test

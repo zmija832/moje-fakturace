@@ -47,6 +47,11 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_account_defaults'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('clients'));
+        foreach (['document_sequences', 'document_sequence_defaults', 'document_number_allocations'] as $table) {
+            $this->assertTrue(Schema::connection('business_1')->hasTable($table));
+            $this->assertTrue(Schema::connection('business_2')->hasTable($table));
+            $this->assertFalse(Schema::connection('central')->hasTable($table));
+        }
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('central')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('central')->hasTable('bank_account_defaults'));
@@ -178,6 +183,56 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertFalse(Schema::connection('central')->hasTable('clients'));
     }
 
+    public function test_business_databases_receive_identical_document_sequence_schema(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses'));
+
+        $expectedColumns = [
+            'document_sequences' => [
+                'id', 'uuid', 'document_type', 'name', 'prefix', 'suffix',
+                'year_format', 'sequence_digits', 'start_number', 'next_number',
+                'reset_period', 'current_period', 'is_active', 'sort_order',
+                'archived_at', 'created_at', 'updated_at',
+            ],
+            'document_sequence_defaults' => [
+                'document_type', 'document_sequence_id', 'created_at', 'updated_at',
+            ],
+            'document_number_allocations' => [
+                'id', 'correlation_uuid', 'document_sequence_id', 'document_type',
+                'period', 'sequence_number', 'formatted_number', 'allocated_at',
+                'document_uuid', 'created_at', 'updated_at',
+            ],
+        ];
+
+        foreach ($expectedColumns as $table => $columns) {
+            $first = $this->normalizedColumns('business_1', $table);
+            $second = $this->normalizedColumns('business_2', $table);
+
+            $this->assertSame($first, $second);
+            $this->assertSame($columns, array_column($first, 'name'));
+            $this->assertFalse(Schema::connection('central')->hasTable($table));
+        }
+
+        foreach (['business_1', 'business_2'] as $connection) {
+            foreach ([
+                'document_sequence_defaults_sequence_type_foreign' => 'document_sequence_defaults',
+                'document_allocations_sequence_type_foreign' => 'document_number_allocations',
+            ] as $constraint => $table) {
+                $foreignKey = DB::connection($connection)->selectOne(
+                    'SELECT COUNT(*) AS column_count, MIN(REFERENCED_TABLE_SCHEMA) AS referenced_schema,
+                            MIN(REFERENCED_TABLE_NAME) AS referenced_table
+                       FROM information_schema.KEY_COLUMN_USAGE
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?',
+                    [$table, $constraint],
+                );
+
+                $this->assertSame(2, (int) $foreignKey->column_count);
+                $this->assertSame(DB::connection($connection)->getDatabaseName(), $foreignKey->referenced_schema);
+                $this->assertSame('document_sequences', $foreignKey->referenced_table);
+            }
+        }
+    }
+
     public function test_command_can_migrate_only_one_enum_connection(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', [
@@ -187,9 +242,11 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_1')->hasTable('company_settings'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('bank_accounts'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('clients'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('document_sequences'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('clients'));
+        $this->assertFalse(Schema::connection('business_2')->hasTable('document_sequences'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
     }
 

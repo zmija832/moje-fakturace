@@ -18,6 +18,7 @@
                 ['route' => 'exports.index', 'active' => 'exports.*', 'label' => 'Export'],
                 ['route' => 'company-settings.edit', 'active' => 'company-settings.*', 'label' => 'Nastavení subjektu'],
                 ['route' => 'bank-accounts.index', 'active' => 'bank-accounts.*', 'label' => 'Bankovní účty'],
+                ['route' => 'document-sequences.index', 'active' => 'document-sequences.*', 'label' => 'Číselné řady'],
             ] : []),
             ['route' => 'settings', 'active' => 'settings', 'label' => 'Nastavení'],
         ];

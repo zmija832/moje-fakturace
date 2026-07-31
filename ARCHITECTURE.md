@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Implementovány `company_settings`, `bank_accounts`, `bank_account_defaults` a `clients` |
+| Stav business schématu | Implementovány `company_settings`, bankovní účty, klienti a číselné řady včetně allocation ledgeru |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -202,8 +202,9 @@ správně nastavený business context.
 ## 2.6 Aktuální business schéma
 
 Společné migrace v `database/migrations/business` vytvářejí
-`company_settings`, `bank_accounts`, `bank_account_defaults` a `clients` shodně v
-`business_1` i `business_2`.
+`company_settings`, `bank_accounts`, `bank_account_defaults`, `clients`,
+`document_sequences`, `document_sequence_defaults` a
+`document_number_allocations` shodně v `business_1` i `business_2`.
 
 Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
 singleton. Databáze vynucuje:
@@ -270,6 +271,68 @@ databázový `CHECK`. UUID je unikátní pouze uvnitř fyzické business databá
 IČO, e-mail, název, DIČ ani IČ DPH nejsou unikátní; legitimní duplicity se
 neblokují ani automaticky neslučují. Stavový index podporuje výchozí seznam,
 typ, archiv a řazení podle zobrazovaného názvu.
+
+### Schéma `document_sequences`
+
+| Sloupec | Typ | Význam |
+|---|---|---|
+| `id` | unsigned bigint, PK | Interní identifikátor řady |
+| `uuid` | UUID, unique | Serverově generovaný route identifikátor |
+| `document_type` | varchar(32) | `issued_invoice`, `advance_invoice`, `credit_note` nebo `cash_receipt` |
+| `name` | varchar(255) | Uživatelský název; není unikátní |
+| `prefix`, `suffix` | varchar(64) | Části formátu včetně všech požadovaných oddělovačů |
+| `year_format` | varchar(8) | `none`, `yy` nebo `yyyy` |
+| `sequence_digits` | unsigned tinyint | Šířka pořadí 1 až 12 číslic |
+| `start_number` | unsigned bigint | První číslo nové periody, 1 až 999999999999 |
+| `next_number` | unsigned bigint | Technický čítač mimo mass assignment a formulář |
+| `reset_period` | varchar(16) | `never` nebo `yearly` |
+| `current_period` | char(4), nullable | Perioda reprezentovaná čítačem; pro `never` vždy `NULL` |
+| `is_active` | boolean | Dostupnost pro default a alokaci |
+| `sort_order` | unsigned smallint | Uživatelské pořadí |
+| `archived_at` | timestamp, nullable | Jednosměrná archivace |
+| `created_at`, `updated_at` | timestamps | Časová metadata |
+
+Databázový `CHECK` chrání enumové hodnoty, rozsah číslic, čítače a vztah resetu
+k `current_period`. Složená unikátnost typu, prefixu, suffixu, formátu roku,
+šířky a resetu odmítá dvě nerozlišitelné konfigurace. Název unikátní není.
+Kombinace `(id, document_type)` je unikátní pro složené cizí klíče.
+
+### Schéma `document_sequence_defaults`
+
+| Sloupec | Typ | Význam |
+|---|---|---|
+| `document_type` | varchar(32), PK | Nejvýše jeden default pro každý typ dokladu |
+| `document_sequence_id` | unsigned bigint, unique | Odkaz na právě jednu řadu |
+| `created_at`, `updated_at` | timestamps | Časová metadata |
+
+Složený FK `(document_sequence_id, document_type)` odkazuje uvnitř stejné
+business databáze na `document_sequences(id, document_type)`. Databáze tím
+vynucuje existenci řady i shodu typu. Aktivní a nearchivovaný stav kontroluje
+`DocumentSequenceService` v transakci. Deaktivace i archivace default odstraní
+ve stejné transakci.
+
+### Schéma `document_number_allocations`
+
+| Sloupec | Typ | Význam |
+|---|---|---|
+| `id` | unsigned bigint, PK | Interní identifikátor allocation |
+| `correlation_uuid` | UUID, unique | Serverový idempotency klíč workflow |
+| `document_sequence_id` | unsigned bigint | Řada, která číslo přidělila |
+| `document_type` | varchar(32) | Historicky uložený typ se složeným FK na řadu |
+| `period` | varchar(16) | Čtyřmístný rok nebo explicitní `never` |
+| `sequence_number` | unsigned bigint | Přidělené pořadové číslo |
+| `formatted_number` | varchar(255) | Neměnná výsledná reprezentace |
+| `allocated_at` | timestamp | Okamžik skutečné alokace |
+| `document_uuid` | UUID, nullable | Budoucí vazba; doklady zatím neexistují |
+| `created_at`, `updated_at` | timestamps | Časová metadata |
+
+Unikátní `(document_sequence_id, period, sequence_number)` brání opakování
+pořadí v řadě a periodě. Unikátní `(document_type, formatted_number)` brání
+stejnému viditelnému číslu v rámci jednoho typu dokladu, ale dovoluje shodný
+formát různým typům. `correlation_uuid` je unikátní v jedné fyzické business
+databázi. Allocation je ledger: model odmítá update/delete a neexistuje pro něj
+HTTP update ani delete route. Fyzická izolace zabraňuje čtení correlation UUID
+z druhého subjektu.
 
 Business migrace se spouštějí výhradně příkazem:
 
@@ -723,6 +786,15 @@ fyzických databázích, fail-closed model, normalizaci, podmíněnou validaci f
 osoby a dodací adresy, tenant-safe CRUD, jednosměrnou archivaci, role,
 vyhledávání, filtry, bezpečný sort a stránkování.
 
+Testy číselných řad ověřují všechny tři tabulky v obou business databázích a
+jejich nepřítomnost v `central`, složené FK pouze uvnitř stejné fyzické DB,
+unikátní default pro typ, unikátní allocations, fail-closed modely, serverové
+UUID, nemožnost podstrčit connection a technické čítače, roční i trvalé periody,
+náhled bez zápisu, rollback čítače při selhání, idempotenci, neměnnost ledgeru,
+uzamčení použitého formátu a jednosměrnou archivaci. Povinný concurrency test
+spouští nejméně dva nezávislé PHP procesy nad skutečným MySQL, opakuje souběh a
+ověřuje rozdílná čísla, přesný posun `next_number` i konzistentní periodu.
+
 ## 7.4 Povinné typy budoucích testů
 
 Každý business modul má podle rizika obsahovat:
@@ -939,7 +1011,7 @@ Tabulka rozlišuje implementované části a další plán.
 | Klienti | Implementováno | Firmy a osoby, fakturační a jedna dodací adresa, jeden kontakt, vyhledávání a výchozí nastavení | Business DB |
 | Adresy klientů | Plán | Fakturační, doručovací a další adresy | Business DB |
 | Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
-| Číselné řady | Plán | Formát, období, další číslo a bezpečná konkurenční alokace | Business DB |
+| Číselné řady | Implementováno | Konfigurace, default pro typ, neměnný ledger a bezpečná konkurenční alokace | Business DB |
 | Sazby DPH | Plán | Sazby, typ zdanění a interval platnosti | Business DB |
 | Faktury | Plán | Hlavička dokladu, stavy, termíny, měna a snapshot obchodních údajů | Business DB |
 | Položky faktur | Plán | Množství, jednotka, cena, sazba, slevy a přesné součty | Business DB |
@@ -1014,9 +1086,45 @@ adres, více kontaktů a business audit zůstávají neimplementované.
 
 ## 9.4 Číselné řady
 
-Číslo dokladu se alokuje transakčně se zámkem. Unikátní index je poslední
-databázová ochrana proti duplicitě. Použitá čísla a vydané doklady se
-nepřečíslovávají.
+Modul odděluje editovatelnou konfiguraci `document_sequences`, jediný default
+pro typ v `document_sequence_defaults` a neměnný allocation ledger. Podporuje
+typy vydaná faktura, zálohová faktura, dobropis a příjmový doklad. Tyto typy
+připravují budoucí workflow, ale tabulky dokladů v této etapě nevznikly.
+
+Formát je deterministicky `prefix + rok + pořadí doplněné nulami + suffix`.
+Nevkládá žádný implicitní oddělovač. Například prefix `FV-`, rok `yyyy`, pět
+číslic a pořadí 12 vytvoří `FV-202600012`; chce-li uživatel jiný oddělovač,
+musí jej vyjádřit konfigurací. Serverový náhled dostává datum dokladu a nic
+nezapisuje; JavaScriptový náhled je pouze UX pomůcka.
+
+Při `never` se používá jediný nepřerušovaný čítač a allocation perioda `never`.
+Při `yearly` se perioda odvodí výhradně z předaného data dokladu. První číslo
+dosud nepoužitého roku je `start_number`; při návratu do již použitého roku se
+pokračuje za jeho nejvyšší allocation, takže ani zpětně datovaný doklad
+nevytvoří duplicitu. `current_period` se mění pouze při skutečné alokaci.
+
+`DocumentNumberAllocator` nejprve resolverem určí aktivní business connection a
+na něm zahájí explicitní transakci. Řadu načte tenant-safe podle UUID se
+zámkem `lockForUpdate()`, ověří aktivitu a archiv, vyhodnotí periodu a pořadí,
+vytvoří `formatted_number`, vloží allocation a teprve poté aktualizuje
+`next_number` a `current_period`. Selhání insertu vrátí celou transakci. DB
+unikátnosti jsou poslední ochrana proti duplicitě; skutečný víceprocesový test
+prokazuje serializaci souběhu.
+
+Correlation UUID je serverový idempotency klíč. Opakování stejného klíče pro
+stejnou řadu vrátí původní allocation bez posunu čítače. Stejný klíč s jinou
+řadou nebo typem je odmítnut. Veřejný HTTP formulář ani alokační route
+neexistují; allocator bude volat až autorizované workflow dokladu.
+
+Po první allocation se uzamknou typ, prefix, suffix, formát roku, počet číslic,
+počáteční číslo a reset. Změnit lze jen název, pořadí a aktivní stav. Číslo se
+nikdy nevrací, nerecykluje, nemaže ani nepřečíslovává. Deaktivace je vratná,
+archivace jednosměrná; obě transakčně odstraní default a archivované řadě
+zakážou další alokaci. Historické allocations zůstávají nedotčené.
+
+Obecný business audit stále neexistuje. Před produkčním používáním faktur musí
+vzniknout audit změn číselných řad ve stejné business databázi. Do centrálního
+auditu se konfigurace, prefixy ani přidělená čísla nekopírují.
 
 ## 9.5 Faktury a položky
 
