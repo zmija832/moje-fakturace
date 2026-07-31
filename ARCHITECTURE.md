@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Implementovány `company_settings`, `bank_accounts` a `bank_account_defaults` |
+| Stav business schématu | Implementovány `company_settings`, `bank_accounts`, `bank_account_defaults` a `clients` |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -202,7 +202,7 @@ správně nastavený business context.
 ## 2.6 Aktuální business schéma
 
 Společné migrace v `database/migrations/business` vytvářejí
-`company_settings`, `bank_accounts` a `bank_account_defaults` shodně v
+`company_settings`, `bank_accounts`, `bank_account_defaults` a `clients` shodně v
 `business_1` i `business_2`.
 
 Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
@@ -251,6 +251,25 @@ Složený FK `(bank_account_id, currency)` odkazuje na
 vynucuje existenci účtu a shodu měny. FK používá `RESTRICT` pro update i delete;
 běžné fyzické mazání účtů neexistuje. Aktivní a nearchivovaný stav vynucuje
 `BankAccountService` uvnitř explicitní transakce.
+
+### Schéma `clients`
+
+| Oblast | Sloupce a typy |
+|---|---|
+| Identita | `id` unsigned bigint PK, `uuid` UUID unique, `type` varchar(16), `display_name` varchar(255) |
+| Firma nebo osoba | `company_name` varchar(255), `first_name` a `last_name` varchar(128), vše nullable podle typu |
+| Identifikátory | `registration_number`, `tax_id`, `vat_id` varchar(32), nullable |
+| Kontakty | `email` a `website` varchar(255), `phone` varchar(64), `contact_person` varchar(255), nullable |
+| Fakturační adresa | `street` varchar(255), `house_number` a `orientation_number` varchar(32), `city` varchar(128), `postal_code` varchar(16), `country_code` char(2) |
+| Dodací adresa | odpovídající `delivery_*` sloupce, všechny nullable |
+| Výchozí fakturace | `default_currency` char(3), `default_due_days` unsigned smallint, `default_payment_method` varchar(32), `language` varchar(10), nullable |
+| Stav | `note` text nullable, `is_active` boolean default true, `archived_at` timestamp nullable, timestamps |
+
+`type` používá stabilní hodnoty `company` a `person`, které navíc chrání
+databázový `CHECK`. UUID je unikátní pouze uvnitř fyzické business databáze.
+IČO, e-mail, název, DIČ ani IČ DPH nejsou unikátní; legitimní duplicity se
+neblokují ani automaticky neslučují. Stavový index podporuje výchozí seznam,
+typ, archiv a řazení podle zobrazovaného názvu.
 
 Business migrace se spouštějí výhradně příkazem:
 
@@ -524,7 +543,8 @@ Illuminate\Database\Eloquent\Model
           ├── CompanySetting
           ├── BankAccount
           ├── BankAccountDefault
-          └── budoucí Client, Invoice, ...
+          ├── Client
+          └── budoucí Invoice, ...
 ```
 
 ## 5.2 Services a repositories
@@ -697,6 +717,12 @@ databáze a navíc ověřují:
 - deaktivaci a jednosměrnou archivaci bez fyzického mazání;
 - skutečný souběh dvou procesů při změně výchozího účtu.
 
+Integrační a HTTP testy klientů nad stejnou infrastrukturou ověřují shodné
+schéma `clients`, serverové a databázově unikátní UUID, stejná UUID v obou
+fyzických databázích, fail-closed model, normalizaci, podmíněnou validaci firmy,
+osoby a dodací adresy, tenant-safe CRUD, jednosměrnou archivaci, role,
+vyhledávání, filtry, bezpečný sort a stránkování.
+
 ## 7.4 Povinné typy budoucích testů
 
 Každý business modul má podle rizika obsahovat:
@@ -839,6 +865,69 @@ git status --short
 Dokumentace se aktualizuje ve stejné etapě jako architektonická změna. Komentář
 v kódu má vysvětlovat důvod nebo invariant, nikoliv pouze opakovat syntaxi.
 
+## 8.9 Sdílené infrastrukturní vzory
+
+Po revizi prvních tří business modulů jsou vědomě sdílené pouze malé technické
+části:
+
+| Vzor | Odpovědnost | Bezpečnostní hranice |
+|---|---|---|
+| `BusinessModel` | Fail-closed výběr aktivního business connection | Nikdy nepřijímá connection zvenčí a nefallbackuje na `central` |
+| `BusinessPolicy` | Členství a role u aktivního subjektu | Čtení vyžaduje členství, mutace roli `admin` |
+| `HasServerGeneratedUuid` | Serverové UUID a route key `uuid` | UUID není mass assignable a nenahrazuje autorizaci |
+| `NormalizesBooleanInput` | Jednotný převod HTML checkboxů ve FormRequestech | Neznámou hodnotu zachová pro následné odmítnutí validací |
+| `CompanySettingOptions` a enumy | Stabilní země, měny, jazyky, role a typy | Nevznikají paralelní seznamy magic stringů |
+| Sdílený aplikační layout | Jedna sada desktopových a mobilních navigačních položek | Business odkazy se zobrazí pouze s aktivním subjektem |
+
+Nová sdílená abstrakce smí vzniknout jen při nejméně dvou skutečných použitích,
+nesmí přijímat connection a musí zmenšit kód bez skrytí doménového významu.
+
+## 8.10 Co zůstává explicitně doménové
+
+Nevytváří se společný CRUD service ani univerzální repository. Následující
+operace zůstávají ve své konkrétní službě:
+
+- singleton uložení `CompanySetting`;
+- výchozí bankovní účet, složený FK a odstranění výchozí vazby;
+- typ klienta, generování `display_name`, dodací adresa a klientské hledání;
+- aktivace, deaktivace a archivace s důsledky specifickými pro modul;
+- budoucí alokace čísla dokladu a vystavení faktury.
+
+Business služba smí získat connection pouze přes existující
+`BusinessConnectionResolver`. Každá mutace používá transakci na explicitním
+business connection. `lockForUpdate()` se používá pro konkurenční invariant
+nebo ochranu řádku během stavové mutace, ne automaticky pro každý read.
+
+Tenant-safe načítání veřejného UUID probíhá ve službě až po middleware
+`business.context` a `business.required`. Dotaz používá business model, a tedy
+aktivní fyzickou databázi. Služba nepřijímá connection, nepoužívá implicitní
+route model binding a UUID z druhé databáze skončí 404. Podmínky jako
+`whereNull('archived_at')` zůstávají u konkrétní use-case metody, protože jsou
+doménové, nikoliv obecné.
+
+Jednosměrná archivace:
+
+- probíhá v transakci;
+- nastaví `is_active = false`;
+- zachová fyzický řádek;
+- odmítne opakovanou archivaci, aby se nepřepsal historický čas;
+- zablokuje editaci a opětovnou aktivaci;
+- u bankovního účtu atomicky odstraní výchozí vazbu.
+
+FormRequest je nadále samostatný pro konkrétní modul. Sdílet lze jen technickou
+normalizaci; whitelist polí, podmíněná pravidla, české názvy atributů a policy
+autorizace zůstávají explicitní. Controller používá pouze `validated()`.
+
+Blade komponenta nebo partial smí sdílet pouze stabilní vizuální prvek. Musí
+zachovat `old()` hodnoty, konkrétní validační chybu, popisek, přístupnost a
+fungování bez JavaScriptu. Doménové texty a potvrzení se do generické komponenty
+nesmějí schovat. Desktop a mobil používají stejný zdroj navigačních položek.
+
+Test každého nového business modulu musí prokázat fyzickou izolaci oběma směry,
+stejné UUID v obou databázích, fail-closed chování bez contextu, nemožnost
+podvržení connection, nepřítomnost tabulky v `central`, role, 403/404 a zachování
+default connection `central`. Konkurenční invariant vyžaduje reálný MySQL test.
+
 # 9. Moduly a další plán
 
 Tabulka rozlišuje implementované části a další plán.
@@ -847,7 +936,7 @@ Tabulka rozlišuje implementované části a další plán.
 |---|---|---|---|
 | Company Settings | Implementováno | Autoritativní údaje vystavovatele, měna, splatnost, daňový režim a texty dokladů | Business DB |
 | Bankovní účty | Implementováno | Tuzemské účty, IBAN, BIC, měna, aktivita, archiv a výchozí účet | Business DB |
-| Klienti | Plán | Firmy a osoby, IČO, DIČ, kontakty, výchozí obchodní nastavení | Business DB |
+| Klienti | Implementováno | Firmy a osoby, fakturační a jedna dodací adresa, jeden kontakt, vyhledávání a výchozí nastavení | Business DB |
 | Adresy klientů | Plán | Fakturační, doručovací a další adresy | Business DB |
 | Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
 | Číselné řady | Plán | Formát, období, další číslo a bezpečná konkurenční alokace | Business DB |
@@ -900,9 +989,28 @@ zůstávají mimo tento modul a budou řešeny samostatně.
 
 ## 9.3 Klienti
 
-Klient může být firma nebo osoba a může mít více adres a kontaktních osob.
-Historické faktury nesmějí číst živá data klienta; při vystavení získají
-snapshot.
+Klient může být firma (`company`) nebo fyzická osoba (`person`). Má jednu
+fakturační adresu, nejvýše jednu dodací adresu a nejvýše jednu kontaktní osobu.
+`display_name` se při prázdném vstupu vytvoří z názvu firmy nebo jména osoby.
+Ručně zadaná neprázdná hodnota se při změně ostatních jmenných polí automaticky
+nepřepisuje.
+
+Seznam je stránkovaný a vyhledává parametrizovaně pouze v aktivní business
+databázi. Podporuje typ firmy/osoby a stavy aktivní, neaktivní, archivovaný a
+všechny nearchivované. Výchozí filtr archivované klienty nezobrazuje. Řazení je
+omezeno whitelistem a SQL wildcard znaky z uživatelského hledání jsou escapované.
+
+Deaktivace je vratná. Archivace je jednosměrná, nastaví klienta jako neaktivního
+a řádek fyzicky zachová. Archivovaný klient může být zobrazen, ale nelze ho
+upravit, aktivovat ani deaktivovat.
+
+Klient představuje zdroj aktuálních údajů. Budoucí vystavená faktura musí
+zkopírovat identitu, adresy a kontaktní údaje do vlastních snapshot polí.
+Pozdější změna nebo archivace klienta nesmí změnit historickou fakturu. Snapshot
+logika ani faktury nejsou součástí tohoto modulu.
+
+ARES, VIES, registr plátců DPH, import, automatické slučování duplicit, více
+adres, více kontaktů a business audit zůstávají neimplementované.
 
 ## 9.4 Číselné řady
 

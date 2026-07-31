@@ -142,7 +142,7 @@ class BankAccountService
         $connection = $this->connectionName();
 
         return DB::connection($connection)->transaction(function () use ($uuid): BankAccount {
-            $account = $this->lockedAccount($uuid);
+            $account = $this->lockedAccount($uuid, editableOnly: true);
             $account->forceFill([
                 'is_active' => false,
                 'archived_at' => now(),

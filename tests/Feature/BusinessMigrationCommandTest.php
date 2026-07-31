@@ -43,11 +43,14 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_2')->hasTable('company_settings'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('bank_accounts'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('bank_account_defaults'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('clients'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_account_defaults'));
+        $this->assertTrue(Schema::connection('business_2')->hasTable('clients'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('central')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('central')->hasTable('bank_account_defaults'));
+        $this->assertFalse(Schema::connection('central')->hasTable('clients'));
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
@@ -153,6 +156,28 @@ class BusinessMigrationCommandTest extends TestCase
         }
     }
 
+    public function test_business_databases_receive_identical_clients_schema(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses'));
+
+        $firstSchema = $this->normalizedColumns('business_1', 'clients');
+        $secondSchema = $this->normalizedColumns('business_2', 'clients');
+
+        $this->assertSame($firstSchema, $secondSchema);
+        $this->assertSame([
+            'id', 'uuid', 'type', 'display_name', 'company_name', 'first_name',
+            'last_name', 'registration_number', 'tax_id', 'vat_id', 'email',
+            'phone', 'website', 'contact_person', 'street', 'house_number',
+            'orientation_number', 'city', 'postal_code', 'country_code',
+            'delivery_name', 'delivery_street', 'delivery_house_number',
+            'delivery_orientation_number', 'delivery_city', 'delivery_postal_code',
+            'delivery_country_code', 'default_currency', 'default_due_days',
+            'default_payment_method', 'language', 'note', 'is_active',
+            'archived_at', 'created_at', 'updated_at',
+        ], array_column($firstSchema, 'name'));
+        $this->assertFalse(Schema::connection('central')->hasTable('clients'));
+    }
+
     public function test_command_can_migrate_only_one_enum_connection(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', [
@@ -161,8 +186,10 @@ class BusinessMigrationCommandTest extends TestCase
 
         $this->assertTrue(Schema::connection('business_1')->hasTable('company_settings'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('bank_accounts'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('clients'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('bank_accounts'));
+        $this->assertFalse(Schema::connection('business_2')->hasTable('clients'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
     }
 

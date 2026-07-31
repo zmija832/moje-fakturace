@@ -1,13 +1,13 @@
 # Moje fakturace
 
 Soukromá webová fakturační aplikace pro dva fyzicky oddělené podnikatelské
-subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a první dva
+subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a první tři
 business moduly: centrální databáze, přihlášení, oprávnění, audit, bezpečný
 přepínač aktivního subjektu, fail-closed business modely a nastavení
-fakturačního subjektu včetně bankovních účtů.
+fakturačního subjektu včetně bankovních účtů a klientů.
 
-Klienti, faktury, platby, PDF, e-mail, pravidelné fakturace a exporty zatím
-nejsou implementované.
+Faktury, platby, PDF, e-mail, pravidelné fakturace a exporty zatím nejsou
+implementované.
 
 ## Technický základ
 
@@ -182,9 +182,14 @@ pro uživatele, oprávnění a bezpečnostní audit. Pokud aktivní business con
 chybí nebo obsahuje jiné připojení, model selže vlastní výjimkou ještě před SQL
 operací. Pokus o ruční přesměrování modelu na jiné připojení je rovněž odmítnut.
 
-Společné business migrace vytvářejí `company_settings`, `bank_accounts` a
-`bank_account_defaults` shodně v obou business databázích. Tyto tabulky nikdy
-nevznikají v `central`.
+Společné business migrace vytvářejí `company_settings`, `bank_accounts`,
+`bank_account_defaults` a `clients` shodně v obou business databázích. Tyto
+tabulky nikdy nevznikají v `central`.
+
+Po architektonické revizi sdílejí veřejné business modely úzký trait pro
+serverové UUID a formulářové requesty používají jednu technickou normalizaci
+boolean checkboxů. Doménové služby, tenant-safe načítání UUID, transakce a
+archivace zůstávají explicitní v jednotlivých modulech.
 
 ## Nastavení fakturačního subjektu
 
@@ -241,6 +246,35 @@ v projektu dosud neexistuje.
 Napojení na bankovní API, import výpisů, párování plateb a QR Platba nejsou v
 této etapě implementované.
 
+## Klienti a odběratelé
+
+Modul je dostupný na `/klienti`. Klienti jsou fyzicky uloženi pouze v databázi
+aktivního subjektu. Podporuje firmy a fyzické osoby, fakturační adresu, jednu
+volitelnou dodací adresu, jednu kontaktní osobu, české a slovenské země,
+kontakty a výchozí fakturační nastavení.
+
+Administrátor může klienta vytvořit, upravit, deaktivovat, znovu aktivovat a
+jednosměrně archivovat. Člen s rolí `viewer` má pouze čtení. Archivovaný klient
+zůstává dostupný v archivním filtru a detailu, ale nelze ho upravit ani měnit
+jeho aktivní stav. Klienti se fyzicky nemažou.
+
+`display_name` slouží seznamům, výběrům a budoucím fakturám. Pokud zůstane při
+uložení prázdný, služba ho odvodí z názvu firmy nebo jména a příjmení. Neprázdný
+ručně uložený název se při pozdější změně právního názvu nebo jména automaticky
+nepřepisuje.
+
+Seznam nabízí parametrizované hledání podle názvů, jmen, IČO, e-mailu a města,
+filtr typu a stavu, bezpečné řazení z whitelistu a stránkování. Znaky `%` a `_`
+se při hledání považují za běžné znaky, nikoliv uživatelské SQL wildcardy.
+
+Klient je pouze zdroj aktuálních údajů. Budoucí vystavená faktura musí převzít
+údaje odběratele do vlastního historického snapshotu; změna ani archivace
+klienta nesmí později změnit existující fakturu. Faktury a snapshot logika v
+této etapě nevznikly.
+
+ARES, VIES, registr plátců DPH, import klientů, slučování duplicit, více adres,
+více kontaktních osob a business audit nejsou implementované.
+
 ## Testy
 
 Testy jsou záměrně nastavené na skutečný MySQL, ne na SQLite. Výchozí lokální
@@ -258,7 +292,8 @@ Základní izolační testy používají dočasnou tabulku vytvořenou zvlášť
 testovacích databázích `business_1` a `business_2`; po testu ji odstraní.
 Testy business modulů navíc spouštějí skutečné společné migrace a ověřují shodu
 schémat, singleton nastavení subjektu, cizí klíče bankovních účtů, role,
-validaci, souběžnou změnu výchozího účtu i fyzickou izolaci dat.
+validaci, souběžnou změnu výchozího účtu, klientské vyhledávání a fyzickou
+izolaci dat.
 
 ```bash
 php artisan test

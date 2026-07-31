@@ -9,6 +9,7 @@ use App\Models\Business;
 use App\Models\Business\BankAccount;
 use App\Models\Business\BankAccountDefault;
 use App\Services\Business\BankAccountService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -245,6 +246,16 @@ class BankAccountServiceTest extends TestCase
         $this->assertNotNull($archived->archived_at);
         $this->assertSame(0, BankAccountDefault::query()->count());
         $this->assertSame(1, BankAccount::query()->count());
+
+        try {
+            $this->service()->archive($account->uuid);
+            $this->fail('Opakovaná archivace neměla přepsat historický čas archivace.');
+        } catch (ModelNotFoundException) {
+            $this->assertSame(
+                $archived->archived_at->toDateTimeString(),
+                $account->fresh()->archived_at->toDateTimeString(),
+            );
+        }
 
         $this->expectException(ValidationException::class);
         $this->service()->activate($account->uuid);

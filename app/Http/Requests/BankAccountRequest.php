@@ -4,12 +4,15 @@ namespace App\Http\Requests;
 
 use App\Domain\BankAccounts\BankAccountNormalizer;
 use App\Domain\CompanySettings\CompanySettingOptions;
+use App\Http\Requests\Concerns\NormalizesBooleanInput;
 use App\Rules\ValidIban;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 abstract class BankAccountRequest extends FormRequest
 {
+    use NormalizesBooleanInput;
+
     /**
      * @return array<string, list<mixed>>
      */
@@ -92,17 +95,7 @@ abstract class BankAccountRequest extends FormRequest
             'bic',
         ]));
 
-        if (! $this->exists('is_active')) {
-            $normalized['is_active'] = false;
-        } else {
-            $active = $this->input('is_active');
-
-            if (in_array($active, [true, 1, '1', 'true', 'on', 'yes'], true)) {
-                $normalized['is_active'] = true;
-            } elseif (in_array($active, [false, 0, '0', 'false', 'off', 'no'], true)) {
-                $normalized['is_active'] = false;
-            }
-        }
+        $normalized['is_active'] = $this->normalizedBooleanInput('is_active');
 
         $this->merge($normalized);
     }

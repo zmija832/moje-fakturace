@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\BankAccountController;
 use App\Http\Controllers\BusinessSwitchController;
+use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
@@ -70,8 +71,21 @@ Route::middleware(['auth', 'business.context'])->group(function (): void {
 
         Route::view('/vydane-faktury', 'coming-soon', ['module' => 'Vydané faktury'])
             ->name('invoices.index');
-        Route::view('/klienti', 'coming-soon', ['module' => 'Klienti'])
-            ->name('clients.index');
+        Route::get('/klienti', [ClientController::class, 'index'])->name('clients.index');
+        Route::get('/klienti/novy', [ClientController::class, 'create'])->name('clients.create');
+        Route::post('/klienti', [ClientController::class, 'store'])->name('clients.store');
+        Route::get('/klienti/{uuid}', [ClientController::class, 'show'])
+            ->whereUuid('uuid')->name('clients.show');
+        Route::get('/klienti/{uuid}/upravit', [ClientController::class, 'edit'])
+            ->whereUuid('uuid')->name('clients.edit');
+        Route::put('/klienti/{uuid}', [ClientController::class, 'update'])
+            ->whereUuid('uuid')->name('clients.update');
+        Route::patch('/klienti/{uuid}/deaktivovat', [ClientController::class, 'deactivate'])
+            ->whereUuid('uuid')->name('clients.deactivate');
+        Route::patch('/klienti/{uuid}/aktivovat', [ClientController::class, 'activate'])
+            ->whereUuid('uuid')->name('clients.activate');
+        Route::patch('/klienti/{uuid}/archivovat', [ClientController::class, 'archive'])
+            ->whereUuid('uuid')->name('clients.archive');
         Route::view('/pravidelne-fakturace', 'coming-soon', ['module' => 'Pravidelné fakturace'])
             ->name('recurring.index');
         Route::view('/export', 'coming-soon', ['module' => 'Export'])

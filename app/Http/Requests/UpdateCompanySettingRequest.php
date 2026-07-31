@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Domain\CompanySettings\CompanySettingOptions;
 use App\Enums\DefaultPaymentMethod;
+use App\Http\Requests\Concerns\NormalizesBooleanInput;
 use App\Models\Business\CompanySetting;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
@@ -11,6 +12,8 @@ use Illuminate\Validation\Rule;
 
 class UpdateCompanySettingRequest extends FormRequest
 {
+    use NormalizesBooleanInput;
+
     public function authorize(): bool
     {
         return Gate::allows('updateAny', CompanySetting::class);
@@ -82,18 +85,8 @@ class UpdateCompanySettingRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if (! $this->exists('is_vat_payer')) {
-            $this->merge(['is_vat_payer' => false]);
-
-            return;
-        }
-
-        $value = $this->input('is_vat_payer');
-
-        if (in_array($value, [true, 1, '1', 'true', 'on', 'yes'], true)) {
-            $this->merge(['is_vat_payer' => true]);
-        } elseif (in_array($value, [false, 0, '0', 'false', 'off', 'no'], true)) {
-            $this->merge(['is_vat_payer' => false]);
-        }
+        $this->merge([
+            'is_vat_payer' => $this->normalizedBooleanInput('is_vat_payer'),
+        ]);
     }
 }

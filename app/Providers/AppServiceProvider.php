@@ -7,8 +7,10 @@ use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\BusinessContext\BusinessSwitcher;
 use App\Listeners\AuthenticationAuditSubscriber;
 use App\Models\Business\BankAccount;
+use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use App\Policies\Business\BankAccountPolicy;
+use App\Policies\Business\ClientPolicy;
 use App\Policies\Business\CompanySettingPolicy;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -33,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Event::subscribe(AuthenticationAuditSubscriber::class);
         Gate::policy(BankAccount::class, BankAccountPolicy::class);
+        Gate::policy(Client::class, ClientPolicy::class);
         Gate::policy(CompanySetting::class, CompanySettingPolicy::class);
 
         View::composer('components.layouts.app', function ($view): void {

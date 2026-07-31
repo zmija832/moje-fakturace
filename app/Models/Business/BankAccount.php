@@ -2,9 +2,9 @@
 
 namespace App\Models\Business;
 
+use App\Models\Concerns\HasServerGeneratedUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Str;
 
 #[Fillable([
     'name',
@@ -20,14 +20,11 @@ use Illuminate\Support\Str;
 ])]
 class BankAccount extends BusinessModel
 {
+    use HasServerGeneratedUuid;
+
     public function defaultAssignment(): HasOne
     {
         return $this->hasOne(BankAccountDefault::class);
-    }
-
-    public function getRouteKeyName(): string
-    {
-        return 'uuid';
     }
 
     public function domesticDisplay(): ?string
@@ -40,13 +37,6 @@ class BankAccount extends BusinessModel
         $bankCode = $this->bank_code ? '/'.$this->bank_code : '';
 
         return $prefix.$this->domestic_account_number.$bankCode;
-    }
-
-    protected static function booted(): void
-    {
-        static::creating(function (BankAccount $account): void {
-            $account->uuid ??= (string) Str::uuid();
-        });
     }
 
     protected function casts(): array

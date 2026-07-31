@@ -12,6 +12,7 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Fail-closed `BusinessModel`
 - [x] Automatické testy databázové izolace
 - [x] Základní technická dokumentace
+- [x] Architektonická revize prvních tří business modulů
 
 ## Etapa 3 – Nastavení a klienti
 
@@ -22,7 +23,7 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Implementovat bankovní účty
 - [ ] Implementovat číselné řady
 - [ ] Implementovat sazby DPH a daňová nastavení
-- [ ] Implementovat klienty, adresy a kontaktní osoby
+- [x] Implementovat klienty, fakturační a jednu dodací adresu a kontaktní osobu
 - [ ] Doplnit business audit
 - [ ] Ověřit izolaci všech modulů v obou databázích
 

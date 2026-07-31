@@ -8,6 +8,21 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
+    @php
+        $navigationItems = [
+            ['route' => 'dashboard', 'active' => 'dashboard', 'label' => 'Přehled'],
+            ...($navigationActiveBusiness ? [
+                ['route' => 'invoices.index', 'active' => 'invoices.*', 'label' => 'Vydané faktury'],
+                ['route' => 'clients.index', 'active' => 'clients.*', 'label' => 'Klienti'],
+                ['route' => 'recurring.index', 'active' => 'recurring.*', 'label' => 'Pravidelné fakturace'],
+                ['route' => 'exports.index', 'active' => 'exports.*', 'label' => 'Export'],
+                ['route' => 'company-settings.edit', 'active' => 'company-settings.*', 'label' => 'Nastavení subjektu'],
+                ['route' => 'bank-accounts.index', 'active' => 'bank-accounts.*', 'label' => 'Bankovní účty'],
+            ] : []),
+            ['route' => 'settings', 'active' => 'settings', 'label' => 'Nastavení'],
+        ];
+    @endphp
+
     <div class="min-h-screen" x-data="{ menuOpen: false }">
         <header class="border-b border-slate-200 bg-white">
             <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -71,21 +86,9 @@
         <div class="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
             <aside class="hidden w-60 shrink-0 lg:block">
                 <nav class="space-y-1" aria-label="Hlavní navigace">
-                    @php
-                        $items = [
-                            ['route' => 'dashboard', 'label' => 'Přehled'],
-                            ['route' => 'invoices.index', 'label' => 'Vydané faktury'],
-                            ['route' => 'clients.index', 'label' => 'Klienti'],
-                            ['route' => 'recurring.index', 'label' => 'Pravidelné fakturace'],
-                            ['route' => 'exports.index', 'label' => 'Export'],
-                            ...($navigationActiveBusiness ? [['route' => 'company-settings.edit', 'label' => 'Nastavení subjektu']] : []),
-                            ...($navigationActiveBusiness ? [['route' => 'bank-accounts.index', 'label' => 'Bankovní účty']] : []),
-                            ['route' => 'settings', 'label' => 'Nastavení'],
-                        ];
-                    @endphp
-                    @foreach ($items as $item)
+                    @foreach ($navigationItems as $item)
                         <a href="{{ route($item['route']) }}"
-                           class="block rounded-lg px-3 py-2 text-sm font-medium {{ request()->routeIs($item['route']) ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-100' }}">
+                           class="block rounded-lg px-3 py-2 text-sm font-medium {{ request()->routeIs($item['active']) ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-100' }}">
                             {{ $item['label'] }}
                         </a>
                     @endforeach
@@ -99,16 +102,12 @@
                         <button class="button-secondary" @click="menuOpen = false">Zavřít</button>
                     </div>
                     <nav class="space-y-1">
-                        <a href="{{ route('dashboard') }}" class="block rounded-lg px-3 py-2">Přehled</a>
-                        <a href="{{ route('invoices.index') }}" class="block rounded-lg px-3 py-2">Vydané faktury</a>
-                        <a href="{{ route('clients.index') }}" class="block rounded-lg px-3 py-2">Klienti</a>
-                        <a href="{{ route('recurring.index') }}" class="block rounded-lg px-3 py-2">Pravidelné fakturace</a>
-                        <a href="{{ route('exports.index') }}" class="block rounded-lg px-3 py-2">Export</a>
-                        @if ($navigationActiveBusiness)
-                            <a href="{{ route('company-settings.edit') }}" class="block rounded-lg px-3 py-2">Nastavení subjektu</a>
-                            <a href="{{ route('bank-accounts.index') }}" class="block rounded-lg px-3 py-2">Bankovní účty</a>
-                        @endif
-                        <a href="{{ route('settings') }}" class="block rounded-lg px-3 py-2">Nastavení</a>
+                        @foreach ($navigationItems as $item)
+                            <a href="{{ route($item['route']) }}"
+                               class="block rounded-lg px-3 py-2 {{ request()->routeIs($item['active']) ? 'bg-blue-50 text-blue-800' : '' }}">
+                                {{ $item['label'] }}
+                            </a>
+                        @endforeach
                     </nav>
                     <form method="POST" action="{{ route('logout') }}" class="mt-5">
                         @csrf
