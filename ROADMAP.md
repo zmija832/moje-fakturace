@@ -19,7 +19,7 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Doplnit bezpečný příkaz pro migraci obou business databází
 - [x] Implementovat nastavení fakturačního subjektu
 - [x] Doplnit policy, validaci a izolační testy nastavení subjektu
-- [ ] Implementovat bankovní účty
+- [x] Implementovat bankovní účty
 - [ ] Implementovat číselné řady
 - [ ] Implementovat sazby DPH a daňová nastavení
 - [ ] Implementovat klienty, adresy a kontaktní osoby

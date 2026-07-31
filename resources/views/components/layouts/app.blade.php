@@ -79,6 +79,7 @@
                             ['route' => 'recurring.index', 'label' => 'Pravidelné fakturace'],
                             ['route' => 'exports.index', 'label' => 'Export'],
                             ...($navigationActiveBusiness ? [['route' => 'company-settings.edit', 'label' => 'Nastavení subjektu']] : []),
+                            ...($navigationActiveBusiness ? [['route' => 'bank-accounts.index', 'label' => 'Bankovní účty']] : []),
                             ['route' => 'settings', 'label' => 'Nastavení'],
                         ];
                     @endphp
@@ -105,6 +106,7 @@
                         <a href="{{ route('exports.index') }}" class="block rounded-lg px-3 py-2">Export</a>
                         @if ($navigationActiveBusiness)
                             <a href="{{ route('company-settings.edit') }}" class="block rounded-lg px-3 py-2">Nastavení subjektu</a>
+                            <a href="{{ route('bank-accounts.index') }}" class="block rounded-lg px-3 py-2">Bankovní účty</a>
                         @endif
                         <a href="{{ route('settings') }}" class="block rounded-lg px-3 py-2">Nastavení</a>
                     </nav>

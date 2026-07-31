@@ -41,7 +41,13 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertStringContainsString('business_2', $output);
         $this->assertTrue(Schema::connection('business_1')->hasTable('company_settings'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('company_settings'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('bank_accounts'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('bank_account_defaults'));
+        $this->assertTrue(Schema::connection('business_2')->hasTable('bank_accounts'));
+        $this->assertTrue(Schema::connection('business_2')->hasTable('bank_account_defaults'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
+        $this->assertFalse(Schema::connection('central')->hasTable('bank_accounts'));
+        $this->assertFalse(Schema::connection('central')->hasTable('bank_account_defaults'));
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
@@ -49,8 +55,8 @@ class BusinessMigrationCommandTest extends TestCase
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses'));
 
-        $firstSchema = $this->normalizedColumns('business_1');
-        $secondSchema = $this->normalizedColumns('business_2');
+        $firstSchema = $this->normalizedColumns('business_1', 'company_settings');
+        $secondSchema = $this->normalizedColumns('business_2', 'company_settings');
 
         $this->assertSame($firstSchema, $secondSchema);
         $this->assertSame([
@@ -84,6 +90,69 @@ class BusinessMigrationCommandTest extends TestCase
         ], array_column($firstSchema, 'name'));
     }
 
+    public function test_business_databases_receive_identical_bank_account_schema(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses'));
+
+        $accountColumns = [
+            'id',
+            'uuid',
+            'name',
+            'domestic_prefix',
+            'domestic_account_number',
+            'bank_code',
+            'iban',
+            'bic',
+            'currency',
+            'is_active',
+            'sort_order',
+            'note',
+            'archived_at',
+            'created_at',
+            'updated_at',
+        ];
+        $defaultColumns = ['currency', 'bank_account_id', 'created_at', 'updated_at'];
+
+        $this->assertSame(
+            $this->normalizedColumns('business_1', 'bank_accounts'),
+            $this->normalizedColumns('business_2', 'bank_accounts'),
+        );
+        $this->assertSame(
+            $this->normalizedColumns('business_1', 'bank_account_defaults'),
+            $this->normalizedColumns('business_2', 'bank_account_defaults'),
+        );
+        $this->assertSame(
+            $accountColumns,
+            array_column($this->normalizedColumns('business_1', 'bank_accounts'), 'name'),
+        );
+        $this->assertSame(
+            $defaultColumns,
+            array_column($this->normalizedColumns('business_1', 'bank_account_defaults'), 'name'),
+        );
+
+        foreach (['business_1', 'business_2'] as $connection) {
+            $foreignKey = DB::connection($connection)->selectOne(
+                <<<'SQL'
+                    SELECT
+                        COUNT(*) AS column_count,
+                        MIN(REFERENCED_TABLE_SCHEMA) AS referenced_schema,
+                        MIN(REFERENCED_TABLE_NAME) AS referenced_table
+                    FROM information_schema.KEY_COLUMN_USAGE
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'bank_account_defaults'
+                      AND CONSTRAINT_NAME = 'bank_account_defaults_account_currency_foreign'
+                    SQL,
+            );
+
+            $this->assertSame(2, (int) $foreignKey->column_count);
+            $this->assertSame(
+                DB::connection($connection)->getDatabaseName(),
+                $foreignKey->referenced_schema,
+            );
+            $this->assertSame('bank_accounts', $foreignKey->referenced_table);
+        }
+    }
+
     public function test_command_can_migrate_only_one_enum_connection(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', [
@@ -91,7 +160,9 @@ class BusinessMigrationCommandTest extends TestCase
         ]));
 
         $this->assertTrue(Schema::connection('business_1')->hasTable('company_settings'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('company_settings'));
+        $this->assertFalse(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
     }
 
@@ -141,7 +212,7 @@ class BusinessMigrationCommandTest extends TestCase
     /**
      * @return list<array{name: string, type_name: string, nullable: bool, default: mixed, auto_increment: bool}>
      */
-    private function normalizedColumns(string $connection): array
+    private function normalizedColumns(string $connection, string $table): array
     {
         return array_map(
             static fn (array $column): array => Arr::only($column, [
@@ -151,7 +222,7 @@ class BusinessMigrationCommandTest extends TestCase
                 'default',
                 'auto_increment',
             ]),
-            Schema::connection($connection)->getColumns('company_settings'),
+            Schema::connection($connection)->getColumns($table),
         );
     }
 }

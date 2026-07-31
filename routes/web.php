@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\BankAccountController;
 use App\Http\Controllers\BusinessSwitchController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
@@ -41,6 +42,31 @@ Route::middleware(['auth', 'business.context'])->group(function (): void {
             ->name('company-settings.edit');
         Route::put('/nastaveni/subjekt', [CompanySettingsController::class, 'update'])
             ->name('company-settings.update');
+
+        Route::get('/nastaveni/bankovni-ucty', [BankAccountController::class, 'index'])
+            ->name('bank-accounts.index');
+        Route::get('/nastaveni/bankovni-ucty/novy', [BankAccountController::class, 'create'])
+            ->name('bank-accounts.create');
+        Route::post('/nastaveni/bankovni-ucty', [BankAccountController::class, 'store'])
+            ->name('bank-accounts.store');
+        Route::get('/nastaveni/bankovni-ucty/{uuid}/upravit', [BankAccountController::class, 'edit'])
+            ->whereUuid('uuid')
+            ->name('bank-accounts.edit');
+        Route::put('/nastaveni/bankovni-ucty/{uuid}', [BankAccountController::class, 'update'])
+            ->whereUuid('uuid')
+            ->name('bank-accounts.update');
+        Route::patch('/nastaveni/bankovni-ucty/{uuid}/nastavit-vychozi', [BankAccountController::class, 'setDefault'])
+            ->whereUuid('uuid')
+            ->name('bank-accounts.set-default');
+        Route::patch('/nastaveni/bankovni-ucty/{uuid}/deaktivovat', [BankAccountController::class, 'deactivate'])
+            ->whereUuid('uuid')
+            ->name('bank-accounts.deactivate');
+        Route::patch('/nastaveni/bankovni-ucty/{uuid}/aktivovat', [BankAccountController::class, 'activate'])
+            ->whereUuid('uuid')
+            ->name('bank-accounts.activate');
+        Route::patch('/nastaveni/bankovni-ucty/{uuid}/archivovat', [BankAccountController::class, 'archive'])
+            ->whereUuid('uuid')
+            ->name('bank-accounts.archive');
 
         Route::view('/vydane-faktury', 'coming-soon', ['module' => 'Vydané faktury'])
             ->name('invoices.index');

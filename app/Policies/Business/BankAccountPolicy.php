@@ -4,11 +4,16 @@ namespace App\Policies\Business;
 
 use App\Models\User;
 
-class CompanySettingPolicy extends BusinessPolicy
+class BankAccountPolicy extends BusinessPolicy
 {
     public function viewAny(User $user): bool
     {
         return $this->canView($user);
+    }
+
+    public function create(User $user): bool
+    {
+        return $this->canManage($user);
     }
 
     public function updateAny(User $user): bool

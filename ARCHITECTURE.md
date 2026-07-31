@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Implementována první společná tabulka `company_settings` |
+| Stav business schématu | Implementovány `company_settings`, `bank_accounts` a `bank_account_defaults` |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -201,8 +201,9 @@ správně nastavený business context.
 
 ## 2.6 Aktuální business schéma
 
-První společná business migrace je v `database/migrations/business` a vytváří
-tabulku `company_settings` shodně v `business_1` i `business_2`.
+Společné migrace v `database/migrations/business` vytvářejí
+`company_settings`, `bank_accounts` a `bank_account_defaults` shodně v
+`business_1` i `business_2`.
 
 Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
 singleton. Databáze vynucuje:
@@ -213,6 +214,43 @@ singleton. Databáze vynucuje:
 
 GET formuláře nevytváří data. Při neexistujícím řádku služba vrátí neuložený
 výchozí model a první řádek vytvoří až autorizovaný PUT v transakci.
+
+### Schéma `bank_accounts`
+
+| Sloupec | Typ | Význam |
+|---|---|---|
+| `id` | unsigned bigint, PK | Interní identifikátor |
+| `uuid` | UUID, unique | Serverově generovaný veřejný identifikátor |
+| `name` | varchar(255) | Povinný název účtu |
+| `domestic_prefix` | varchar(10), nullable | Tuzemský prefix jako řetězec |
+| `domestic_account_number` | varchar(32), nullable | Tuzemské číslo se zachováním nul |
+| `bank_code` | varchar(16), nullable | Kód banky; aplikace pro český formát vyžaduje přesně čtyři číslice |
+| `iban` | varchar(34), nullable | Normalizovaný IBAN |
+| `bic` | varchar(11), nullable | Normalizovaný BIC/SWIFT |
+| `currency` | char(3) | Podporovaný ISO 4217 kód |
+| `is_active` | boolean, default true | Dočasná dostupnost účtu |
+| `sort_order` | unsigned smallint, default 0 | Uživatelské pořadí |
+| `note` | text, nullable | Interní poznámka |
+| `archived_at` | timestamp, nullable | Jednosměrná historická archivace |
+| `created_at`, `updated_at` | timestamps | Časová metadata |
+
+Databázový `CHECK` vyžaduje neprázdné `domestic_account_number` nebo `iban`.
+Index nad stavem, měnou a pořadím podporuje seznam. Kombinace `(id, currency)`
+je unikátní kvůli složenému cizímu klíči výchozího účtu.
+
+### Schéma `bank_account_defaults`
+
+| Sloupec | Typ | Význam |
+|---|---|---|
+| `currency` | char(3), PK | Právě jedna výchozí vazba pro měnu |
+| `bank_account_id` | unsigned bigint, unique | Výchozí účet; jeden účet patří jen své měně |
+| `created_at`, `updated_at` | timestamps | Časová metadata |
+
+Složený FK `(bank_account_id, currency)` odkazuje na
+`bank_accounts(id, currency)` uvnitř téže business databáze. Tím databáze
+vynucuje existenci účtu a shodu měny. FK používá `RESTRICT` pro update i delete;
+běžné fyzické mazání účtů neexistuje. Aktivní a nearchivovaný stav vynucuje
+`BankAccountService` uvnitř explicitní transakce.
 
 Business migrace se spouštějí výhradně příkazem:
 
@@ -437,16 +475,16 @@ vytvořením všech možných vrstev.
 | Cesta | Význam |
 |---|---|
 | `app/` | Produkční PHP kód aplikace |
-| `app/Domain/` | Doménové a průřezové mechanismy, například business context |
+| `app/Domain/` | Doménové a průřezové mechanismy, například business context a normalizace bankovních údajů |
 | `app/Domain/BusinessContext/` | Aktivní subjekt, přepínač, resolver a související výjimky |
 | `app/Enums/` | Stabilní backed enumy bez magic stringů |
 | `app/Models/` | Centrální Eloquent modely a oddělený prostor business modelů |
-| `app/Models/Business/` | `BusinessModel` a budoucí modely business databází |
+| `app/Models/Business/` | `BusinessModel` a konkrétní modely business databází |
 | `app/Http/Controllers/` | Tenká HTTP orchestrace bez složité business logiky |
 | `app/Http/Middleware/` | Autentizace contextu a ochrana request pipeline |
-| `app/Http/Requests/` | Budoucí autorizace a validace konkrétních formulářů |
-| `app/Services/` | Budoucí aplikační služby a transakční use-cases, pokud jsou potřeba |
-| `app/Policies/` | Budoucí objektová autorizace business operací |
+| `app/Http/Requests/` | Autorizace, whitelist a validace konkrétních formulářů |
+| `app/Services/` | Aplikační služby a transakční use-cases, pokud jsou potřeba |
+| `app/Policies/` | Objektová autorizace business operací |
 | `app/Console/Commands/` | Bezpečné interaktivní a provozní Artisan příkazy |
 | `app/Providers/` | Registrace scoped služeb, listenerů a framework integrace |
 | `app/Listeners/` | Reakce na framework nebo doménové události |
@@ -484,7 +522,9 @@ Illuminate\Database\Eloquent\Model
     │
     └── BusinessModel
           ├── CompanySetting
-          └── budoucí Client, Invoice, BankAccount, ...
+          ├── BankAccount
+          ├── BankAccountDefault
+          └── budoucí Client, Invoice, ...
 ```
 
 ## 5.2 Services a repositories
@@ -642,6 +682,21 @@ Ověřují také:
 - ignorování podvržených `connection`, `connection_name` a `singleton_key`;
 - fyzickou izolaci nastavení obou subjektů.
 
+Integrační testy bankovních účtů používají stejné reálné MySQL business
+databáze a navíc ověřují:
+
+- shodné schéma `bank_accounts` a `bank_account_defaults` v obou databázích;
+- nepřítomnost obou tabulek v `central`;
+- `CHECK` požadující tuzemské číslo účtu nebo IBAN;
+- složený cizí klíč zajišťující shodu měny účtu a výchozího přiřazení;
+- jediný výchozí účet pro každou měnu;
+- normalizaci identifikátorů a MOD-97 validaci IBAN;
+- serverové UUID a zákaz mass assignmentu technických polí;
+- role `admin` a read-only `viewer`;
+- neviditelnost UUID existujícího pouze ve druhé business databázi;
+- deaktivaci a jednosměrnou archivaci bez fyzického mazání;
+- skutečný souběh dvou procesů při změně výchozího účtu.
+
 ## 7.4 Povinné typy budoucích testů
 
 Každý business modul má podle rizika obsahovat:
@@ -784,33 +839,33 @@ git status --short
 Dokumentace se aktualizuje ve stejné etapě jako architektonická změna. Komentář
 v kódu má vysvětlovat důvod nebo invariant, nikoliv pouze opakovat syntaxi.
 
-# 9. Budoucí moduly
+# 9. Moduly a další plán
 
-Následující tabulka je plán, nikoliv tvrzení, že jsou moduly již implementované.
+Tabulka rozlišuje implementované části a další plán.
 
-| Modul | Účel | Databázová oblast |
-|---|---|---|
-| Company Settings | Autoritativní údaje vystavovatele, měna, splatnost, daňový režim a texty dokladů; základ implementován | Business DB |
-| Bankovní účty | Tuzemské účty, IBAN, BIC, měna, aktivita a výchozí účet | Business DB |
-| Klienti | Firmy a osoby, IČO, DIČ, kontakty, výchozí obchodní nastavení | Business DB |
-| Adresy klientů | Fakturační, doručovací a další adresy | Business DB |
-| Kontaktní osoby | Více kontaktů u jednoho klienta | Business DB |
-| Číselné řady | Formát, období, další číslo a bezpečná konkurenční alokace | Business DB |
-| Sazby DPH | Sazby, typ zdanění a interval platnosti | Business DB |
-| Faktury | Hlavička dokladu, stavy, termíny, měna a snapshot obchodních údajů | Business DB |
-| Položky faktur | Množství, jednotka, cena, sazba, slevy a přesné součty | Business DB |
-| Zálohové doklady | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
-| Dobropisy | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
-| Platby | Přijaté platby, párování, částečné úhrady a přeplatky | Business DB |
-| PDF | Neměnná vizuální reprezentace vydané verze dokladu | Business DB + neveřejné úložiště |
-| QR Platba | Platební QR údaje odvozené z faktury a bankovního účtu | Business DB |
-| E-mail | Odeslání dokladu, stav doručení a audit odeslání | Business DB |
-| Pravidelná fakturace | Předpisy pro opakované vytváření návrhů faktur | Business DB |
-| Upomínky | Pravidla a evidence upomínek po splatnosti | Business DB |
-| Exporty | Účetní a datové exporty bez spojování subjektů | Business DB |
-| Dashboard | Souhrny pouze pro právě aktivní subjekt | Business DB |
-| Business audit | Atomická historie změn nastavení a obchodních dat | Business DB |
-| Centrální bezpečnostní audit | Přihlášení, odhlášení, odmítnuté přístupy a přepnutí subjektu | `central` |
+| Modul | Stav | Účel | Databázová oblast |
+|---|---|---|---|
+| Company Settings | Implementováno | Autoritativní údaje vystavovatele, měna, splatnost, daňový režim a texty dokladů | Business DB |
+| Bankovní účty | Implementováno | Tuzemské účty, IBAN, BIC, měna, aktivita, archiv a výchozí účet | Business DB |
+| Klienti | Plán | Firmy a osoby, IČO, DIČ, kontakty, výchozí obchodní nastavení | Business DB |
+| Adresy klientů | Plán | Fakturační, doručovací a další adresy | Business DB |
+| Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
+| Číselné řady | Plán | Formát, období, další číslo a bezpečná konkurenční alokace | Business DB |
+| Sazby DPH | Plán | Sazby, typ zdanění a interval platnosti | Business DB |
+| Faktury | Plán | Hlavička dokladu, stavy, termíny, měna a snapshot obchodních údajů | Business DB |
+| Položky faktur | Plán | Množství, jednotka, cena, sazba, slevy a přesné součty | Business DB |
+| Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
+| Dobropisy | Plán | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
+| Platby | Plán | Přijaté platby, párování, částečné úhrady a přeplatky | Business DB |
+| PDF | Plán | Neměnná vizuální reprezentace vydané verze dokladu | Business DB + neveřejné úložiště |
+| QR Platba | Plán | Platební QR údaje odvozené z faktury a bankovního účtu | Business DB |
+| E-mail | Plán | Odeslání dokladu, stav doručení a audit odeslání | Business DB |
+| Pravidelná fakturace | Plán | Předpisy pro opakované vytváření návrhů faktur | Business DB |
+| Upomínky | Plán | Pravidla a evidence upomínek po splatnosti | Business DB |
+| Exporty | Plán | Účetní a datové exporty bez spojování subjektů | Business DB |
+| Dashboard | Plán | Souhrny pouze pro právě aktivní subjekt | Business DB |
+| Business audit | Plán | Atomická historie změn nastavení a obchodních dat | Business DB |
+| Centrální bezpečnostní audit | Implementováno | Přihlášení, odhlášení, odmítnuté přístupy a přepnutí subjektu | `central` |
 
 ## 9.1 Company Settings
 
@@ -822,9 +877,26 @@ ani synchronizaci centrální projekce.
 
 ## 9.2 Bankovní účty
 
-Modul musí podporovat více měn a databázově bezpečně zaručit nejvýše jeden
-výchozí účet pro danou měnu. IBAN se normalizuje a validuje checksumem. Citlivé
-hodnoty se v auditu maskují.
+Modul je implementovaný nad tabulkami `bank_accounts` a
+`bank_account_defaults` v každé business databázi. Podporuje více účtů, měny
+`CZK` a `EUR`, tuzemské části účtu uložené jako řetězce, IBAN, BIC, pořadí,
+poznámku, aktivaci, deaktivaci a archivaci. UUID vzniká serverově a používá se
+ve veřejných URL.
+
+Nejvýše jeden výchozí aktivní a nearchivovaný účet pro měnu zajišťuje primární
+klíč v `bank_account_defaults`, složený cizí klíč na ID a měnu, transakce a
+zámek v `BankAccountService`. Deaktivace nebo archivace výchozí přiřazení
+odstraní. Měnu výchozího účtu nelze změnit, dokud není vybrán jiný výchozí
+účet. IBAN se normalizuje a validuje checksumem MOD-97.
+
+Účty se fyzicky nemažou. Archivace je v aktuální etapě jednosměrná; obnova
+archivovaného účtu není implementovaná. Modul zatím nezapisuje business audit,
+protože společná auditní infrastruktura business databází dosud neexistuje. Po
+jejím zavedení se citlivé bankovní hodnoty v auditu nesmějí ukládat v otevřené
+podobě.
+
+Napojení bankovních API, import bankovních výpisů, párování plateb a QR Platba
+zůstávají mimo tento modul a budou řešeny samostatně.
 
 ## 9.3 Klienti
 

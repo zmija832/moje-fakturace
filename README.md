@@ -1,10 +1,10 @@
 # Moje fakturace
 
 Soukromá webová fakturační aplikace pro dva fyzicky oddělené podnikatelské
-subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a první
-business modul: centrální databáze, přihlášení, oprávnění, audit, bezpečný
+subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a první dva
+business moduly: centrální databáze, přihlášení, oprávnění, audit, bezpečný
 přepínač aktivního subjektu, fail-closed business modely a nastavení
-fakturačního subjektu.
+fakturačního subjektu včetně bankovních účtů.
 
 Klienti, faktury, platby, PDF, e-mail, pravidelné fakturace a exporty zatím
 nejsou implementované.
@@ -182,8 +182,9 @@ pro uživatele, oprávnění a bezpečnostní audit. Pokud aktivní business con
 chybí nebo obsahuje jiné připojení, model selže vlastní výjimkou ještě před SQL
 operací. Pokus o ruční přesměrování modelu na jiné připojení je rovněž odmítnut.
 
-První společná business migrace vytváří `company_settings` v obou business
-databázích. Další business tabulky zatím nejsou implementované.
+Společné business migrace vytvářejí `company_settings`, `bank_accounts` a
+`bank_account_defaults` shodně v obou business databázích. Tyto tabulky nikdy
+nevznikají v `central`.
 
 ## Nastavení fakturačního subjektu
 
@@ -207,6 +208,39 @@ Centrální tabulka `businesses` zůstává minimální projekcí pro přepína�
 Automatická synchronizace názvu nebo IČO z `company_settings` do `central`
 zatím není implementována.
 
+## Bankovní účty
+
+Po zvolení aktivního subjektu je modul dostupný na:
+
+```text
+/nastaveni/bankovni-ucty
+```
+
+Každý subjekt má účty fyzicky jen ve své business databázi. Administrátor může
+účet vytvořit, upravit, aktivovat, deaktivovat, nastavit jako výchozí pro jeho
+měnu a archivovat. Role `viewer` má pouze čtení. Veřejné URL používají serverem
+generované UUID, nikoliv interní ID.
+
+Podporované měny jsou aktuálně `CZK` a `EUR`. Tuzemské části účtu jsou řetězce,
+takže zachovávají úvodní nuly. IBAN a BIC se před validací normalizují; IBAN
+prochází kontrolou formátu a MOD-97 checksumu. Účet musí mít alespoň tuzemské
+číslo účtu, nebo IBAN.
+
+Tabulka `bank_account_defaults` a složený cizí klíč garantují nejvýše jeden
+výchozí účet pro každou měnu a shodu měny účtu. Přepnutí výchozího účtu běží v
+transakci se zámkem a databázovou unikátností. Neaktivní ani archivovaný účet
+nemůže být výchozí; deaktivace a archivace případné výchozí přiřazení odstraní.
+Měnu právě výchozího účtu nelze změnit, dokud administrátor nezvolí jiný
+výchozí účet.
+
+Fyzické mazání není podporováno. Archivace je v této etapě jednosměrná a
+historický řádek zůstává uložený. Obnova z archivu není zatím implementována.
+Modul nezavádí business audit, protože obecná business auditní infrastruktura
+v projektu dosud neexistuje.
+
+Napojení na bankovní API, import výpisů, párování plateb a QR Platba nejsou v
+této etapě implementované.
+
 ## Testy
 
 Testy jsou záměrně nastavené na skutečný MySQL, ne na SQLite. Výchozí lokální
@@ -222,8 +256,9 @@ destruktivní databázová operace nespustí.
 
 Základní izolační testy používají dočasnou tabulku vytvořenou zvlášť v
 testovacích databázích `business_1` a `business_2`; po testu ji odstraní.
-Testy modulu nastavení navíc spouštějí skutečnou společnou business migraci a
-ověřují shodu schémat, singleton, role i fyzickou izolaci dat.
+Testy business modulů navíc spouštějí skutečné společné migrace a ověřují shodu
+schémat, singleton nastavení subjektu, cizí klíče bankovních účtů, role,
+validaci, souběžnou změnu výchozího účtu i fyzickou izolaci dat.
 
 ```bash
 php artisan test
