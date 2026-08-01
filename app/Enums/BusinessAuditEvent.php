@@ -26,6 +26,13 @@ enum BusinessAuditEvent: string
     case DocumentSequenceDefaultChanged = 'document_sequence.default_changed';
     case DocumentSequenceDefaultRemoved = 'document_sequence.default_removed';
     case DocumentNumberAllocated = 'document_number.allocated';
+    case VatRateCreated = 'vat_rate.created';
+    case VatRateUpdated = 'vat_rate.updated';
+    case VatRateActivated = 'vat_rate.activated';
+    case VatRateDeactivated = 'vat_rate.deactivated';
+    case VatRateArchived = 'vat_rate.archived';
+    case VatRateDefaultChanged = 'vat_rate.default_changed';
+    case VatRateDefaultRemoved = 'vat_rate.default_removed';
 
     public function label(): string
     {
@@ -52,6 +59,13 @@ enum BusinessAuditEvent: string
             self::DocumentSequenceDefaultChanged => 'Změněna výchozí číselná řada',
             self::DocumentSequenceDefaultRemoved => 'Odstraněna výchozí číselná řada',
             self::DocumentNumberAllocated => 'Přiděleno číslo dokladu',
+            self::VatRateCreated => 'Vytvořena sazba DPH',
+            self::VatRateUpdated => 'Upravena sazba DPH',
+            self::VatRateActivated => 'Aktivována sazba DPH',
+            self::VatRateDeactivated => 'Deaktivována sazba DPH',
+            self::VatRateArchived => 'Archivována sazba DPH',
+            self::VatRateDefaultChanged => 'Změněna výchozí sazba DPH',
+            self::VatRateDefaultRemoved => 'Odstraněna výchozí sazba DPH',
         };
     }
 

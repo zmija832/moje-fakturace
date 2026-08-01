@@ -19,6 +19,7 @@
                 ['route' => 'company-settings.edit', 'active' => 'company-settings.*', 'label' => 'Nastavení subjektu'],
                 ['route' => 'bank-accounts.index', 'active' => 'bank-accounts.*', 'label' => 'Bankovní účty'],
                 ['route' => 'document-sequences.index', 'active' => 'document-sequences.*', 'label' => 'Číselné řady'],
+                ['route' => 'vat-rates.index', 'active' => 'vat-rates.*', 'label' => 'Sazby DPH'],
                 ['route' => 'business-audit.index', 'active' => 'business-audit.*', 'label' => 'Audit změn'],
             ] : []),
             ['route' => 'settings', 'active' => 'settings', 'label' => 'Nastavení'],

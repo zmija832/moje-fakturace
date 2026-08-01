@@ -11,6 +11,8 @@ enum BusinessAuditableType: string
     case DocumentSequence = 'document_sequence';
     case DocumentSequenceDefault = 'document_sequence_default';
     case DocumentNumberAllocation = 'document_number_allocation';
+    case VatRate = 'vat_rate';
+    case VatRateDefault = 'vat_rate_default';
 
     public function label(): string
     {
@@ -22,6 +24,8 @@ enum BusinessAuditableType: string
             self::DocumentSequence => 'Číselná řada',
             self::DocumentSequenceDefault => 'Výchozí číselná řada',
             self::DocumentNumberAllocation => 'Přidělené číslo',
+            self::VatRate => 'Sazba DPH',
+            self::VatRateDefault => 'Výchozí sazba DPH',
         };
     }
 

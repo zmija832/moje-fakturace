@@ -11,6 +11,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
+use App\Http\Controllers\VatRateController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard');
@@ -91,6 +92,29 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('document-sequences.activate');
         Route::patch('/nastaveni/ciselne-rady/{uuid}/archivovat', [DocumentSequenceController::class, 'archive'])
             ->whereUuid('uuid')->name('document-sequences.archive');
+
+        Route::get('/nastaveni/sazby-dph', [VatRateController::class, 'index'])
+            ->name('vat-rates.index');
+        Route::get('/nastaveni/sazby-dph/nova', [VatRateController::class, 'create'])
+            ->name('vat-rates.create');
+        Route::post('/nastaveni/sazby-dph', [VatRateController::class, 'store'])
+            ->name('vat-rates.store');
+        Route::patch('/nastaveni/sazby-dph/vychozi/odebrat', [VatRateController::class, 'removeDefault'])
+            ->name('vat-rates.remove-default');
+        Route::get('/nastaveni/sazby-dph/{uuid}', [VatRateController::class, 'show'])
+            ->whereUuid('uuid')->name('vat-rates.show');
+        Route::get('/nastaveni/sazby-dph/{uuid}/upravit', [VatRateController::class, 'edit'])
+            ->whereUuid('uuid')->name('vat-rates.edit');
+        Route::put('/nastaveni/sazby-dph/{uuid}', [VatRateController::class, 'update'])
+            ->whereUuid('uuid')->name('vat-rates.update');
+        Route::patch('/nastaveni/sazby-dph/{uuid}/nastavit-vychozi', [VatRateController::class, 'setDefault'])
+            ->whereUuid('uuid')->name('vat-rates.set-default');
+        Route::patch('/nastaveni/sazby-dph/{uuid}/deaktivovat', [VatRateController::class, 'deactivate'])
+            ->whereUuid('uuid')->name('vat-rates.deactivate');
+        Route::patch('/nastaveni/sazby-dph/{uuid}/aktivovat', [VatRateController::class, 'activate'])
+            ->whereUuid('uuid')->name('vat-rates.activate');
+        Route::patch('/nastaveni/sazby-dph/{uuid}/archivovat', [VatRateController::class, 'archive'])
+            ->whereUuid('uuid')->name('vat-rates.archive');
 
         Route::get('/nastaveni/audit', [BusinessAuditController::class, 'index'])
             ->name('business-audit.index');

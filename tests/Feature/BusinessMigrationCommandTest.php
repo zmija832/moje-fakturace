@@ -261,6 +261,34 @@ class BusinessMigrationCommandTest extends TestCase
         }
     }
 
+    public function test_business_databases_receive_identical_vat_rate_schema_and_local_foreign_key(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses'));
+        $expected = [
+            'vat_rates' => ['id', 'uuid', 'name', 'code', 'tax_type', 'percentage', 'valid_from', 'valid_to', 'is_active', 'sort_order', 'archived_at', 'created_at', 'updated_at'],
+            'vat_rate_defaults' => ['context', 'vat_rate_id', 'created_at', 'updated_at'],
+        ];
+
+        foreach ($expected as $table => $columns) {
+            $first = $this->normalizedColumns('business_1', $table);
+            $second = $this->normalizedColumns('business_2', $table);
+            $this->assertSame($first, $second);
+            $this->assertSame($columns, array_column($first, 'name'));
+            $this->assertFalse(Schema::connection('central')->hasTable($table));
+        }
+
+        foreach (['business_1', 'business_2'] as $connection) {
+            $foreign = DB::connection($connection)->selectOne(
+                "SELECT COUNT(*) AS aggregate, MIN(REFERENCED_TABLE_SCHEMA) AS referenced_schema
+                 FROM information_schema.KEY_COLUMN_USAGE
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vat_rate_defaults'
+                   AND REFERENCED_TABLE_NAME = 'vat_rates'",
+            );
+            $this->assertSame(1, (int) $foreign->aggregate);
+            $this->assertSame(DB::connection($connection)->getDatabaseName(), $foreign->referenced_schema);
+        }
+    }
+
     public function test_command_can_migrate_only_one_enum_connection(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', [
@@ -272,11 +300,15 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_1')->hasTable('clients'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('document_sequences'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('audit_logs'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('vat_rates'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('vat_rate_defaults'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('clients'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('document_sequences'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('audit_logs'));
+        $this->assertFalse(Schema::connection('business_2')->hasTable('vat_rates'));
+        $this->assertFalse(Schema::connection('business_2')->hasTable('vat_rate_defaults'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
     }
 

@@ -2,8 +2,10 @@
 
 namespace App\Services\Business;
 
+use App\Enums\BusinessAuditableType;
 use App\Models\Business\AuditLog;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
 
 class BusinessAuditService
 {
@@ -52,5 +54,22 @@ class BusinessAuditService
     public function find(string $uuid): AuditLog
     {
         return AuditLog::query()->where('uuid', $uuid)->firstOrFail();
+    }
+
+    /** @return Collection<int, AuditLog> */
+    public function forEntity(BusinessAuditableType $type, string $uuid, int $limit = 20): Collection
+    {
+        return AuditLog::query()
+            ->where(function ($query) use ($type, $uuid): void {
+                $query->where(function ($query) use ($type, $uuid): void {
+                    $query->where('auditable_type', $type->value)->where('auditable_uuid', $uuid);
+                })->orWhere(function ($query) use ($type, $uuid): void {
+                    $query->where('subject_type', $type->value)->where('subject_uuid', $uuid);
+                });
+            })
+            ->latest('occurred_at')
+            ->latest('id')
+            ->limit(max(1, min($limit, 100)))
+            ->get();
     }
 }

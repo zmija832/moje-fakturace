@@ -8,6 +8,7 @@ use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
+use App\Models\Business\VatRate;
 use BackedEnum;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -24,8 +25,10 @@ class BusinessAuditSanitizer
             BusinessAuditableType::Client => $this->client($this->expect($model, Client::class)),
             BusinessAuditableType::DocumentSequence => $this->documentSequence($this->expect($model, DocumentSequence::class)),
             BusinessAuditableType::DocumentNumberAllocation => $this->allocation($this->expect($model, DocumentNumberAllocation::class)),
+            BusinessAuditableType::VatRate => $this->vatRate($this->expect($model, VatRate::class)),
             BusinessAuditableType::BankAccountDefault,
-            BusinessAuditableType::DocumentSequenceDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
+            BusinessAuditableType::DocumentSequenceDefault,
+            BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
         };
     }
 
@@ -63,8 +66,13 @@ class BusinessAuditSanitizer
                 'correlation_uuid', 'document_sequence_id', 'document_type', 'period',
                 'sequence_number', 'formatted_number', 'allocated_at', 'document_uuid',
             ],
+            BusinessAuditableType::VatRate => [
+                'name', 'code', 'tax_type', 'percentage', 'valid_from', 'valid_to',
+                'is_active', 'sort_order', 'archived_at',
+            ],
             BusinessAuditableType::BankAccountDefault,
-            BusinessAuditableType::DocumentSequenceDefault => [],
+            BusinessAuditableType::DocumentSequenceDefault,
+            BusinessAuditableType::VatRateDefault => [],
         };
 
         return array_values(array_intersect(array_keys($model->getDirty()), $allowed));
@@ -152,6 +160,22 @@ class BusinessAuditSanitizer
             'formatted_number' => $allocation->formatted_number,
             'correlation_uuid' => $allocation->correlation_uuid,
             'document_uuid' => $allocation->document_uuid,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function vatRate(VatRate $rate): array
+    {
+        return $this->withoutNulls([
+            'name' => $rate->name,
+            'code' => $rate->code,
+            'tax_type' => $this->scalar($rate->tax_type),
+            'percentage' => $rate->percentage,
+            'valid_from' => $this->scalar($rate->valid_from),
+            'valid_to' => $this->scalar($rate->valid_to),
+            'is_active' => (bool) $rate->is_active,
+            'is_archived' => $rate->archived_at !== null,
+            'sort_order' => $rate->sort_order,
         ]);
     }
 

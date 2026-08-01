@@ -204,8 +204,8 @@ správně nastavený business context.
 Společné migrace v `database/migrations/business` vytvářejí
 `company_settings`, `bank_accounts`, `bank_account_defaults`, `clients`,
 `document_sequences`, `document_sequence_defaults`,
-`document_number_allocations` a `audit_logs` shodně v `business_1` i
-`business_2`.
+`document_number_allocations`, `vat_rates`, `vat_rate_defaults` a `audit_logs`
+shodně v `business_1` i `business_2`.
 
 Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
 singleton. Databáze vynucuje:
@@ -1045,7 +1045,7 @@ Tabulka rozlišuje implementované části a další plán.
 | Adresy klientů | Plán | Fakturační, doručovací a další adresy | Business DB |
 | Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
 | Číselné řady | Implementováno | Konfigurace, default pro typ, neměnný ledger a bezpečná konkurenční alokace | Business DB |
-| Sazby DPH | Plán | Sazby, typ zdanění a interval platnosti | Business DB |
+| Sazby DPH | Implementováno | Sazby, daňové režimy, časová platnost a default pro prodej | Business DB |
 | Faktury | Plán | Hlavička dokladu, stavy, termíny, měna a snapshot obchodních údajů | Business DB |
 | Položky faktur | Plán | Množství, jednotka, cena, sazba, slevy a přesné součty | Business DB |
 | Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
@@ -1159,19 +1159,60 @@ Konfigurace, stav, defaulty a nové allocations se auditují ve stejné transakc
 Idempotentní opakování correlation UUID nevytváří druhý audit. Do centrálního
 auditu se tato data nekopírují.
 
-## 9.5 Faktury a položky
+## 9.5 Sazby DPH a základní daňová nastavení
+
+Plátcovství, DIČ, IČ DPH a datum registrace zůstávají autoritativně v
+`company_settings`. Jednotlivé sazby a režimy patří do `vat_rates`; jediný
+default pro kontext prodeje patří do `vat_rate_defaults`. Obě tabulky vznikají
+výhradně společnou business migrací v každé fyzické business databázi, bez
+`business_id` a bez vazby do `central`.
+
+`percentage` je nullable `DECIMAL(7,4)` a v PHP se zpracovává pouze jako přesný
+normalizovaný string. Nikdy se nepřevádí na `float`. Hodnota 21 % je
+`21.0000`, nikoliv `0.21`. Režimy `standard`, `reduced` a `zero` procento
+vyžadují, přičemž `zero` musí být přesně nula. Režimy `exempt`,
+`reverse_charge` a `out_of_scope` ukládají `NULL`; tím je nulová sazba
+jednoznačně odlišena od plnění, kde se procentní sazba vůbec nepočítá.
+
+Interval platnosti je uzavřený: `valid_from <= datum <= valid_to`; chybějící
+`valid_to` znamená otevřený konec. Historická verze se neukončuje přepsáním
+procenta, nýbrž nastavením `valid_to` a vytvořením nové navazující verze.
+Nejbližší nové období smí začít následující den. Překryv nearchivovaných verzí
+stejného kódu blokuje `VatRateService` v transakci. `lockForUpdate()` nad
+existujícími kandidáty doplňuje MySQL advisory lock odvozený z fyzické databáze
+a normalizovaného kódu, takže je chráněn i souběh v okamžiku, kdy ještě žádný
+řádek neexistuje.
+
+`vat_rate_defaults.context` je primární klíč a v této etapě přijímá pouze
+`sales`. Neaktivní nebo archivovaná sazba nemůže být výchozí. Pokud je subjekt
+neplátce, může být výchozí pouze `out_of_scope` nebo `exempt`; evidence jiných
+sazeb je dovolena jako budoucí příprava a plátcovství se tím nemění. Deaktivace
+a jednosměrná archivace odstraní default ve stejné transakci.
+
+Výběr pro budoucí doklad musí vždy dostat explicitní datum zdanitelného plnění.
+Konfigurační sazba není historickým záznamem faktury. Vystavená faktura musí
+uložit vlastní neměnný snapshot typu, procenta a režimu. Jakmile budou faktury
+existovat, historická pole použité sazby se musí uzamknout a změna konfigurace
+nesmí zpětně změnit žádný doklad.
+
+České legislativní sazby se nesmějí hardcodovat do domény, migrací ani skrytých
+produkčních seederů. Administrátor je zadává vědomě; aplikace neposkytuje
+daňové poradenství ani automatickou legislativní aktualizaci. Vytvoření,
+změna, stavy, archivace a defaulty jsou auditovány explicitně a atomicky.
+
+## 9.6 Faktury a položky
 
 Faktura je účetní historický dokument. Musí obsahovat snapshot vystavovatele,
 odběratele, platebních údajů a relevantních daňových hodnot. Součty se počítají
 jednou definovanou službou s přesným zaokrouhlením.
 
-## 9.6 PDF a e-mail
+## 9.7 PDF a e-mail
 
 PDF nesmí být veřejně dostupné z předvídatelné URL. Odeslání e-mailem se
 auditovatelně váže ke konkrétní verzi dokladu. Tajné SMTP údaje patří pouze do
 environment konfigurace.
 
-## 9.7 Audit
+## 9.8 Audit
 
 Centrální a business audit mají odlišné bezpečnostní hranice. `login_audits` a
 `business_switch_audits` v `central` evidují pouze bezpečnostní události.

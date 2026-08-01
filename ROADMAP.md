@@ -22,7 +22,7 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Doplnit policy, validaci a izolační testy nastavení subjektu
 - [x] Implementovat bankovní účty
 - [x] Implementovat konfiguraci, defaulty a transakční alokaci číselných řad
-- [ ] Implementovat sazby DPH a daňová nastavení
+- [x] Implementovat sazby DPH a základní daňová nastavení
 - [x] Implementovat klienty, fakturační a jednu dodací adresu a kontaktní osobu
 - [x] Doplnit transakční, sanitizovaný a read-only business audit
 - [x] Ověřit izolaci aktuálně implementovaných modulů v obou databázích

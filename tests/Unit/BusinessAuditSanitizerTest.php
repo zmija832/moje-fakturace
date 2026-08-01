@@ -9,6 +9,8 @@ use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
+use App\Models\Business\VatRate;
+use Carbon\CarbonImmutable;
 use PHPUnit\Framework\TestCase;
 
 class BusinessAuditSanitizerTest extends TestCase
@@ -102,5 +104,20 @@ class BusinessAuditSanitizerTest extends TestCase
         $this->assertSame('FV-', $sanitizer->snapshot(BusinessAuditableType::DocumentSequence, $sequence)['prefix']);
         $this->assertSame('FV-202600012', $sanitizer->snapshot(BusinessAuditableType::DocumentNumberAllocation, $allocation)['formatted_number']);
         $this->assertArrayNotHasKey('connection', $sanitizer->snapshot(BusinessAuditableType::DocumentSequence, $sequence));
+    }
+
+    public function test_vat_rate_snapshot_uses_exact_decimal_and_explicit_fields(): void
+    {
+        $rate = new VatRate;
+        $rate->setRawAttributes([
+            'name' => 'Základní', 'code' => 'STANDARD', 'tax_type' => 'standard',
+            'percentage' => '21.0000', 'valid_from' => CarbonImmutable::parse('2026-01-01'), 'valid_to' => null,
+            'is_active' => true, 'sort_order' => 10,
+        ], true);
+        $snapshot = (new BusinessAuditSanitizer)->snapshot(BusinessAuditableType::VatRate, $rate);
+
+        $this->assertSame('21.0000', $snapshot['percentage']);
+        $this->assertSame('standard', $snapshot['tax_type']);
+        $this->assertArrayNotHasKey('connection', $snapshot);
     }
 }

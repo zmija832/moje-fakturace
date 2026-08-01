@@ -1,7 +1,7 @@
 # Moje fakturace
 
 Soukromá webová fakturační aplikace pro dva fyzicky oddělené podnikatelské
-subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a první tři
+subjekty. Aktuálně je dokončena Etapa 2, bezpečnostní základ Etapy 3 a základní
 business moduly: centrální databáze, přihlášení, oprávnění, audit, bezpečný
 přepínač aktivního subjektu, fail-closed business modely a nastavení
 fakturačního subjektu včetně bankovních účtů a klientů.
@@ -185,7 +185,8 @@ operací. Pokus o ruční přesměrování modelu na jiné připojení je rovně
 Společné business migrace vytvářejí `company_settings`, `bank_accounts`,
 `bank_account_defaults`, `clients`, `document_sequences`,
 `document_sequence_defaults`, `document_number_allocations` a `audit_logs`
-shodně v obou business databázích. Tyto tabulky nikdy nevznikají v `central`.
+spolu s `vat_rates` a `vat_rate_defaults` shodně v obou business databázích.
+Tyto tabulky nikdy nevznikají v `central`.
 
 Po architektonické revizi sdílejí veřejné business modely úzký trait pro
 serverové UUID a formulářové requesty používají jednu technickou normalizaci
@@ -305,6 +306,41 @@ odstraní případnou výchozí vazbu, allocations však zachovají.
 Konfigurace, stav, defaulty a každá skutečná allocation jsou zapisované do
 business auditu ve stejné transakci. Idempotentní opakování allocation druhý
 audit nevytvoří. Tyto údaje se nekopírují do centrálního auditu.
+
+## Sazby DPH a základní daňová nastavení
+
+Modul je dostupný na `/nastaveni/sazby-dph` a ukládá konfiguraci výhradně do
+`vat_rates` a `vat_rate_defaults` aktivní business databáze. Nevytváří žádné
+legislativní sazby automaticky a nemění plátcovství uložené v
+`company_settings`.
+
+Podporované režimy jsou základní, snížená a nulová sazba, osvobozené plnění,
+přenesená daňová povinnost a plnění mimo předmět DPH. Procento je
+`DECIMAL(7,4)` reprezentované v PHP řetězcem. Základní, snížený a nulový režim
+procento vyžadují; nulová sazba je přesně `0.0000`. Osvobozené, reverse-charge
+a out-of-scope plnění ukládají `NULL`, čímž se odlišují od nulové sazby.
+
+Platnost `valid_from` až `valid_to` je včetně obou dnů. `valid_to` může být
+prázdné. Neaktivní nebo archivovaná sazba se pro nový doklad nevybere. Dvě
+nearchivované verze stejného normalizovaného kódu nesmějí mít překrývající se
+interval; služba používá transakci, řádkové zámky a MySQL advisory lock, který
+chrání i souběžné vytvoření prvního řádku. Navazující období proto začíná až
+den po konci předchozího období.
+
+Kontext `sales` má nejvýše jednu výchozí sazbu. U neplátce může být výchozí
+pouze `out_of_scope` nebo `exempt`; samotná evidence ostatních sazeb zůstává
+dostupná pro budoucí přípravu. Deaktivace nebo jednosměrná archivace odstraní
+výchozí vazbu ve stejné transakci. Fyzické mazání není podporováno.
+
+Sazba v databázi je pouze aktuální konfigurační údaj. Budoucí faktura musí
+vybrat sazbu podle data zdanitelného plnění a uložit vlastní neměnný snapshot
+typu, procenta a daňového režimu. Pozdější změna konfigurace nesmí změnit
+historickou fakturu. Po zavedení vystavených faktur musí služba uzamknout
+historická pole sazby, která už byla použita.
+
+Všechny významné změny sazeb a výchozí vazby vznikají v business auditu ve
+stejné transakci. Modul neposkytuje daňové poradenství, výpočty faktur,
+legislativní aktualizace ani externí daňové API.
 
 ## Business audit změn
 
