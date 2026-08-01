@@ -2,8 +2,11 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Audit\BusinessAuditSanitizer;
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
+use App\Enums\BusinessAuditableType;
+use App\Enums\BusinessAuditEvent;
 use App\Enums\DefaultPaymentMethod;
 use App\Models\Business\CompanySetting;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +16,8 @@ class CompanySettingsService
     public function __construct(
         private readonly ActiveBusinessContext $context,
         private readonly BusinessConnectionResolver $connectionResolver,
+        private readonly BusinessAuditSanitizer $auditSanitizer,
+        private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
     public function forForm(): CompanySetting
@@ -37,13 +42,30 @@ class CompanySettingsService
                 ->lockForUpdate()
                 ->first();
 
-            if (! $setting) {
+            $created = ! $setting;
+            $oldValues = $setting
+                ? $this->auditSanitizer->snapshot(BusinessAuditableType::CompanySettings, $setting)
+                : null;
+
+            if ($created) {
                 $setting = new CompanySetting;
                 $setting->forceFill(['singleton_key' => CompanySetting::SINGLETON_KEY]);
             }
 
             $setting->fill($attributes);
+            $changedFields = $this->auditSanitizer->changedFields(BusinessAuditableType::CompanySettings, $setting);
             $setting->save();
+
+            if ($created || $changedFields !== []) {
+                $this->auditWriter->write(
+                    $created ? BusinessAuditEvent::CompanySettingsCreated : BusinessAuditEvent::CompanySettingsUpdated,
+                    BusinessAuditableType::CompanySettings,
+                    null,
+                    $oldValues,
+                    $this->auditSanitizer->snapshot(BusinessAuditableType::CompanySettings, $setting),
+                    $created ? array_keys($this->auditSanitizer->snapshot(BusinessAuditableType::CompanySettings, $setting)) : $changedFields,
+                );
+            }
 
             return $setting->refresh();
         }, 3);

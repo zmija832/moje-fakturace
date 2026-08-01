@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\BankAccountController;
+use App\Http\Controllers\BusinessAuditController;
 use App\Http\Controllers\BusinessSwitchController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
@@ -29,7 +30,7 @@ Route::middleware('guest')->group(function (): void {
         ->name('password.store');
 });
 
-Route::middleware(['auth', 'business.context'])->group(function (): void {
+Route::middleware(['business.request-id', 'auth', 'business.context'])->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
     Route::post('/fakturacni-subjekt/{businessUuid}', BusinessSwitchController::class)
@@ -90,6 +91,11 @@ Route::middleware(['auth', 'business.context'])->group(function (): void {
             ->whereUuid('uuid')->name('document-sequences.activate');
         Route::patch('/nastaveni/ciselne-rady/{uuid}/archivovat', [DocumentSequenceController::class, 'archive'])
             ->whereUuid('uuid')->name('document-sequences.archive');
+
+        Route::get('/nastaveni/audit', [BusinessAuditController::class, 'index'])
+            ->name('business-audit.index');
+        Route::get('/nastaveni/audit/{uuid}', [BusinessAuditController::class, 'show'])
+            ->whereUuid('uuid')->name('business-audit.show');
 
         Route::view('/vydane-faktury', 'coming-soon', ['module' => 'Vydané faktury'])
             ->name('invoices.index');

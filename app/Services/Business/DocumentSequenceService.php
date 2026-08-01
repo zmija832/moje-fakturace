@@ -2,8 +2,11 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Audit\BusinessAuditSanitizer;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\DocumentSequences\DocumentNumberFormatter;
+use App\Enums\BusinessAuditableType;
+use App\Enums\BusinessAuditEvent;
 use App\Enums\DocumentSequenceResetPeriod;
 use App\Enums\DocumentSequenceYearFormat;
 use App\Enums\DocumentType;
@@ -30,6 +33,8 @@ class DocumentSequenceService
     public function __construct(
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly DocumentNumberFormatter $formatter,
+        private readonly BusinessAuditSanitizer $auditSanitizer,
+        private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
     /** @return Collection<int, DocumentSequence> */
@@ -98,6 +103,15 @@ class DocumentSequenceService
                 'current_period' => null,
             ]);
             $sequence->save();
+            $snapshot = $this->auditSanitizer->snapshot(BusinessAuditableType::DocumentSequence, $sequence);
+            $this->auditWriter->write(
+                BusinessAuditEvent::DocumentSequenceCreated,
+                BusinessAuditableType::DocumentSequence,
+                $sequence->uuid,
+                null,
+                $snapshot,
+                array_keys($snapshot),
+            );
 
             return $sequence->refresh();
         }, 3);
@@ -111,6 +125,7 @@ class DocumentSequenceService
 
         return DB::connection($connection)->transaction(function () use ($uuid, $attributes): DocumentSequence {
             $sequence = $this->lockedSequence($uuid, editableOnly: true);
+            $oldValues = $this->auditSanitizer->snapshot(BusinessAuditableType::DocumentSequence, $sequence);
             $hasAllocations = $sequence->allocations()->exists();
 
             if ($hasAllocations) {
@@ -144,10 +159,22 @@ class DocumentSequenceService
                 $sequence->forceFill(['next_number' => $sequence->start_number]);
             }
 
+            $changedFields = $this->auditSanitizer->changedFields(BusinessAuditableType::DocumentSequence, $sequence);
             $sequence->save();
 
+            if ($changedFields !== []) {
+                $this->auditWriter->write(
+                    BusinessAuditEvent::DocumentSequenceUpdated,
+                    BusinessAuditableType::DocumentSequence,
+                    $sequence->uuid,
+                    $oldValues,
+                    $this->auditSanitizer->snapshot(BusinessAuditableType::DocumentSequence, $sequence),
+                    $changedFields,
+                );
+            }
+
             if (! $sequence->is_active) {
-                $this->removeDefaultAssignment($sequence);
+                $this->removeDefaultAssignment($sequence, 'sequence_updated_inactive');
             }
 
             return $sequence->refresh()->load('defaultAssignment');
@@ -172,6 +199,9 @@ class DocumentSequenceService
                 ->where('document_type', $documentType)
                 ->lockForUpdate()
                 ->first();
+            $oldSequenceUuid = $assignment
+                ? DocumentSequence::query()->whereKey($assignment->document_sequence_id)->value('uuid')
+                : null;
 
             $assignment ??= new DocumentSequenceDefault;
             $assignment->fill([
@@ -179,6 +209,19 @@ class DocumentSequenceService
                 'document_sequence_id' => $sequence->id,
             ]);
             $assignment->save();
+
+            if ($oldSequenceUuid !== $sequence->uuid) {
+                $this->auditWriter->write(
+                    BusinessAuditEvent::DocumentSequenceDefaultChanged,
+                    BusinessAuditableType::DocumentSequenceDefault,
+                    $sequence->uuid,
+                    $oldSequenceUuid ? ['document_type' => $documentType, 'document_sequence_uuid' => $oldSequenceUuid] : null,
+                    ['document_type' => $documentType, 'document_sequence_uuid' => $sequence->uuid],
+                    ['document_sequence_uuid'],
+                    BusinessAuditableType::DocumentSequence,
+                    $sequence->uuid,
+                );
+            }
 
             return $sequence->refresh()->load('defaultAssignment');
         }, 3);
@@ -200,11 +243,20 @@ class DocumentSequenceService
 
         return DB::connection($connection)->transaction(function () use ($uuid): DocumentSequence {
             $sequence = $this->lockedSequence($uuid, editableOnly: true);
+            $wasActive = (bool) $sequence->is_active;
             $sequence->forceFill([
                 'is_active' => false,
                 'archived_at' => now(),
             ])->save();
-            $this->removeDefaultAssignment($sequence);
+            $this->auditWriter->write(
+                BusinessAuditEvent::DocumentSequenceArchived,
+                BusinessAuditableType::DocumentSequence,
+                $sequence->uuid,
+                ['is_active' => $wasActive, 'is_archived' => false],
+                ['is_active' => false, 'is_archived' => true],
+                ['is_active', 'archived_at'],
+            );
+            $this->removeDefaultAssignment($sequence, 'sequence_archived');
 
             return $sequence->refresh()->load('defaultAssignment');
         }, 3);
@@ -257,11 +309,23 @@ class DocumentSequenceService
                 ]);
             }
 
+            $oldActive = (bool) $sequence->is_active;
             $sequence->is_active = $isActive;
             $sequence->save();
 
+            if ($oldActive !== $isActive) {
+                $this->auditWriter->write(
+                    $isActive ? BusinessAuditEvent::DocumentSequenceActivated : BusinessAuditEvent::DocumentSequenceDeactivated,
+                    BusinessAuditableType::DocumentSequence,
+                    $sequence->uuid,
+                    ['is_active' => $oldActive],
+                    ['is_active' => $isActive],
+                    ['is_active'],
+                );
+            }
+
             if (! $isActive) {
-                $this->removeDefaultAssignment($sequence);
+                $this->removeDefaultAssignment($sequence, 'sequence_deactivated');
             }
 
             return $sequence->refresh()->load('defaultAssignment');
@@ -277,11 +341,30 @@ class DocumentSequenceService
             ->firstOrFail();
     }
 
-    private function removeDefaultAssignment(DocumentSequence $sequence): void
+    private function removeDefaultAssignment(DocumentSequence $sequence, string $reason): void
     {
-        DocumentSequenceDefault::query()
+        $assignment = DocumentSequenceDefault::query()
             ->where('document_sequence_id', $sequence->id)
-            ->delete();
+            ->lockForUpdate()
+            ->first();
+
+        if ($assignment === null) {
+            return;
+        }
+
+        $documentType = $assignment->document_type->value;
+        $assignment->delete();
+        $this->auditWriter->write(
+            BusinessAuditEvent::DocumentSequenceDefaultRemoved,
+            BusinessAuditableType::DocumentSequenceDefault,
+            $sequence->uuid,
+            ['document_type' => $documentType, 'document_sequence_uuid' => $sequence->uuid],
+            null,
+            ['document_sequence_uuid'],
+            BusinessAuditableType::DocumentSequence,
+            $sequence->uuid,
+            ['reason' => $reason],
+        );
     }
 
     /** @param array<string, mixed> $attributes */

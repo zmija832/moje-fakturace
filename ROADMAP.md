@@ -24,7 +24,7 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Implementovat konfiguraci, defaulty a transakční alokaci číselných řad
 - [ ] Implementovat sazby DPH a daňová nastavení
 - [x] Implementovat klienty, fakturační a jednu dodací adresu a kontaktní osobu
-- [ ] Doplnit business audit
+- [x] Doplnit transakční, sanitizovaný a read-only business audit
 - [x] Ověřit izolaci aktuálně implementovaných modulů v obou databázích
 
 ## Etapa 4 – Faktury

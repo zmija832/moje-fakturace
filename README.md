@@ -184,8 +184,8 @@ operací. Pokus o ruční přesměrování modelu na jiné připojení je rovně
 
 Společné business migrace vytvářejí `company_settings`, `bank_accounts`,
 `bank_account_defaults`, `clients`, `document_sequences`,
-`document_sequence_defaults` a `document_number_allocations` shodně v obou
-business databázích. Tyto tabulky nikdy nevznikají v `central`.
+`document_sequence_defaults`, `document_number_allocations` a `audit_logs`
+shodně v obou business databázích. Tyto tabulky nikdy nevznikají v `central`.
 
 Po architektonické revizi sdílejí veřejné business modely úzký trait pro
 serverové UUID a formulářové requesty používají jednu technickou normalizaci
@@ -241,8 +241,8 @@ výchozí účet.
 
 Fyzické mazání není podporováno. Archivace je v této etapě jednosměrná a
 historický řádek zůstává uložený. Obnova z archivu není zatím implementována.
-Modul nezavádí business audit, protože obecná business auditní infrastruktura
-v projektu dosud neexistuje.
+Vytvoření, změny, stav a výchozí vazby účtu zapisují sanitizovaný business audit.
+Celé číslo účtu, IBAN, BIC ani poznámka se do auditu neukládají.
 
 Napojení na bankovní API, import výpisů, párování plateb a QR Platba nejsou v
 této etapě implementované.
@@ -274,7 +274,8 @@ klienta nesmí později změnit existující fakturu. Faktury a snapshot logika 
 této etapě nevznikly.
 
 ARES, VIES, registr plátců DPH, import klientů, slučování duplicit, více adres,
-více kontaktních osob a business audit nejsou implementované.
+více kontaktních osob nejsou implementované. Změny klienta jsou auditované bez
+celých adres, kontaktů, daňových identifikátorů a poznámek.
 
 ## Číselné řady dokladů
 
@@ -301,9 +302,34 @@ použita, nelze změnit její typ, formát, počáteční číslo ani způsob re
 nový formát vzniká nová řada. Deaktivace a jednosměrná archivace transakčně
 odstraní případnou výchozí vazbu, allocations však zachovají.
 
-Obecný business audit stále není implementovaný. Audit změn číselných řad musí
-být doplněn před produkčním používáním faktur; konfigurace ani přidělená čísla
-se zatím nekopírují do centrálního auditu.
+Konfigurace, stav, defaulty a každá skutečná allocation jsou zapisované do
+business auditu ve stejné transakci. Idempotentní opakování allocation druhý
+audit nevytvoří. Tyto údaje se nekopírují do centrálního auditu.
+
+## Business audit změn
+
+Read-only modul je dostupný na `/nastaveni/audit`. `central` nadále obsahuje jen
+bezpečnostní události přihlášení a přepínání subjektů. Obchodní změny se ukládají
+do `audit_logs` výhradně ve fyzické databázi aktivního subjektu.
+
+Audit pokrývá nastavení subjektu, bankovní účty a jejich defaulty, klienty,
+číselné řady a jejich defaulty a alokace čísel. Doménové služby volají
+`BusinessAuditWriter` explicitně uvnitř své transakce. Writer odmítne samostatný
+zápis mimo transakci; selhání auditu proto rollbackne i obchodní změnu.
+
+`BusinessAuditSanitizer` používá whitelist pro každý typ entity. Citlivá pole se
+buď maskují na poslední čtyři znaky, nebo se ukládá pouze jejich název v
+`changed_fields`. Nikdy se neukládají hesla, tokeny, session, connection name,
+celá bankovní čísla, celé adresy, klientské kontakty ani poznámky.
+
+Každá webová operace dostane serverově generovaný request UUID vrácený v
+hlavičce `X-Request-ID`. Centrální uživatel zatím nemá UUID, proto audit používá
+bezpečný textový identifikátor `central-user:<id>` bez cross-database FK a
+snapshot jména a e-mailu.
+
+Auditní záznam je aplikačně neměnný a nemá update/delete/restore route ani
+cleanup scheduler. Retenční politika musí být rozhodnuta před produkčním
+nasazením; automatické mazání se nyní neprovádí.
 
 ## Testy
 

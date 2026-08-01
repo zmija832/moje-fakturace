@@ -2,8 +2,11 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Audit\BusinessAuditSanitizer;
 use App\Domain\BankAccounts\BankAccountNormalizer;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
+use App\Enums\BusinessAuditableType;
+use App\Enums\BusinessAuditEvent;
 use App\Models\Business\BankAccount;
 use App\Models\Business\BankAccountDefault;
 use Illuminate\Database\Eloquent\Collection;
@@ -15,6 +18,8 @@ class BankAccountService
     public function __construct(
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly CompanySettingsService $companySettingsService,
+        private readonly BusinessAuditSanitizer $auditSanitizer,
+        private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
     /**
@@ -61,6 +66,14 @@ class BankAccountService
             $account = new BankAccount;
             $account->fill($attributes);
             $account->save();
+            $this->auditWriter->write(
+                BusinessAuditEvent::BankAccountCreated,
+                BusinessAuditableType::BankAccount,
+                $account->uuid,
+                null,
+                $this->auditSanitizer->snapshot(BusinessAuditableType::BankAccount, $account),
+                array_keys($this->auditSanitizer->snapshot(BusinessAuditableType::BankAccount, $account)),
+            );
 
             return $account->refresh();
         }, 3);
@@ -76,6 +89,7 @@ class BankAccountService
 
         return DB::connection($connection)->transaction(function () use ($uuid, $attributes): BankAccount {
             $account = $this->lockedAccount($uuid, editableOnly: true);
+            $oldValues = $this->auditSanitizer->snapshot(BusinessAuditableType::BankAccount, $account);
             $newCurrency = $attributes['currency'] ?? $account->currency;
 
             if (
@@ -88,10 +102,22 @@ class BankAccountService
             }
 
             $account->fill($attributes);
+            $changedFields = $this->auditSanitizer->changedFields(BusinessAuditableType::BankAccount, $account);
             $account->save();
 
+            if ($changedFields !== []) {
+                $this->auditWriter->write(
+                    BusinessAuditEvent::BankAccountUpdated,
+                    BusinessAuditableType::BankAccount,
+                    $account->uuid,
+                    $oldValues,
+                    $this->auditSanitizer->snapshot(BusinessAuditableType::BankAccount, $account),
+                    $changedFields,
+                );
+            }
+
             if (! $account->is_active) {
-                $this->removeDefaultAssignment($account);
+                $this->removeDefaultAssignment($account, 'account_updated_inactive');
             }
 
             return $account->refresh()->load('defaultAssignment');
@@ -115,6 +141,9 @@ class BankAccountService
                 ->where('currency', $account->currency)
                 ->lockForUpdate()
                 ->first();
+            $oldAccountUuid = $assignment
+                ? BankAccount::query()->whereKey($assignment->bank_account_id)->value('uuid')
+                : null;
 
             $assignment ??= new BankAccountDefault;
             $assignment->fill([
@@ -122,6 +151,19 @@ class BankAccountService
                 'bank_account_id' => $account->id,
             ]);
             $assignment->save();
+
+            if ($oldAccountUuid !== $account->uuid) {
+                $this->auditWriter->write(
+                    BusinessAuditEvent::BankAccountDefaultChanged,
+                    BusinessAuditableType::BankAccountDefault,
+                    $account->uuid,
+                    $oldAccountUuid ? ['currency' => $account->currency, 'bank_account_uuid' => $oldAccountUuid] : null,
+                    ['currency' => $account->currency, 'bank_account_uuid' => $account->uuid],
+                    ['bank_account_uuid'],
+                    BusinessAuditableType::BankAccount,
+                    $account->uuid,
+                );
+            }
 
             return $account->refresh()->load('defaultAssignment');
         }, 3);
@@ -143,11 +185,20 @@ class BankAccountService
 
         return DB::connection($connection)->transaction(function () use ($uuid): BankAccount {
             $account = $this->lockedAccount($uuid, editableOnly: true);
+            $wasActive = (bool) $account->is_active;
             $account->forceFill([
                 'is_active' => false,
                 'archived_at' => now(),
             ])->save();
-            $this->removeDefaultAssignment($account);
+            $this->auditWriter->write(
+                BusinessAuditEvent::BankAccountArchived,
+                BusinessAuditableType::BankAccount,
+                $account->uuid,
+                ['is_active' => $wasActive, 'is_archived' => false],
+                ['is_active' => false, 'is_archived' => true],
+                ['is_active', 'archived_at'],
+            );
+            $this->removeDefaultAssignment($account, 'account_archived');
 
             return $account->refresh()->load('defaultAssignment');
         }, 3);
@@ -166,11 +217,23 @@ class BankAccountService
                 ]);
             }
 
+            $oldActive = (bool) $account->is_active;
             $account->is_active = $isActive;
             $account->save();
 
+            if ($oldActive !== $isActive) {
+                $this->auditWriter->write(
+                    $isActive ? BusinessAuditEvent::BankAccountActivated : BusinessAuditEvent::BankAccountDeactivated,
+                    BusinessAuditableType::BankAccount,
+                    $account->uuid,
+                    ['is_active' => $oldActive],
+                    ['is_active' => $isActive],
+                    ['is_active'],
+                );
+            }
+
             if (! $isActive) {
-                $this->removeDefaultAssignment($account);
+                $this->removeDefaultAssignment($account, 'account_deactivated');
             }
 
             return $account->refresh()->load('defaultAssignment');
@@ -186,11 +249,30 @@ class BankAccountService
             ->firstOrFail();
     }
 
-    private function removeDefaultAssignment(BankAccount $account): void
+    private function removeDefaultAssignment(BankAccount $account, string $reason): void
     {
-        BankAccountDefault::query()
+        $assignment = BankAccountDefault::query()
             ->where('bank_account_id', $account->id)
-            ->delete();
+            ->lockForUpdate()
+            ->first();
+
+        if ($assignment === null) {
+            return;
+        }
+
+        $currency = $assignment->currency;
+        $assignment->delete();
+        $this->auditWriter->write(
+            BusinessAuditEvent::BankAccountDefaultRemoved,
+            BusinessAuditableType::BankAccountDefault,
+            $account->uuid,
+            ['currency' => $currency, 'bank_account_uuid' => $account->uuid],
+            null,
+            ['bank_account_uuid'],
+            BusinessAuditableType::BankAccount,
+            $account->uuid,
+            ['reason' => $reason],
+        );
     }
 
     private function connectionName(): string

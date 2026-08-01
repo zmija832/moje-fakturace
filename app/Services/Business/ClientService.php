@@ -2,8 +2,11 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Audit\BusinessAuditSanitizer;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Clients\ClientNormalizer;
+use App\Enums\BusinessAuditableType;
+use App\Enums\BusinessAuditEvent;
 use App\Enums\ClientType;
 use App\Models\Business\Client;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -17,6 +20,8 @@ class ClientService
     public function __construct(
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly CompanySettingsService $companySettingsService,
+        private readonly BusinessAuditSanitizer $auditSanitizer,
+        private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
     /**
@@ -101,6 +106,15 @@ class ClientService
             $client = new Client;
             $client->fill($attributes);
             $client->save();
+            $snapshot = $this->auditSanitizer->snapshot(BusinessAuditableType::Client, $client);
+            $this->auditWriter->write(
+                BusinessAuditEvent::ClientCreated,
+                BusinessAuditableType::Client,
+                $client->uuid,
+                null,
+                $snapshot,
+                array_keys($snapshot),
+            );
 
             return $client->refresh();
         }, 3);
@@ -113,9 +127,22 @@ class ClientService
 
         return DB::connection($connection)->transaction(function () use ($uuid, $attributes): Client {
             $client = $this->lockedClient($uuid, editableOnly: true);
+            $oldValues = $this->auditSanitizer->snapshot(BusinessAuditableType::Client, $client);
             $attributes = $this->prepareAttributes($attributes, $client);
             $client->fill($attributes);
+            $changedFields = $this->auditSanitizer->changedFields(BusinessAuditableType::Client, $client);
             $client->save();
+
+            if ($changedFields !== []) {
+                $this->auditWriter->write(
+                    BusinessAuditEvent::ClientUpdated,
+                    BusinessAuditableType::Client,
+                    $client->uuid,
+                    $oldValues,
+                    $this->auditSanitizer->snapshot(BusinessAuditableType::Client, $client),
+                    $changedFields,
+                );
+            }
 
             return $client->refresh();
         }, 3);
@@ -137,7 +164,16 @@ class ClientService
 
         return DB::connection($connection)->transaction(function () use ($uuid): Client {
             $client = $this->lockedClient($uuid, editableOnly: true);
+            $wasActive = (bool) $client->is_active;
             $client->forceFill(['is_active' => false, 'archived_at' => now()])->save();
+            $this->auditWriter->write(
+                BusinessAuditEvent::ClientArchived,
+                BusinessAuditableType::Client,
+                $client->uuid,
+                ['is_active' => $wasActive, 'is_archived' => false],
+                ['is_active' => false, 'is_archived' => true],
+                ['is_active', 'archived_at'],
+            );
 
             return $client->refresh();
         }, 3);
@@ -156,8 +192,20 @@ class ClientService
                 ]);
             }
 
+            $oldActive = (bool) $client->is_active;
             $client->is_active = $active;
             $client->save();
+
+            if ($oldActive !== $active) {
+                $this->auditWriter->write(
+                    $active ? BusinessAuditEvent::ClientActivated : BusinessAuditEvent::ClientDeactivated,
+                    BusinessAuditableType::Client,
+                    $client->uuid,
+                    ['is_active' => $oldActive],
+                    ['is_active' => $active],
+                    ['is_active'],
+                );
+            }
 
             return $client->refresh();
         }, 3);

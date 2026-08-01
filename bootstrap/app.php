@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AssignBusinessRequestId;
 use App\Http\Middleware\RequireActiveBusiness;
 use App\Http\Middleware\ResolveActiveBusiness;
 use Illuminate\Foundation\Application;
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
+            'business.request-id' => AssignBusinessRequestId::class,
             'business.context' => ResolveActiveBusiness::class,
             'business.required' => RequireActiveBusiness::class,
         ]);

@@ -2,15 +2,18 @@
 
 namespace App\Providers;
 
+use App\Domain\Audit\BusinessAuditRequestContext;
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\BusinessContext\BusinessSwitcher;
 use App\Listeners\AuthenticationAuditSubscriber;
+use App\Models\Business\AuditLog;
 use App\Models\Business\BankAccount;
 use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentSequence;
 use App\Policies\Business\BankAccountPolicy;
+use App\Policies\Business\BusinessAuditPolicy;
 use App\Policies\Business\ClientPolicy;
 use App\Policies\Business\CompanySettingPolicy;
 use App\Policies\Business\DocumentSequencePolicy;
@@ -27,6 +30,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(ActiveBusinessContext::class);
+        $this->app->scoped(BusinessAuditRequestContext::class);
         $this->app->scoped(BusinessConnectionResolver::class);
     }
 
@@ -37,6 +41,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Event::subscribe(AuthenticationAuditSubscriber::class);
         Gate::policy(BankAccount::class, BankAccountPolicy::class);
+        Gate::policy(AuditLog::class, BusinessAuditPolicy::class);
         Gate::policy(Client::class, ClientPolicy::class);
         Gate::policy(CompanySetting::class, CompanySettingPolicy::class);
         Gate::policy(DocumentSequence::class, DocumentSequencePolicy::class);

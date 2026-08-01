@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Implementovány `company_settings`, bankovní účty, klienti a číselné řady včetně allocation ledgeru |
+| Stav business schématu | Implementovány `company_settings`, bankovní účty, klienti, číselné řady a společný business audit |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -203,8 +203,9 @@ správně nastavený business context.
 
 Společné migrace v `database/migrations/business` vytvářejí
 `company_settings`, `bank_accounts`, `bank_account_defaults`, `clients`,
-`document_sequences`, `document_sequence_defaults` a
-`document_number_allocations` shodně v `business_1` i `business_2`.
+`document_sequences`, `document_sequence_defaults`,
+`document_number_allocations` a `audit_logs` shodně v `business_1` i
+`business_2`.
 
 Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
 singleton. Databáze vynucuje:
@@ -333,6 +334,31 @@ formát různým typům. `correlation_uuid` je unikátní v jedné fyzické busi
 databázi. Allocation je ledger: model odmítá update/delete a neexistuje pro něj
 HTTP update ani delete route. Fyzická izolace zabraňuje čtení correlation UUID
 z druhého subjektu.
+
+### Schéma `audit_logs`
+
+| Sloupec | Typ | Význam |
+|---|---|---|
+| `id` | unsigned bigint, PK | Interní pořadí záznamu |
+| `uuid` | UUID, unique | Serverový read-only route identifikátor |
+| `event` | varchar(64), index | Stabilní kód z `BusinessAuditEvent` |
+| `actor_user_uuid` | varchar(64), nullable, index | `central-user:<id>` bez cross-database FK |
+| `actor_name`, `actor_email` | varchar(255), nullable | Snapshot identity centrálního uživatele |
+| `auditable_type` | varchar(64) | Stabilní typ hlavní entity |
+| `auditable_uuid` | UUID, nullable | Veřejný identifikátor hlavní entity |
+| `subject_type`, `subject_uuid` | varchar(64) a UUID, nullable | Doplňující bezpečný kontext |
+| `old_values`, `new_values` | JSON, nullable | Jen sanitizované whitelistované hodnoty |
+| `changed_fields` | JSON, nullable | Skutečně změněná pole; citlivá pouze názvem |
+| `metadata` | JSON, nullable | Omezený technický kontext události |
+| `request_id` | varchar(64), nullable, index | Serverové UUID HTTP operace |
+| `ip_address` | varchar(45), nullable | IPv4/IPv6, pokud je dostupná |
+| `user_agent` | varchar(512), nullable | Délkově omezený User-Agent |
+| `occurred_at` | timestamp(6), index | Přesný okamžik události |
+| `created_at`, `updated_at` | timestamps(6) | Insert metadata; po vložení se nemění |
+
+Indexy dále pokrývají `(auditable_type, auditable_uuid)` a
+`(subject_type, subject_uuid)`. Tabulka nemá FK, `business_id` ani connection
+name. Model odmítá update/delete a nemá mutační route ani cleanup scheduler.
 
 Business migrace se spouštějí výhradně příkazem:
 
@@ -795,6 +821,13 @@ uzamčení použitého formátu a jednosměrnou archivaci. Povinný concurrency 
 spouští nejméně dva nezávislé PHP procesy nad skutečným MySQL, opakuje souběh a
 ověřuje rozdílná čísla, přesný posun `next_number` i konzistentní periodu.
 
+Testy business auditu ověřují shodné `audit_logs` bez FK v obou business DB,
+nepřítomnost v `central`, fail-closed a neměnný model, jednotný sanitizer,
+maskování, actor a request ID, každou podporovanou událost, read-only UI a
+tenant-safe filtry. Vynucené selhání auditního insertu musí rollbacknout Company
+Settings, bankovní účet, klienta, číselnou řadu i allocation včetně čítače.
+Víceprocesový test požaduje právě jeden audit na každou skutečnou allocation.
+
 ## 7.4 Povinné typy budoucích testů
 
 Každý business modul má podle rizika obsahovat:
@@ -1025,7 +1058,7 @@ Tabulka rozlišuje implementované části a další plán.
 | Upomínky | Plán | Pravidla a evidence upomínek po splatnosti | Business DB |
 | Exporty | Plán | Účetní a datové exporty bez spojování subjektů | Business DB |
 | Dashboard | Plán | Souhrny pouze pro právě aktivní subjekt | Business DB |
-| Business audit | Plán | Atomická historie změn nastavení a obchodních dat | Business DB |
+| Business audit | Implementováno | Atomická sanitizovaná historie změn s read-only UI | Business DB |
 | Centrální bezpečnostní audit | Implementováno | Přihlášení, odhlášení, odmítnuté přístupy a přepnutí subjektu | `central` |
 
 ## 9.1 Company Settings
@@ -1051,10 +1084,9 @@ odstraní. Měnu výchozího účtu nelze změnit, dokud není vybrán jiný vý
 účet. IBAN se normalizuje a validuje checksumem MOD-97.
 
 Účty se fyzicky nemažou. Archivace je v aktuální etapě jednosměrná; obnova
-archivovaného účtu není implementovaná. Modul zatím nezapisuje business audit,
-protože společná auditní infrastruktura business databází dosud neexistuje. Po
-jejím zavedení se citlivé bankovní hodnoty v auditu nesmějí ukládat v otevřené
-podobě.
+archivovaného účtu není implementovaná. Vytvoření, změna, stav, archivace a
+defaulty se auditují. Tuzemský účet a IBAN jsou pouze maskované na poslední
+čtyři znaky; BIC, prefix a poznámka se ukládají jen názvem změněného pole.
 
 Napojení bankovních API, import bankovních výpisů, párování plateb a QR Platba
 zůstávají mimo tento modul a budou řešeny samostatně.
@@ -1082,7 +1114,8 @@ Pozdější změna nebo archivace klienta nesmí změnit historickou fakturu. Sn
 logika ani faktury nejsou součástí tohoto modulu.
 
 ARES, VIES, registr plátců DPH, import, automatické slučování duplicit, více
-adres, více kontaktů a business audit zůstávají neimplementované.
+adres a více kontaktů zůstávají neimplementované. Audit neukládá celé adresy,
+e-mail, telefon, kontaktní osobu, DIČ, IČ DPH ani poznámku.
 
 ## 9.4 Číselné řady
 
@@ -1122,9 +1155,9 @@ nikdy nevrací, nerecykluje, nemaže ani nepřečíslovává. Deaktivace je vrat
 archivace jednosměrná; obě transakčně odstraní default a archivované řadě
 zakážou další alokaci. Historické allocations zůstávají nedotčené.
 
-Obecný business audit stále neexistuje. Před produkčním používáním faktur musí
-vzniknout audit změn číselných řad ve stejné business databázi. Do centrálního
-auditu se konfigurace, prefixy ani přidělená čísla nekopírují.
+Konfigurace, stav, defaulty a nové allocations se auditují ve stejné transakci.
+Idempotentní opakování correlation UUID nevytváří druhý audit. Do centrálního
+auditu se tato data nekopírují.
 
 ## 9.5 Faktury a položky
 
@@ -1140,9 +1173,30 @@ environment konfigurace.
 
 ## 9.7 Audit
 
-Centrální a business audit mají odlišné bezpečnostní hranice. Business audit
-patří do stejné business databáze jako měněná data a pokud možno do stejné
-transakce.
+Centrální a business audit mají odlišné bezpečnostní hranice. `login_audits` a
+`business_switch_audits` v `central` evidují pouze bezpečnostní události.
+Obchodní změny patří do `audit_logs` stejné fyzické business databáze jako data.
+
+Doménové služby zapisují významové události explicitně přes
+`BusinessAuditWriter`; model observer není zdrojem auditu. Writer nepřijímá
+connection a odmítne zápis mimo již otevřenou doménovou transakci. Auditní
+insert proto commitne nebo rollbackne společně s business změnou.
+
+`BusinessAuditSanitizer` má whitelist pro každý podporovaný typ. Bankovní a
+daňové identifikátory se maskují na poslední čtyři znaky. Adresy, kontakty,
+poznámky a texty faktur nejsou ve snapshotu; změna se projeví jen názvem v
+`changed_fields`. Hesla, tokeny, session, connection name a secrets jsou
+zakázané v hodnotách i metadata.
+
+Middleware vytvoří pro jednu HTTP operaci jedno serverové UUID request ID,
+zpřístupní je writeru a vrátí v `X-Request-ID`. Nejde o autorizační údaj. CLI a
+budoucí queue mohou mít request ID prázdné. Centrální uživatel UUID nemá, proto
+se používá `central-user:<id>` se snapshotem jména/e-mailu a bez FK.
+
+Read-only seznam a detail na `/nastaveni/audit` jsou dostupné členům aktivního
+subjektu. Filtry a řazení používají whitelist a stránkování zachovává query.
+Create/update/delete/archive/restore API neexistuje. Retenční politika zatím
+není rozhodnuta a automatické mazání auditní historie je zakázané.
 
 # 10. Nikdy nedělej
 

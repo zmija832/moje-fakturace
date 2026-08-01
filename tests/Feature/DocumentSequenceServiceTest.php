@@ -404,6 +404,8 @@ class DocumentSequenceServiceTest extends TestCase
         $this->assertSame(5, $sequence->fresh()->next_number);
         $this->assertSame('2026', $sequence->fresh()->current_period);
         $this->assertSame(4, DocumentNumberAllocation::query()->count());
+        $this->assertSame(4, DB::connection('business_1')->table('audit_logs')
+            ->where('event', 'document_number.allocated')->count());
     }
 
     private function activateBusiness(BusinessConnection $connection): Business

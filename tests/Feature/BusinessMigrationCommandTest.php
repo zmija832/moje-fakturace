@@ -52,6 +52,9 @@ class BusinessMigrationCommandTest extends TestCase
             $this->assertTrue(Schema::connection('business_2')->hasTable($table));
             $this->assertFalse(Schema::connection('central')->hasTable($table));
         }
+        $this->assertTrue(Schema::connection('business_1')->hasTable('audit_logs'));
+        $this->assertTrue(Schema::connection('business_2')->hasTable('audit_logs'));
+        $this->assertFalse(Schema::connection('central')->hasTable('audit_logs'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('central')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('central')->hasTable('bank_account_defaults'));
@@ -233,6 +236,31 @@ class BusinessMigrationCommandTest extends TestCase
         }
     }
 
+    public function test_business_databases_receive_identical_business_audit_schema_without_foreign_keys(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses'));
+        $first = $this->normalizedColumns('business_1', 'audit_logs');
+        $second = $this->normalizedColumns('business_2', 'audit_logs');
+
+        $this->assertSame($first, $second);
+        $this->assertSame([
+            'id', 'uuid', 'event', 'actor_user_uuid', 'actor_name', 'actor_email',
+            'auditable_type', 'auditable_uuid', 'subject_type', 'subject_uuid',
+            'old_values', 'new_values', 'changed_fields', 'metadata', 'request_id',
+            'ip_address', 'user_agent', 'occurred_at', 'created_at', 'updated_at',
+        ], array_column($first, 'name'));
+        $this->assertFalse(Schema::connection('central')->hasTable('audit_logs'));
+
+        foreach (['business_1', 'business_2'] as $connection) {
+            $foreignKeys = DB::connection($connection)->selectOne(
+                "SELECT COUNT(*) AS aggregate FROM information_schema.TABLE_CONSTRAINTS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'audit_logs'
+                   AND CONSTRAINT_TYPE = 'FOREIGN KEY'",
+            );
+            $this->assertSame(0, (int) $foreignKeys->aggregate);
+        }
+    }
+
     public function test_command_can_migrate_only_one_enum_connection(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', [
@@ -243,10 +271,12 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_1')->hasTable('bank_accounts'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('clients'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('document_sequences'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('audit_logs'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('company_settings'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('clients'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('document_sequences'));
+        $this->assertFalse(Schema::connection('business_2')->hasTable('audit_logs'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
     }
 

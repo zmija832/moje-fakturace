@@ -2,8 +2,11 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Audit\BusinessAuditSanitizer;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\DocumentSequences\DocumentNumberFormatter;
+use App\Enums\BusinessAuditableType;
+use App\Enums\BusinessAuditEvent;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
 use DateTimeInterface;
@@ -17,6 +20,8 @@ class DocumentNumberAllocator
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly DocumentNumberFormatter $formatter,
         private readonly DocumentSequenceService $sequenceService,
+        private readonly BusinessAuditSanitizer $auditSanitizer,
+        private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
     public function allocate(
@@ -88,6 +93,19 @@ class DocumentNumberAllocator
                 'next_number' => $sequenceNumber + 1,
                 'current_period' => $period === 'never' ? null : $period,
             ])->save();
+
+            $allocation->setRelation('sequence', $sequence);
+            $snapshot = $this->auditSanitizer->snapshot(BusinessAuditableType::DocumentNumberAllocation, $allocation);
+            $this->auditWriter->write(
+                BusinessAuditEvent::DocumentNumberAllocated,
+                BusinessAuditableType::DocumentNumberAllocation,
+                $allocation->correlation_uuid,
+                null,
+                $snapshot,
+                array_keys($snapshot),
+                BusinessAuditableType::DocumentSequence,
+                $sequence->uuid,
+            );
 
             return $allocation->refresh();
         }, 3);
