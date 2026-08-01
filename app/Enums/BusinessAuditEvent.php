@@ -33,6 +33,7 @@ enum BusinessAuditEvent: string
     case VatRateArchived = 'vat_rate.archived';
     case VatRateDefaultChanged = 'vat_rate.default_changed';
     case VatRateDefaultRemoved = 'vat_rate.default_removed';
+    case InvoiceDraftCreated = 'invoice.draft_created';
 
     public function label(): string
     {
@@ -66,6 +67,7 @@ enum BusinessAuditEvent: string
             self::VatRateArchived => 'Archivována sazba DPH',
             self::VatRateDefaultChanged => 'Změněna výchozí sazba DPH',
             self::VatRateDefaultRemoved => 'Odstraněna výchozí sazba DPH',
+            self::InvoiceDraftCreated => 'Vytvořen návrh faktury',
         };
     }
 

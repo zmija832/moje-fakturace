@@ -12,12 +12,14 @@ use App\Models\Business\BankAccount;
 use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentSequence;
+use App\Models\Business\Invoice;
 use App\Models\Business\VatRate;
 use App\Policies\Business\BankAccountPolicy;
 use App\Policies\Business\BusinessAuditPolicy;
 use App\Policies\Business\ClientPolicy;
 use App\Policies\Business\CompanySettingPolicy;
 use App\Policies\Business\DocumentSequencePolicy;
+use App\Policies\Business\InvoicePolicy;
 use App\Policies\Business\VatRatePolicy;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -48,6 +50,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(CompanySetting::class, CompanySettingPolicy::class);
         Gate::policy(DocumentSequence::class, DocumentSequencePolicy::class);
         Gate::policy(VatRate::class, VatRatePolicy::class);
+        Gate::policy(Invoice::class, InvoicePolicy::class);
 
         View::composer('components.layouts.app', function ($view): void {
             $user = auth()->user();

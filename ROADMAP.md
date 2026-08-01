@@ -29,8 +29,8 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 
 ## Etapa 4 – Faktury
 
-- [ ] Implementovat faktury a jejich položky
-- [ ] Ukládat historický snapshot dodavatele a odběratele
+- [x] Implementovat datový model návrhu faktury a položek bez výpočtů
+- [x] Ukládat immutable snapshot dodavatele, odběratele, účtu a sazby DPH
 - [ ] Napojit faktury na hotový transakční allocator číselných řad
 - [ ] Implementovat výpočty cen, slev a DPH
 - [ ] Doplnit stavy faktur a archivaci

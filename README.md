@@ -6,8 +6,9 @@ business moduly: centrální databáze, přihlášení, oprávnění, audit, bez
 přepínač aktivního subjektu, fail-closed business modely a nastavení
 fakturačního subjektu včetně bankovních účtů a klientů.
 
-Faktury, platby, PDF, e-mail, pravidelné fakturace a exporty zatím nejsou
-implementované.
+Je implementovaný datový základ návrhu vydané faktury a jeho neměnné snapshoty.
+Vystavení, číslo dokladu, výpočty, platby, PDF, e-mail, pravidelné fakturace a
+exporty zatím nejsou implementované.
 
 ## Technický základ
 
@@ -186,6 +187,8 @@ Společné business migrace vytvářejí `company_settings`, `bank_accounts`,
 `bank_account_defaults`, `clients`, `document_sequences`,
 `document_sequence_defaults`, `document_number_allocations` a `audit_logs`
 spolu s `vat_rates` a `vat_rate_defaults` shodně v obou business databázích.
+Datový základ faktur doplňuje `invoices`, `invoice_items` a čtyři explicitní
+snapshotové tabulky dodavatele, odběratele, bankovního účtu a sazeb DPH.
 Tyto tabulky nikdy nevznikají v `central`.
 
 Po architektonické revizi sdílejí veřejné business modely úzký trait pro
@@ -341,6 +344,29 @@ historická pole sazby, která už byla použita.
 Všechny významné změny sazeb a výchozí vazby vznikají v business auditu ve
 stejné transakci. Modul neposkytuje daňové poradenství, výpočty faktur,
 legislativní aktualizace ani externí daňové API.
+
+## Faktury – část 1: datový model a snapshoty
+
+`InvoiceDraftService` umí uvnitř jedné business transakce vytvořit pouze návrh
+vydané faktury. Návrh nemá číslo dokladu, workflow vystavení ani vypočtené
+součty. Obsahuje hlavičku, přesně uložené množství a jednotkovou cenu položek a
+samostatné historické snapshoty dodavatele, odběratele, zvoleného bankovního
+účtu a každé použité sazby DPH.
+
+Snapshoty vznikají výhradně ze zamčených zdrojů aktivní business databáze.
+Faktura po vytvoření nikdy nečte živé `company_settings`, `clients`,
+`bank_accounts` ani `vat_rates`. Pozdější změna zdroje proto historická data
+návrhu nezmění. Snapshotové modely odmítají update a delete; MySQL triggery
+stejné operace odmítají i při použití Query Builderu. Cross-database FK ani
+`business_id` neexistují.
+
+Položky používají `DECIMAL(...,4)` reprezentovaný v PHP jako normalizovaný
+string. Výpočty, zaokrouhlování a celkové částky záměrně nejsou součástí této
+etapy. VAT snapshot je samostatný řádek faktury a položka na něj odkazuje
+lokálním FK, nikoliv na živou sazbu. Vytvoření návrhu a audit
+`invoice.draft_created` commitnou nebo rollbacknou společně.
+
+Veřejné routy, controller a UI pro faktury v této části nevznikly.
 
 ## Business audit změn
 

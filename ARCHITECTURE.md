@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Implementovány `company_settings`, bankovní účty, klienti, číselné řady a společný business audit |
+| Stav business schématu | Implementována nastavení, účty, klienti, číselné řady, sazby DPH, datový základ faktur a business audit |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -1046,8 +1046,8 @@ Tabulka rozlišuje implementované části a další plán.
 | Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
 | Číselné řady | Implementováno | Konfigurace, default pro typ, neměnný ledger a bezpečná konkurenční alokace | Business DB |
 | Sazby DPH | Implementováno | Sazby, daňové režimy, časová platnost a default pro prodej | Business DB |
-| Faktury | Plán | Hlavička dokladu, stavy, termíny, měna a snapshot obchodních údajů | Business DB |
-| Položky faktur | Plán | Množství, jednotka, cena, sazba, slevy a přesné součty | Business DB |
+| Faktury | Část 1 implementována | Návrh hlavičky a immutable snapshoty; vystavení a číslo zůstává plán | Business DB |
+| Položky faktur | Část 1 implementována | Množství, jednotka, cena a VAT snapshot bez výpočtů | Business DB |
 | Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
 | Dobropisy | Plán | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
 | Platby | Plán | Přijaté platby, párování, částečné úhrady a přeplatky | Business DB |
@@ -1202,9 +1202,34 @@ změna, stavy, archivace a defaulty jsou auditovány explicitně a atomicky.
 
 ## 9.6 Faktury a položky
 
-Faktura je účetní historický dokument. Musí obsahovat snapshot vystavovatele,
-odběratele, platebních údajů a relevantních daňových hodnot. Součty se počítají
-jednou definovanou službou s přesným zaokrouhlením.
+Část 1 implementuje pouze návrh vydané faktury v tabulce `invoices`, položky v
+`invoice_items` a snapshoty v `invoice_supplier_snapshots`,
+`invoice_customer_snapshots`, `invoice_bank_account_snapshots` a
+`invoice_vat_snapshots`. Všechny tabulky vznikají fyzicky v každé business DB,
+bez `business_id` a bez vazby do `central`.
+
+`InvoiceDraftService` načte a zamkne singleton dodavatele, aktivního klienta,
+volitelný aktivní účet ve stejné měně a sazby použitelné k výslovně předanému
+datu zdanitelného plnění. V jedné transakci vytvoří hlavičku ve stavu `draft`,
+snapshoty, položky a audit. Selhání kteréhokoliv insertu nebo auditu rollbackne
+celý agregát.
+
+Snapshot není cache ani vazba na živý model. Obsahuje úplnou historickou kopii
+potřebných hodnot a faktura po vytvoření nesmí načítat údaje ze zdrojových
+tabulek. Zdrojové UUID klienta, účtu a sazby je pouze skalární původ, nikoliv FK.
+Snapshotové modely odmítají update/delete a každý snapshotový stůl má MySQL
+triggery, které odmítnou přímý `UPDATE` i `DELETE`. FK na fakturu používá
+`RESTRICT`, takže snapshot nelze odstranit kaskádou.
+
+VAT snapshot je samostatný pro každou použitou živou sazbu v rámci faktury.
+Položka odkazuje pouze na tento snapshot. Změna živé sazby, klienta, účtu nebo
+dodavatele nemůže změnit již vytvořený návrh. Použitou živou sazbu již
+`VatRateService` nedovolí historicky přepsat.
+
+Množství a jednotková cena jsou přesné `DECIMAL` stringy se čtyřmi desetinnými
+místy. Část 1 nic nesčítá, nezaokrouhluje ani nevytváří daňové základy.
+Dokument number, `DocumentNumberAllocator`, vystavení, stavy po vystavení,
+výpočty, slevy, PDF, e-mail, QR, platby a exporty patří do dalších částí.
 
 ## 9.7 PDF a e-mail
 

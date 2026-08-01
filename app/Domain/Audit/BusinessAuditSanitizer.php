@@ -8,6 +8,7 @@ use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
+use App\Models\Business\Invoice;
 use App\Models\Business\VatRate;
 use BackedEnum;
 use DateTimeInterface;
@@ -26,6 +27,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::DocumentSequence => $this->documentSequence($this->expect($model, DocumentSequence::class)),
             BusinessAuditableType::DocumentNumberAllocation => $this->allocation($this->expect($model, DocumentNumberAllocation::class)),
             BusinessAuditableType::VatRate => $this->vatRate($this->expect($model, VatRate::class)),
+            BusinessAuditableType::Invoice => $this->invoice($this->expect($model, Invoice::class)),
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
@@ -69,6 +71,10 @@ class BusinessAuditSanitizer
             BusinessAuditableType::VatRate => [
                 'name', 'code', 'tax_type', 'percentage', 'valid_from', 'valid_to',
                 'is_active', 'sort_order', 'archived_at',
+            ],
+            BusinessAuditableType::Invoice => [
+                'document_type', 'status', 'currency', 'issued_on', 'taxable_supply_on',
+                'due_on', 'payment_method', 'variable_symbol', 'note',
             ],
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
@@ -176,6 +182,23 @@ class BusinessAuditSanitizer
             'is_active' => (bool) $rate->is_active,
             'is_archived' => $rate->archived_at !== null,
             'sort_order' => $rate->sort_order,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function invoice(Invoice $invoice): array
+    {
+        return $this->withoutNulls([
+            'document_type' => $this->scalar($invoice->document_type),
+            'status' => $this->scalar($invoice->status),
+            'currency' => $invoice->currency,
+            'issued_on' => $this->scalar($invoice->issued_on),
+            'taxable_supply_on' => $this->scalar($invoice->taxable_supply_on),
+            'due_on' => $this->scalar($invoice->due_on),
+            'payment_method' => $this->scalar($invoice->payment_method),
+            'item_count' => $invoice->items->count(),
+            'vat_snapshot_count' => $invoice->vatSnapshots->count(),
+            'has_bank_account' => $invoice->bankAccountSnapshot !== null,
         ]);
     }
 

@@ -1,0 +1,62 @@
+<?php
+
+namespace App\Models\Business;
+
+use App\Enums\DefaultPaymentMethod;
+use App\Enums\DocumentType;
+use App\Enums\InvoiceStatus;
+use App\Models\Concerns\HasServerGeneratedUuid;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
+#[Fillable([
+    'currency',
+    'issued_on',
+    'taxable_supply_on',
+    'due_on',
+    'payment_method',
+    'variable_symbol',
+    'note',
+])]
+class Invoice extends BusinessModel
+{
+    use HasServerGeneratedUuid;
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class)->orderBy('position');
+    }
+
+    public function supplierSnapshot(): HasOne
+    {
+        return $this->hasOne(InvoiceSupplierSnapshot::class);
+    }
+
+    public function customerSnapshot(): HasOne
+    {
+        return $this->hasOne(InvoiceCustomerSnapshot::class);
+    }
+
+    public function bankAccountSnapshot(): HasOne
+    {
+        return $this->hasOne(InvoiceBankAccountSnapshot::class);
+    }
+
+    public function vatSnapshots(): HasMany
+    {
+        return $this->hasMany(InvoiceVatSnapshot::class);
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'document_type' => DocumentType::class,
+            'status' => InvoiceStatus::class,
+            'issued_on' => 'date',
+            'taxable_supply_on' => 'date',
+            'due_on' => 'date',
+            'payment_method' => DefaultPaymentMethod::class,
+        ];
+    }
+}

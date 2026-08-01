@@ -11,6 +11,7 @@ use App\Enums\BusinessAuditEvent;
 use App\Enums\VatRateDefaultContext;
 use App\Enums\VatTaxType;
 use App\Models\Business\CompanySetting;
+use App\Models\Business\InvoiceVatSnapshot;
 use App\Models\Business\VatRate;
 use App\Models\Business\VatRateDefault;
 use Carbon\CarbonImmutable;
@@ -288,8 +289,7 @@ class VatRateService
 
     public function hasIssuedDocumentUsage(VatRate $rate): bool
     {
-        // Faktury zatím neexistují. Po jejich zavedení zde bude explicitní kontrola historického použití.
-        return false;
+        return InvoiceVatSnapshot::query()->where('source_vat_rate_uuid', $rate->uuid)->exists();
     }
 
     private function changeActiveState(string $uuid, bool $active): VatRate

@@ -289,6 +289,45 @@ class BusinessMigrationCommandTest extends TestCase
         }
     }
 
+    public function test_business_databases_receive_identical_invoice_snapshot_schema_only_locally(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses'));
+        $tables = [
+            'invoices', 'invoice_supplier_snapshots', 'invoice_customer_snapshots',
+            'invoice_bank_account_snapshots', 'invoice_vat_snapshots', 'invoice_items',
+        ];
+
+        foreach ($tables as $table) {
+            $this->assertSame(
+                $this->normalizedColumns('business_1', $table),
+                $this->normalizedColumns('business_2', $table),
+            );
+            $this->assertFalse(Schema::connection('central')->hasTable($table));
+            $this->assertNotContains('business_id', array_column($this->normalizedColumns('business_1', $table), 'name'));
+        }
+
+        foreach (['business_1', 'business_2'] as $connection) {
+            $foreignSchemas = DB::connection($connection)->select(
+                "SELECT DISTINCT REFERENCED_TABLE_SCHEMA AS referenced_schema
+                 FROM information_schema.KEY_COLUMN_USAGE
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'invoice%'
+                   AND REFERENCED_TABLE_SCHEMA IS NOT NULL",
+            );
+            $this->assertNotEmpty($foreignSchemas);
+            foreach ($foreignSchemas as $foreign) {
+                $this->assertSame(DB::connection($connection)->getDatabaseName(), $foreign->referenced_schema);
+            }
+
+            $triggers = DB::connection($connection)->selectOne(
+                "SELECT COUNT(*) AS aggregate FROM information_schema.TRIGGERS
+                 WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE IN
+                 ('invoice_supplier_snapshots', 'invoice_customer_snapshots',
+                  'invoice_bank_account_snapshots', 'invoice_vat_snapshots')",
+            );
+            $this->assertSame(8, (int) $triggers->aggregate);
+        }
+    }
+
     public function test_command_can_migrate_only_one_enum_connection(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', [

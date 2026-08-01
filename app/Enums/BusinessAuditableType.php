@@ -13,6 +13,7 @@ enum BusinessAuditableType: string
     case DocumentNumberAllocation = 'document_number_allocation';
     case VatRate = 'vat_rate';
     case VatRateDefault = 'vat_rate_default';
+    case Invoice = 'invoice';
 
     public function label(): string
     {
@@ -26,6 +27,7 @@ enum BusinessAuditableType: string
             self::DocumentNumberAllocation => 'Přidělené číslo',
             self::VatRate => 'Sazba DPH',
             self::VatRateDefault => 'Výchozí sazba DPH',
+            self::Invoice => 'Faktura',
         };
     }
 
