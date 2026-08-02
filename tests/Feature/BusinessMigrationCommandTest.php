@@ -7,6 +7,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\InteractsWithBusinessDatabases;
 use Tests\TestCase;
@@ -295,6 +296,7 @@ class BusinessMigrationCommandTest extends TestCase
         $tables = [
             'invoices', 'invoice_supplier_snapshots', 'invoice_customer_snapshots',
             'invoice_bank_account_snapshots', 'invoice_vat_snapshots', 'invoice_items',
+            'invoice_revisions', 'invoice_vat_summaries', 'invoice_draft_operations',
         ];
 
         foreach ($tables as $table) {
@@ -321,11 +323,72 @@ class BusinessMigrationCommandTest extends TestCase
             $triggers = DB::connection($connection)->selectOne(
                 "SELECT COUNT(*) AS aggregate FROM information_schema.TRIGGERS
                  WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE IN
-                 ('invoice_supplier_snapshots', 'invoice_customer_snapshots',
-                  'invoice_bank_account_snapshots', 'invoice_vat_snapshots')",
+                 ('invoice_revisions', 'invoice_supplier_snapshots', 'invoice_customer_snapshots',
+                  'invoice_bank_account_snapshots', 'invoice_vat_snapshots', 'invoice_items',
+                  'invoice_vat_summaries', 'invoice_draft_operations')",
             );
-            $this->assertSame(8, (int) $triggers->aggregate);
+            $this->assertSame(16, (int) $triggers->aggregate);
         }
+    }
+
+    public function test_invoice_revision_migration_preserves_and_converts_existing_part_one_draft(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses', ['--business' => 'business_1']));
+        $this->assertSame(0, Artisan::call('migrate:rollback', [
+            '--database' => 'business_1',
+            '--path' => database_path('migrations/business/2026_08_01_020000_add_invoice_draft_revisions.php'),
+            '--realpath' => true,
+            '--step' => 1,
+            '--force' => true,
+        ]), Artisan::output());
+        $database = DB::connection('business_1');
+        $now = now();
+        $invoiceId = $database->table('invoices')->insertGetId([
+            'uuid' => (string) Str::uuid(), 'document_type' => 'issued_invoice', 'status' => 'draft',
+            'currency' => 'CZK', 'issued_on' => '2026-08-01', 'taxable_supply_on' => '2026-08-01',
+            'due_on' => '2026-08-15', 'payment_method' => 'bank_transfer', 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $database->table('invoice_supplier_snapshots')->insert([
+            'invoice_id' => $invoiceId, 'legal_name' => 'Historický dodavatel', 'registration_number' => '12345678',
+            'street' => 'Dodavatelská 1', 'city' => 'Praha', 'postal_code' => '11000', 'country_code' => 'CZ',
+            'email' => 'supplier@example.test', 'is_vat_payer' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $database->table('invoice_customer_snapshots')->insert([
+            'invoice_id' => $invoiceId, 'source_client_uuid' => (string) Str::uuid(), 'client_type' => 'company',
+            'display_name' => 'Historický klient', 'street' => 'Klientská 2', 'city' => 'Brno',
+            'postal_code' => '60200', 'country_code' => 'CZ', 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $vatSnapshotId = $database->table('invoice_vat_snapshots')->insertGetId([
+            'uuid' => (string) Str::uuid(), 'invoice_id' => $invoiceId, 'source_vat_rate_uuid' => (string) Str::uuid(),
+            'name' => 'Základní', 'code' => 'STD', 'tax_type' => 'standard', 'percentage' => '21.0000',
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $database->table('invoice_items')->insert([
+            'uuid' => (string) Str::uuid(), 'invoice_id' => $invoiceId, 'invoice_vat_snapshot_id' => $vatSnapshotId,
+            'position' => 1, 'description' => 'Převedená položka', 'quantity' => '2.5000', 'unit' => 'ks',
+            'unit_price' => '100.0000', 'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $this->assertSame(0, Artisan::call('migrate', [
+            '--database' => 'business_1',
+            '--path' => database_path('migrations/business/2026_08_01_020000_add_invoice_draft_revisions.php'),
+            '--realpath' => true,
+            '--force' => true,
+        ]), Artisan::output());
+
+        $invoice = $database->table('invoices')->where('id', $invoiceId)->first();
+        $revision = $database->table('invoice_revisions')->where('invoice_id', $invoiceId)->first();
+        $item = $database->table('invoice_items')->where('invoice_revision_id', $revision->id)->first();
+        $this->assertSame(1, (int) $invoice->version);
+        $this->assertSame((int) $revision->id, (int) $invoice->current_revision_id);
+        $this->assertSame(1, (int) $revision->revision_number);
+        $this->assertSame('250.0000', $revision->tax_base_total);
+        $this->assertSame('52.5000', $revision->vat_total);
+        $this->assertSame('302.5000', $revision->grand_total);
+        $this->assertSame('none', $item->discount_type);
+        $this->assertSame('250.0000', $item->line_net_amount);
+        $this->assertSame(1, $database->table('invoice_vat_summaries')->count());
+        $this->assertSame('Historický klient', $database->table('invoice_customer_snapshots')->value('display_name'));
     }
 
     public function test_command_can_migrate_only_one_enum_connection(): void

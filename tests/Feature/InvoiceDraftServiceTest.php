@@ -13,9 +13,12 @@ use App\Models\Business\CompanySetting;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceBankAccountSnapshot;
 use App\Models\Business\InvoiceCustomerSnapshot;
+use App\Models\Business\InvoiceDraftOperation;
 use App\Models\Business\InvoiceItem;
+use App\Models\Business\InvoiceRevision;
 use App\Models\Business\InvoiceSupplierSnapshot;
 use App\Models\Business\InvoiceVatSnapshot;
+use App\Models\Business\InvoiceVatSummary;
 use App\Models\Business\VatRate;
 use App\Models\User;
 use App\Services\Business\InvoiceDraftService;
@@ -56,7 +59,8 @@ class InvoiceDraftServiceTest extends TestCase
         foreach ([
             Invoice::class, InvoiceItem::class, InvoiceSupplierSnapshot::class,
             InvoiceCustomerSnapshot::class, InvoiceBankAccountSnapshot::class,
-            InvoiceVatSnapshot::class,
+            InvoiceVatSnapshot::class, InvoiceRevision::class, InvoiceVatSummary::class,
+            InvoiceDraftOperation::class,
         ] as $model) {
             try {
                 $model::query()->count();
@@ -75,6 +79,8 @@ class InvoiceDraftServiceTest extends TestCase
 
         $this->assertSame('issued_invoice', $invoice->document_type->value);
         $this->assertSame('draft', $invoice->status->value);
+        $this->assertSame(1, $invoice->version);
+        $this->assertSame(1, $invoice->currentRevision->revision_number);
         $this->assertSame('Dodavatel s.r.o.', $invoice->supplierSnapshot->legal_name);
         $this->assertSame('Původní klient', $invoice->customerSnapshot->display_name);
         $this->assertSame('CZ6508000000192000145399', $invoice->bankAccountSnapshot->iban);
@@ -84,6 +90,8 @@ class InvoiceDraftServiceTest extends TestCase
         $this->assertSame('2.5000', $invoice->items[0]->quantity);
         $this->assertSame('1250.5000', $invoice->items[0]->unit_price);
         $this->assertSame($invoice->vatSnapshots->sole()->id, $invoice->items[0]->invoice_vat_snapshot_id);
+        $this->assertSame('3226.2500', $invoice->currentRevision->tax_base_total);
+        $this->assertSame('3226.2500', $invoice->currentRevision->grand_total);
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
@@ -106,16 +114,12 @@ class InvoiceDraftServiceTest extends TestCase
         $this->assertSame('CZ6508000000192000145399', $invoice->bankAccountSnapshot->iban);
         $this->assertSame('Mimo DPH', $invoice->vatSnapshots->sole()->name);
 
-        try {
-            app(VatRateService::class)->update($rate->uuid, [
-                'name' => 'Zakázaný přepis', 'code' => 'OUT', 'tax_type' => 'out_of_scope',
-                'percentage' => null, 'valid_from' => '2026-01-01', 'valid_to' => null,
-                'is_active' => true, 'sort_order' => 0,
-            ]);
-            $this->fail('Použitou sazbu nemělo být možné přepsat službou.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('rate', $exception->errors());
-        }
+        app(VatRateService::class)->update($rate->uuid, [
+            'name' => 'Změna živé sazby draftu', 'code' => 'OUT', 'tax_type' => 'out_of_scope',
+            'percentage' => null, 'valid_from' => '2026-01-01', 'valid_to' => null,
+            'is_active' => true, 'sort_order' => 0,
+        ]);
+        $this->assertSame('Mimo DPH', $invoice->vatSnapshots->sole()->fresh()->name);
 
         try {
             $invoice->supplierSnapshot->forceFill(['legal_name' => 'Přepis'])->save();
@@ -126,7 +130,7 @@ class InvoiceDraftServiceTest extends TestCase
 
         $this->expectException(QueryException::class);
         DB::connection('business_1')->table('invoice_customer_snapshots')
-            ->where('invoice_id', $invoice->id)->update(['display_name' => 'Přímý přepis']);
+            ->where('invoice_revision_id', $invoice->current_revision_id)->update(['display_name' => 'Přímý přepis']);
     }
 
     public function test_invoice_data_and_same_source_uuids_are_physically_isolated(): void
@@ -154,7 +158,7 @@ class InvoiceDraftServiceTest extends TestCase
         [$client, $account, $rate] = $this->sources();
         $request = new StoreInvoiceDraftRequest;
 
-        foreach (['id', 'uuid', 'status', 'document_type', 'document_number', 'connection', 'business_id', 'supplier_snapshot', 'customer_snapshot', 'bank_account_snapshot', 'vat_snapshot'] as $field) {
+        foreach (['id', 'uuid', 'status', 'document_type', 'document_number', 'connection', 'business_id', 'supplier_snapshot', 'customer_snapshot', 'bank_account_snapshot', 'vat_snapshot', 'version', 'grand_total', 'vat_summaries'] as $field) {
             $this->assertContains('prohibited', $request->rules()[$field]);
         }
 
@@ -206,7 +210,7 @@ class InvoiceDraftServiceTest extends TestCase
             $this->service()->create($this->payload($client, $account, $rate));
             $this->fail('Selhání auditu mělo rollbacknout fakturu.');
         } catch (QueryException) {
-            foreach (['invoices', 'invoice_items', 'invoice_supplier_snapshots', 'invoice_customer_snapshots', 'invoice_bank_account_snapshots', 'invoice_vat_snapshots'] as $table) {
+            foreach (['invoices', 'invoice_revisions', 'invoice_items', 'invoice_supplier_snapshots', 'invoice_customer_snapshots', 'invoice_bank_account_snapshots', 'invoice_vat_snapshots', 'invoice_vat_summaries'] as $table) {
                 $this->assertSame(0, DB::connection('business_1')->table($table)->count());
             }
         }
@@ -222,9 +226,11 @@ class InvoiceDraftServiceTest extends TestCase
 
         $this->actingAs($admin);
         $this->assertTrue(Gate::allows('create', Invoice::class));
+        $this->assertTrue(Gate::allows('updateAny', Invoice::class));
         $this->actingAs($viewer);
         $this->assertTrue(Gate::allows('viewAny', Invoice::class));
         $this->assertFalse(Gate::allows('create', Invoice::class));
+        $this->assertFalse(Gate::allows('updateAny', Invoice::class));
     }
 
     private function activate(BusinessConnection $connection): Business

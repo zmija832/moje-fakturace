@@ -34,6 +34,9 @@ enum BusinessAuditEvent: string
     case VatRateDefaultChanged = 'vat_rate.default_changed';
     case VatRateDefaultRemoved = 'vat_rate.default_removed';
     case InvoiceDraftCreated = 'invoice.draft_created';
+    case InvoiceDraftUpdated = 'invoice.draft_updated';
+    case InvoiceDraftRevisionCreated = 'invoice.draft_revision_created';
+    case InvoiceDraftUpdateConflict = 'invoice.draft_update_conflict';
 
     public function label(): string
     {
@@ -68,6 +71,9 @@ enum BusinessAuditEvent: string
             self::VatRateDefaultChanged => 'Změněna výchozí sazba DPH',
             self::VatRateDefaultRemoved => 'Odstraněna výchozí sazba DPH',
             self::InvoiceDraftCreated => 'Vytvořen návrh faktury',
+            self::InvoiceDraftUpdated => 'Upraven návrh faktury',
+            self::InvoiceDraftRevisionCreated => 'Vytvořena revize návrhu faktury',
+            self::InvoiceDraftUpdateConflict => 'Konflikt při úpravě návrhu faktury',
         };
     }
 

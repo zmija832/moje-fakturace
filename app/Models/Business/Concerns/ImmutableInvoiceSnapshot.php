@@ -9,7 +9,7 @@ trait ImmutableInvoiceSnapshot
 {
     protected static function bootImmutableInvoiceSnapshot(): void
     {
-        static::updating(fn (Model $model) => throw new LogicException('Snapshot faktury je neměnný.'));
-        static::deleting(fn (Model $model) => throw new LogicException('Snapshot faktury nelze smazat.'));
+        static::updating(fn (Model $model) => throw new LogicException('Historický záznam revize faktury je neměnný.'));
+        static::deleting(fn (Model $model) => throw new LogicException('Historický záznam revize faktury nelze smazat.'));
     }
 }

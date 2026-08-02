@@ -204,8 +204,10 @@ správně nastavený business context.
 Společné migrace v `database/migrations/business` vytvářejí
 `company_settings`, `bank_accounts`, `bank_account_defaults`, `clients`,
 `document_sequences`, `document_sequence_defaults`,
-`document_number_allocations`, `vat_rates`, `vat_rate_defaults` a `audit_logs`
-shodně v `business_1` i `business_2`.
+`document_number_allocations`, `vat_rates`, `vat_rate_defaults`, `audit_logs`,
+`invoices`, `invoice_revisions`, čtyři snapshotové tabulky, `invoice_items`,
+`invoice_vat_summaries` a `invoice_draft_operations` shodně v `business_1` i
+`business_2`.
 
 Tabulka je autoritativním zdrojem údajů vystavovatele a je navržena jako
 singleton. Databáze vynucuje:
@@ -359,6 +361,57 @@ z druhého subjektu.
 Indexy dále pokrývají `(auditable_type, auditable_uuid)` a
 `(subject_type, subject_uuid)`. Tabulka nemá FK, `business_id` ani connection
 name. Model odmítá update/delete a nemá mutační route ani cleanup scheduler.
+
+### Schéma fakturačního draftu a revizí
+
+`invoices` je stabilní identita návrhu a budoucí workflow kořen. Hlavičkové
+sloupce z části 1 zůstávají dočasnou kompatibilní projekcí aktuální revize;
+autoritativní proměnlivý obsah je v `invoice_revisions`.
+
+| Tabulka | Klíčové sloupce | Autoritativní význam |
+|---|---|---|
+| `invoices` | `id`, serverové `uuid`, `document_type`, `status`, `current_revision_id`, `version`, kompatibilní projekce hlavičky, timestamps | Identita, workflow stav, optimistic-lock verze a právě jeden pointer na aktuální revizi |
+| `invoice_revisions` | `id`, serverové `uuid`, `invoice_id`, `revision_number`, hlavička, typ/hodnota/skutečná částka celkové slevy, sedm totals, `created_by_actor`, timestamps | Neměnná úplná verze obsahu návrhu; `(invoice_id, revision_number)` je unikátní |
+| `invoice_supplier_snapshots` | PK/FK `invoice_revision_id`, úplná identita, adresa, kontakty a fakturační texty dodavatele | Immutable dodavatel konkrétní revize |
+| `invoice_customer_snapshots` | PK/FK `invoice_revision_id`, skalární `source_client_uuid`, identita, adresy a kontakty | Immutable odběratel konkrétní revize; source UUID není živý vztah |
+| `invoice_bank_account_snapshots` | PK/FK `invoice_revision_id`, skalární `source_bank_account_uuid`, účetní údaje a měna | Volitelný immutable účet konkrétní revize |
+| `invoice_vat_snapshots` | `id`, `uuid`, `invoice_revision_id`, skalární `source_vat_rate_uuid`, kód, typ a procento | Jeden immutable snapshot každé použité sazby v revizi |
+| `invoice_items` | `invoice_revision_id`, `invoice_vat_snapshot_id`, pozice, popis, množství, jednotková cena, položková sleva, alokovaná celková sleva a vypočtené částky | Neměnné položky konkrétní revize; pozice je v revizi unikátní |
+| `invoice_vat_summaries` | `invoice_revision_id`, `tax_type`, nullable `percentage`, technický `percentage_key`, základ, DPH a total | Serverový souhrn podle přesného režimu a procenta; uživatel jej neposílá |
+| `invoice_draft_operations` | unikátní `correlation_uuid`, `invoice_id`, `invoice_revision_id`, timestamps | Tenant-local immutable idempotency ledger editace |
+
+Totals v `invoice_revisions` mají tento přesný význam:
+
+| Sloupec | Význam |
+|---|---|
+| `subtotal_before_discount` | Součet `quantity × unit_price` před slevami |
+| `discount_total` | Součet skutečných položkových slev a alokované celkové slevy |
+| `tax_base_total` | Součet základů po položkových i celkové slevě |
+| `vat_total` | Součet DPH zaokrouhlené po jednotlivých položkách |
+| `total_before_rounding` | `tax_base_total + vat_total` před finálním měnovým zaokrouhlením |
+| `rounding_adjustment` | `grand_total - total_before_rounding` |
+| `grand_total` | Konečná částka half-up zaokrouhlená na dvě desetinná místa, u hotovostní CZK na celé koruny, a uložená ve scale 4 |
+
+Celková sleva se aplikuje po položkových slevách a před DPH. Její skutečná
+částka se poměrně alokuje do položek podle jejich zbývajících základů; průběžný
+zbytek zaručuje, že součet podílů přesně odpovídá slevě na scale 4. Tím se sleva
+promítne do každého VAT summary i při kombinaci sazeb.
+
+Finální zaokrouhlovací rozdíl vzniká až po výpočtu základů a DPH. U bezhotovostní
+úhrady zůstává měnové zaokrouhlení na haléře; u `cash` v CZK se úplata zaokrouhlí
+na celé koruny. Rozdíl se proto nestává součástí žádného VAT summary.
+
+Všechny FK jsou lokální uvnitř jedné fyzické business databáze a používají
+`RESTRICT`. `invoice_revisions`, snapshoty, položky, VAT summaries a idempotency
+operace mají Eloquent ochranu i MySQL `BEFORE UPDATE`/`BEFORE DELETE` triggery.
+`invoices` může měnit pouze pointer, `version`, kompatibilní projekci hlavičky,
+`updated_at` a v budoucnu řízený workflow stav.
+
+Doplňující migrace bezpečně převádí případné řádky části 1 na revizi 1: vytvoří
+revizi, převede snapshoty a položky pod její FK, dopočítá řádkové částky,
+summaries a totals a teprve potom zapne `NOT NULL` a immutable triggery. `down()`
+odmítne běh, pokud existuje faktura, protože zploštění více revizí by zahodilo
+historická data.
 
 Business migrace se spouštějí výhradně příkazem:
 
@@ -955,6 +1008,19 @@ Souběh se neřeší pouze kontrolou „nejdříve načti, potom ulož“. Použ
 - Historická hodnota na dokladu musí být snapshot; pozdější změna klienta nebo
   subjektu nesmí přepsat vystavený dokument.
 
+Fakturační modul používá `InvoiceDecimal`, který přijímá pouze `string` nebo
+`int` a počítá pomocí celočíselné/stringové aritmetiky. Nepředpokládá BCMath a
+nepřijímá `float`, vědecký zápis, NaN ani infinity. Množství má databázový rozsah
+`DECIMAL(18,4)`, peněžní hodnoty `DECIMAL(19,4)` a overflow je doménová chyba.
+Jednotková cena je v první verzi vždy bez DPH.
+
+DPH se počítá z každého základu položky po slevě a half-up zaokrouhluje na čtyři
+místa. `standard` a `reduced` používají snapshot procenta; `zero`, `exempt`,
+`reverse_charge` a `out_of_scope` vracejí nulovou DPH a nesmějí se významově
+slučovat. `grand_total` se half-up zaokrouhlí na dvě místa. Toto je zvolené
+aplikační pravidlo, nikoliv tvrzení o univerzální právní správnosti, a před
+produkčním účetním použitím musí být ověřeno proti požadovanému postupu.
+
 ## 8.8 Dokumentace a kvalita
 
 Před dokončením změny se podle rozsahu spouští:
@@ -1046,8 +1112,8 @@ Tabulka rozlišuje implementované části a další plán.
 | Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
 | Číselné řady | Implementováno | Konfigurace, default pro typ, neměnný ledger a bezpečná konkurenční alokace | Business DB |
 | Sazby DPH | Implementováno | Sazby, daňové režimy, časová platnost a default pro prodej | Business DB |
-| Faktury | Část 1 implementována | Návrh hlavičky a immutable snapshoty; vystavení a číslo zůstává plán | Business DB |
-| Položky faktur | Část 1 implementována | Množství, jednotka, cena a VAT snapshot bez výpočtů | Business DB |
+| Faktury | Části 1 a 2 implementovány | Revizní draft, immutable snapshoty, totals, optimistic locking a idempotentní editace; vystavení a číslo zůstává plán | Business DB |
+| Položky faktur | Části 1 a 2 implementovány | Přesné množství, cena bez DPH, slevy, VAT snapshot a serverové výpočty bez float | Business DB |
 | Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
 | Dobropisy | Plán | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
 | Platby | Plán | Přijaté platby, párování, částečné úhrady a přeplatky | Business DB |
@@ -1190,10 +1256,11 @@ sazeb je dovolena jako budoucí příprava a plátcovství se tím nemění. Dea
 a jednosměrná archivace odstraní default ve stejné transakci.
 
 Výběr pro budoucí doklad musí vždy dostat explicitní datum zdanitelného plnění.
-Konfigurační sazba není historickým záznamem faktury. Vystavená faktura musí
-uložit vlastní neměnný snapshot typu, procenta a režimu. Jakmile budou faktury
-existovat, historická pole použité sazby se musí uzamknout a změna konfigurace
-nesmí zpětně změnit žádný doklad.
+Konfigurační sazba není historickým záznamem faktury. Každá draftová revize
+ukládá vlastní neměnný snapshot typu, procenta a režimu, ale draft není účetní
+historický doklad a živou sazbu trvale nezamyká. Budoucí vystavení musí zamknout
+konkrétní revizi; teprve použití na skutečně vystaveném dokladu uzamkne
+historická pole živé sazby. Změna konfigurace nikdy nesmí zpětně změnit snapshot.
 
 České legislativní sazby se nesmějí hardcodovat do domény, migrací ani skrytých
 produkčních seederů. Administrátor je zadává vědomě; aplikace neposkytuje
@@ -1202,34 +1269,57 @@ změna, stavy, archivace a defaulty jsou auditovány explicitně a atomicky.
 
 ## 9.6 Faktury a položky
 
-Část 1 implementuje pouze návrh vydané faktury v tabulce `invoices`, položky v
-`invoice_items` a snapshoty v `invoice_supplier_snapshots`,
-`invoice_customer_snapshots`, `invoice_bank_account_snapshots` a
-`invoice_vat_snapshots`. Všechny tabulky vznikají fyzicky v každé business DB,
-bez `business_id` a bez vazby do `central`.
+Části 1 a 2 implementují návrh vydané faktury jako verzovaný agregát. `invoices`
+obsahuje identitu, stav `draft`, optimistic-lock `version` a pointer
+`current_revision_id`. Proměnlivá hlavička, snapshoty, položky, souhrny a totals
+patří do immutable `invoice_revisions`. Čtení návrhu musí vždy explicitně načíst
+`currentRevision`; historickou revizi nelze aktualizovat ani smazat.
 
 `InvoiceDraftService` načte a zamkne singleton dodavatele, aktivního klienta,
-volitelný aktivní účet ve stejné měně a sazby použitelné k výslovně předanému
-datu zdanitelného plnění. V jedné transakci vytvoří hlavičku ve stavu `draft`,
-snapshoty, položky a audit. Selhání kteréhokoliv insertu nebo auditu rollbackne
-celý agregát.
+volitelný aktivní účet ve stejné měně a sazby použitelné k explicitnímu datu
+zdanitelného plnění. V jedné business transakci vytvoří invoice, revizi 1,
+snapshotový agregát, vypočtené položky, VAT summaries, nastaví current pointer a
+zapíše `invoice.draft_created`.
 
-Snapshot není cache ani vazba na živý model. Obsahuje úplnou historickou kopii
-potřebných hodnot a faktura po vytvoření nesmí načítat údaje ze zdrojových
-tabulek. Zdrojové UUID klienta, účtu a sazby je pouze skalární původ, nikoliv FK.
-Snapshotové modely odmítají update/delete a každý snapshotový stůl má MySQL
-triggery, které odmítnou přímý `UPDATE` i `DELETE`. FK na fakturu používá
-`RESTRICT`, takže snapshot nelze odstranit kaskádou.
+`InvoiceDraftEditor` tenant-safe uzamkne invoice řádek a ověří očekávanou
+`version`. Při neshodě vyhodí `InvoiceDraftVersionConflict` a nic nemění. Při
+skutečné změně vytvoří další kompletní immutable revizi, zvýší verzi přesně o
+jedna, posune pointer a zapíše jediný sanitizovaný audit
+`invoice.draft_revision_created`. Dvě souběžné editace stejné verze proto
+nemohou obě uspět. Viewer může draft číst, ale pouze admin jej smí vytvářet nebo
+editovat.
 
-VAT snapshot je samostatný pro každou použitou živou sazbu v rámci faktury.
-Položka odkazuje pouze na tento snapshot. Změna živé sazby, klienta, účtu nebo
-dodavatele nemůže změnit již vytvořený návrh. Použitou živou sazbu již
-`VatRateService` nedovolí historicky přepsat.
+Každá editace znovu načte explicitně vybrané živé UUID pod zámkem. Porovnání
+nepoužívá neomezené `toArray()` ani `getAttributes()`, ale explicitní
+normalizovaný payload hlavičky, snapshotů, položek, summaries a totals.
+Bezezměnové uložení nevytvoří revizi ani audit. Pokud se změnil živý zdroj,
+vznikne nový snapshot v nové revizi; starý se nikdy nepřepisuje.
 
-Množství a jednotková cena jsou přesné `DECIMAL` stringy se čtyřmi desetinnými
-místy. Část 1 nic nesčítá, nezaokrouhluje ani nevytváří daňové základy.
-Dokument number, `DocumentNumberAllocator`, vystavení, stavy po vystavení,
-výpočty, slevy, PDF, e-mail, QR, platby a exporty patří do dalších částí.
+`correlation_uuid` je validované UUID interní operace. Unikátní tenant-local
+`invoice_draft_operations` zajistí, že stejné UUID stejné faktury vrátí už
+vytvořenou revizi bez druhého auditu a zvýšení verze. Použití stejného UUID pro
+jinou fakturu v téže business DB vyvolá `InvoiceDraftIdempotencyConflict`.
+Stejná hodnota v druhé fyzické business DB je nezávislá a nic neodhaluje.
+
+Položka ukládá množství, jednotkovou cenu bez DPH, typ a hodnotu slevy,
+jednotkovou cenu po slevě, základ, DPH a total. `none` má nulovou slevu,
+`percentage` přijímá 0–100 a `fixed` nezápornou částku nejvýše do hrubé hodnoty
+položky. Autoritativní totals ani VAT summaries request neposílá; vždy vznikají
+serverově přes `InvoiceCalculator` a `InvoiceDecimal`.
+
+Snapshot není cache ani živá vazba. Zdrojové UUID klienta, účtu a sazby je pouze
+skalární diagnostický původ, nikoliv FK. Snapshoty, revize, položky, summaries a
+idempotency ledger mají `RESTRICT` FK, Eloquent ochranu a MySQL triggery proti
+update/delete. Selhání snapshotu, položky, summary, výpočtu, pointeru nebo auditu
+rollbackne celou editaci včetně version a idempotency záznamu.
+
+Draft není účetní historický doklad. Jeho snapshot sazby zůstává immutable, ale
+`VatRateService::hasIssuedDocumentUsage()` draft nepovažuje za důvod navždy
+uzamknout živou sazbu. Budoucí workflow vystavení musí zamknout konkrétní revizi
+a teprve skutečně vystavené použití musí blokovat změnu historických polí sazby.
+
+Číslování přes `DocumentNumberAllocator`, vystavení, další workflow stavy,
+archivace dokladu, PDF, e-mail, QR, platby a exporty patří do dalších částí.
 
 ## 9.7 PDF a e-mail
 

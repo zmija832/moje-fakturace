@@ -2,21 +2,17 @@
 
 namespace App\Models\Business;
 
-use App\Enums\ClientType;
+use App\Enums\VatTaxType;
 use App\Models\Business\Concerns\ImmutableInvoiceSnapshot;
+use App\Models\Concerns\HasServerGeneratedUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([])]
-class InvoiceCustomerSnapshot extends BusinessModel
+class InvoiceVatSummary extends BusinessModel
 {
+    use HasServerGeneratedUuid;
     use ImmutableInvoiceSnapshot;
-
-    public $incrementing = false;
-
-    protected $primaryKey = 'invoice_revision_id';
-
-    protected $keyType = 'int';
 
     public function revision(): BelongsTo
     {
@@ -25,6 +21,12 @@ class InvoiceCustomerSnapshot extends BusinessModel
 
     protected function casts(): array
     {
-        return ['client_type' => ClientType::class];
+        return [
+            'tax_type' => VatTaxType::class,
+            'percentage' => 'decimal:4',
+            'tax_base' => 'decimal:4',
+            'vat_amount' => 'decimal:4',
+            'total_amount' => 'decimal:4',
+        ];
     }
 }

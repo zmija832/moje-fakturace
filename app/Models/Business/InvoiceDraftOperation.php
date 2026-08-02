@@ -7,15 +7,14 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([])]
-class InvoiceBankAccountSnapshot extends BusinessModel
+class InvoiceDraftOperation extends BusinessModel
 {
     use ImmutableInvoiceSnapshot;
 
-    public $incrementing = false;
-
-    protected $primaryKey = 'invoice_revision_id';
-
-    protected $keyType = 'int';
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class);
+    }
 
     public function revision(): BelongsTo
     {

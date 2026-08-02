@@ -345,28 +345,53 @@ Všechny významné změny sazeb a výchozí vazby vznikají v business auditu v
 stejné transakci. Modul neposkytuje daňové poradenství, výpočty faktur,
 legislativní aktualizace ani externí daňové API.
 
-## Faktury – část 1: datový model a snapshoty
+## Faktury – části 1 a 2: snapshoty, revize a výpočty
 
-`InvoiceDraftService` umí uvnitř jedné business transakce vytvořit pouze návrh
-vydané faktury. Návrh nemá číslo dokladu, workflow vystavení ani vypočtené
-součty. Obsahuje hlavičku, přesně uložené množství a jednotkovou cenu položek a
-samostatné historické snapshoty dodavatele, odběratele, zvoleného bankovního
-účtu a každé použité sazby DPH.
+`InvoiceDraftService` vytváří návrh vydané faktury a jeho immutable revizi 1.
+`invoices` je identita a workflow kořen; drží stav `draft`, `version` a odkaz
+`current_revision_id`. Proměnlivá hlavička, přesné součty, položky, VAT summaries
+a úplné snapshoty dodavatele, odběratele, zvoleného účtu a sazeb patří do
+`invoice_revisions`. Návrh stále nemá číslo dokladu ani workflow vystavení.
 
-Snapshoty vznikají výhradně ze zamčených zdrojů aktivní business databáze.
-Faktura po vytvoření nikdy nečte živé `company_settings`, `clients`,
-`bank_accounts` ani `vat_rates`. Pozdější změna zdroje proto historická data
-návrhu nezmění. Snapshotové modely odmítají update a delete; MySQL triggery
-stejné operace odmítají i při použití Query Builderu. Cross-database FK ani
-`business_id` neexistují.
+`InvoiceDraftEditor` používá číselné optimistické zamykání. Request předává
+očekávanou `version`; skutečná změna vytvoří novou immutable revizi a atomicky
+posune pointer i verzi. Stará revize se nikdy nepřepisuje. Bezezměnové uložení
+revizi ani audit nevytvoří. Validované `correlation_uuid` je tenant-local
+idempotency klíč: opakování stejné operace vrátí stejnou revizi bez druhého
+auditu a bez dalšího zvýšení verze.
 
-Položky používají `DECIMAL(...,4)` reprezentovaný v PHP jako normalizovaný
-string. Výpočty, zaokrouhlování a celkové částky záměrně nejsou součástí této
-etapy. VAT snapshot je samostatný řádek faktury a položka na něj odkazuje
-lokálním FK, nikoliv na živou sazbu. Vytvoření návrhu a audit
-`invoice.draft_created` commitnou nebo rollbacknou společně.
+Každá skutečná revize znovu snapshotuje zamčené živé zdroje z aktivní business
+databáze. Historická revize nikdy nečte živé `company_settings`, `clients`,
+`bank_accounts` ani `vat_rates`. Modely revizí, položek, summaries, operací a
+snapshotů odmítají update/delete a totéž vynucují MySQL triggery. Neexistuje
+`business_id`, cross-database FK ani vstupní parametr connection.
 
-Veřejné routy, controller a UI pro faktury v této části nevznikly.
+`InvoiceDecimal` provádí stringovou/celočíselnou aritmetiku bez PHP `float`, bez
+BCMath a bez externího balíčku. Množství, jednotkové ceny, mezivýsledky a uložené
+částky mají čtyři desetinná místa. Jednotková cena znamená cenu bez DPH. Položka
+i celá faktura podporují slevu `none`, `percentage` nebo `fixed`; pevná sleva
+nesmí překročit dostupný základ a procentní sleva je v rozsahu 0–100. Celková
+sleva se po položkových slevách deterministicky poměrně rozdělí mezi položky,
+včetně přesného rezidua na 0,0001, a teprve potom se pro každou sazbu počítá DPH.
+
+Výpočet položky je `quantity × unit_price`, položková sleva, podíl celkové slevy,
+základ po slevách, DPH a součet s DPH. U každé položky se obě složky slevy
+ukládají samostatně. DPH se počítá a half-up zaokrouhluje po položkách na čtyři
+místa. `zero`, `exempt`, `reverse_charge` a `out_of_scope` mají DPH nula, ale
+zůstávají oddělenými režimy. Serverové `invoice_vat_summaries` seskupují pouze
+stejný typ a procento. Konečný `grand_total` se half-up zaokrouhlí na dvě místa;
+u hotovostní úhrady v CZK na celé koruny. Rozdíl se uloží v
+`rounding_adjustment` až po výpočtu základu a DPH, takže zaokrouhlovací rozdíl
+nezmění základ daně. Před produkčním účetním použitím je stále nutné potvrdit
+konkrétní účetní postup a případné zvláštní režimy dokladů.
+
+Vytvoření či editace, nové snapshoty, položky, summaries, idempotency záznam,
+pointer a sanitizovaný business audit commitnou nebo rollbacknou v jedné
+business transakci. Draftový snapshot sazby DPH je neměnný, ale samotná
+existence draftu živou sazbu trvale neuzamyká; historický zámek začne dávat
+smysl až pro budoucí vystavený doklad.
+
+Veřejné routy, controller, UI, vystavení, číslování, PDF a e-mail zatím nevznikly.
 
 ## Business audit změn
 
@@ -375,7 +400,8 @@ bezpečnostní události přihlášení a přepínání subjektů. Obchodní zm�
 do `audit_logs` výhradně ve fyzické databázi aktivního subjektu.
 
 Audit pokrývá nastavení subjektu, bankovní účty a jejich defaulty, klienty,
-číselné řady a jejich defaulty a alokace čísel. Doménové služby volají
+číselné řady a jejich defaulty, alokace čísel a vytvoření či skutečnou editaci
+fakturačního draftu. Doménové služby volají
 `BusinessAuditWriter` explicitně uvnitř své transakce. Writer odmítne samostatný
 zápis mimo transakci; selhání auditu proto rollbackne i obchodní změnu.
 

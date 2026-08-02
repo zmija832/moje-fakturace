@@ -31,8 +31,10 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 
 - [x] Implementovat datový model návrhu faktury a položek bez výpočtů
 - [x] Ukládat immutable snapshot dodavatele, odběratele, účtu a sazby DPH
+- [x] Implementovat immutable revize návrhu a bezpečný převod draftů z části 1
+- [x] Implementovat přesné výpočty položek, položkových i celkových slev, DPH, totals a VAT summaries
+- [x] Doplnit optimistické zamykání a idempotentní editaci návrhu
 - [ ] Napojit faktury na hotový transakční allocator číselných řad
-- [ ] Implementovat výpočty cen, slev a DPH
 - [ ] Doplnit stavy faktur a archivaci
 - [ ] Přidat zálohové faktury a dobropisy
 

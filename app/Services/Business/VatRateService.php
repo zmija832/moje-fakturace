@@ -8,6 +8,7 @@ use App\Domain\Vat\Exceptions\VatRateUnavailable;
 use App\Domain\Vat\VatPercentage;
 use App\Enums\BusinessAuditableType;
 use App\Enums\BusinessAuditEvent;
+use App\Enums\InvoiceStatus;
 use App\Enums\VatRateDefaultContext;
 use App\Enums\VatTaxType;
 use App\Models\Business\CompanySetting;
@@ -289,7 +290,12 @@ class VatRateService
 
     public function hasIssuedDocumentUsage(VatRate $rate): bool
     {
-        return InvoiceVatSnapshot::query()->where('source_vat_rate_uuid', $rate->uuid)->exists();
+        return InvoiceVatSnapshot::query()
+            ->join('invoice_revisions', 'invoice_revisions.id', '=', 'invoice_vat_snapshots.invoice_revision_id')
+            ->join('invoices', 'invoices.id', '=', 'invoice_revisions.invoice_id')
+            ->where('invoice_vat_snapshots.source_vat_rate_uuid', $rate->uuid)
+            ->where('invoices.status', '<>', InvoiceStatus::Draft->value)
+            ->exists();
     }
 
     private function changeActiveState(string $uuid, bool $active): VatRate

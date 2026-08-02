@@ -25,4 +25,9 @@ class InvoicePolicy extends BusinessPolicy
     {
         return $this->canManage($user);
     }
+
+    public function update(User $user): bool
+    {
+        return $this->canManage($user);
+    }
 }

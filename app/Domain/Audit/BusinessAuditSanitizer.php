@@ -9,6 +9,7 @@ use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceRevision;
 use App\Models\Business\VatRate;
 use BackedEnum;
 use DateTimeInterface;
@@ -82,6 +83,35 @@ class BusinessAuditSanitizer
         };
 
         return array_values(array_intersect(array_keys($model->getDirty()), $allowed));
+    }
+
+    /** @return array<string, mixed> */
+    public function invoiceRevision(InvoiceRevision $revision): array
+    {
+        $revision->loadMissing(['items', 'vatSummaries', 'bankAccountSnapshot']);
+
+        return $this->withoutNulls([
+            'revision_uuid' => $revision->uuid,
+            'revision_number' => $revision->revision_number,
+            'currency' => $revision->currency,
+            'issued_on' => $this->scalar($revision->issued_on),
+            'taxable_supply_on' => $this->scalar($revision->taxable_supply_on),
+            'due_on' => $this->scalar($revision->due_on),
+            'payment_method' => $this->scalar($revision->payment_method),
+            'item_count' => $revision->items->count(),
+            'vat_summary_count' => $revision->vatSummaries->count(),
+            'has_bank_account' => $revision->bankAccountSnapshot !== null,
+            'invoice_discount_type' => $this->scalar($revision->invoice_discount_type),
+            'invoice_discount_value' => $revision->invoice_discount_value,
+            'invoice_discount_amount' => $revision->invoice_discount_amount,
+            'subtotal_before_discount' => $revision->subtotal_before_discount,
+            'discount_total' => $revision->discount_total,
+            'tax_base_total' => $revision->tax_base_total,
+            'vat_total' => $revision->vat_total,
+            'total_before_rounding' => $revision->total_before_rounding,
+            'rounding_adjustment' => $revision->rounding_adjustment,
+            'grand_total' => $revision->grand_total,
+        ]);
     }
 
     /** @return array<string, mixed> */
@@ -188,17 +218,14 @@ class BusinessAuditSanitizer
     /** @return array<string, mixed> */
     private function invoice(Invoice $invoice): array
     {
+        $invoice->loadMissing('currentRevision');
+        $revision = $invoice->currentRevision;
+
         return $this->withoutNulls([
             'document_type' => $this->scalar($invoice->document_type),
             'status' => $this->scalar($invoice->status),
-            'currency' => $invoice->currency,
-            'issued_on' => $this->scalar($invoice->issued_on),
-            'taxable_supply_on' => $this->scalar($invoice->taxable_supply_on),
-            'due_on' => $this->scalar($invoice->due_on),
-            'payment_method' => $this->scalar($invoice->payment_method),
-            'item_count' => $invoice->items->count(),
-            'vat_snapshot_count' => $invoice->vatSnapshots->count(),
-            'has_bank_account' => $invoice->bankAccountSnapshot !== null,
+            'version' => $invoice->version,
+            ...($revision === null ? [] : $this->invoiceRevision($revision)),
         ]);
     }
 
