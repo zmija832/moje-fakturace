@@ -408,8 +408,29 @@ allocation, času, obou revision pointerů, návrat do draftu i fyzické smazán
 Stejné issue correlation UUID je tenant-local idempotency klíč a nevytvoří druhé
 číslo ani audit.
 
-Veřejné routy, controller a UI vystavení zatím nevznikly; issuer je interní
-aplikační služba. PDF a e-mail zůstávají mimo tuto etapu.
+## Faktury – část 4: uživatelské rozhraní
+
+České responzivní Blade UI je dostupné na `/faktury`. Nabízí tenant-local seznam
+s vyhledáváním, whitelist řazením, stavovými, klientskými, měnovými a datumovými
+filtry a stránkováním. Admin může vytvořit návrh, upravit jeho aktuální revizi a
+vystavit jej; viewer smí seznam, oba typy detailu a sanitizovanou auditní historii
+pouze číst. Vystavená faktura nemá editaci ani jinou mutační akci.
+
+Editor položek používá Alpine.js jen pro prezentační přidání, odebrání a pořadí
+řádků. Read-only `POST /faktury/nahled-vypoctu` volá serverový
+`InvoiceCalculator`, nic nezapisuje ani neaudituje a jeho výsledek je pouze
+orientační. Autoritativní totals, VAT summaries a snapshoty request nikdy
+nepřijímá; při uložení je vždy znovu vytvoří existující doménové služby.
+Základní jednopoložkový formulář a potvrzení vystavení fungují i bez JavaScriptu.
+
+Editace odesílá serverem vytvořené correlation UUID a očekávanou verzi. Konflikt
+neprovádí overwrite ani merge, ale vrátí českou zprávu a vyžádá nové načtení.
+Vystavení má explicitní nevratné potvrzení a dovoluje výchozí nebo konkrétní
+aktivní řadu `issued_invoice`; controller nikdy nevolá allocator přímo.
+
+Štítek „Po splatnosti“ je pouze informativně odvozen z data vystaveného dokladu.
+Dokud nevznikne modul Platby, nepotvrzuje neuhrazený dluh a nemění `InvoiceStatus`.
+PDF, QR platba, e-mail, notifikace, platby a kopírování faktury zůstávají otevřené.
 
 ## Business audit změn
 

@@ -47,6 +47,10 @@ class StoreInvoiceDraftRequest extends FormRequest
             'status' => ['prohibited'],
             'document_type' => ['prohibited'],
             'document_number' => ['prohibited'],
+            'document_number_allocation_id' => ['prohibited'],
+            'allocation_id' => ['prohibited'],
+            'issued_at' => ['prohibited'],
+            'issued_revision_id' => ['prohibited'],
             'connection' => ['prohibited'],
             'business_id' => ['prohibited'],
             'archived_at' => ['prohibited'],
@@ -65,6 +69,10 @@ class StoreInvoiceDraftRequest extends FormRequest
             'rounding_adjustment' => ['prohibited'],
             'grand_total' => ['prohibited'],
             'vat_summaries' => ['prohibited'],
+            'totals' => ['prohibited'],
+            'snapshots' => ['prohibited'],
+            'created_at' => ['prohibited'],
+            'updated_at' => ['prohibited'],
             'correlation_uuid' => ['prohibited'],
         ];
     }
@@ -72,6 +80,13 @@ class StoreInvoiceDraftRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
+            if (
+                $this->input('payment_method') === DefaultPaymentMethod::BankTransfer->value
+                && ! $this->filled('bank_account_uuid')
+            ) {
+                $validator->errors()->add('bank_account_uuid', 'Pro bankovní převod vyberte bankovní účet.');
+            }
+
             foreach ((array) $this->input('items', []) as $index => $item) {
                 if (! is_array($item)) {
                     continue;

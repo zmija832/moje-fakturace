@@ -2,6 +2,8 @@
 
 namespace App\Policies\Business;
 
+use App\Enums\InvoiceStatus;
+use App\Models\Business\Invoice;
 use App\Models\User;
 
 class InvoicePolicy extends BusinessPolicy
@@ -26,13 +28,15 @@ class InvoicePolicy extends BusinessPolicy
         return $this->canManage($user);
     }
 
-    public function update(User $user): bool
+    public function update(User $user, ?Invoice $invoice = null): bool
     {
-        return $this->canManage($user);
+        return $this->canManage($user)
+            && ($invoice === null || $invoice->status === InvoiceStatus::Draft);
     }
 
-    public function issue(User $user): bool
+    public function issue(User $user, ?Invoice $invoice = null): bool
     {
-        return $this->canManage($user);
+        return $this->canManage($user)
+            && ($invoice === null || $invoice->status === InvoiceStatus::Draft);
     }
 }

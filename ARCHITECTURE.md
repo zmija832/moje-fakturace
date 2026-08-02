@@ -1273,7 +1273,7 @@ změna, stavy, archivace a defaulty jsou auditovány explicitně a atomicky.
 
 ## 9.6 Faktury a položky
 
-Části 1 až 3 implementují vydanou fakturu jako verzovaný agregát. `invoices`
+Části 1 až 4 implementují vydanou fakturu jako verzovaný agregát. `invoices`
 obsahuje identitu, stav, optimistic-lock `version` a pointer
 `current_revision_id`. Proměnlivá hlavička, snapshoty, položky, souhrny a totals
 patří do immutable `invoice_revisions`. Čtení návrhu musí vždy explicitně načíst
@@ -1335,6 +1335,30 @@ přidat revizi ani invoice fyzicky smazat. Read služba pro issued dokument vžd
 načítá `issuedRevision`, nikdy živé zdroje. Autoritativní stavy jsou zatím pouze
 `draft` a `issued`; `paid` ani `overdue` nejsou workflow stavy. Archivace
 dokladu, PDF, e-mail, QR, platby a exporty patří do dalších částí.
+
+HTTP rozhraní používá pouze stávající middleware `web`, `business.request-id`,
+`auth`, `business.context` a `business.required`. `InvoiceController` je tenký:
+autorizuje přes `InvoicePolicy`, přijímá výhradně validované FormRequesty a volá
+`InvoiceReader`, `InvoiceDraftService`, `InvoiceDraftEditor`, `InvoiceIssuer` a
+úzké read-only providery. Nevybírá connection, neotevírá transakci, nepočítá
+částky, nevytváří snapshoty a nepřiděluje číslo.
+
+`InvoiceReader::search()` omezuje dotazy na aktivní business DB, escapuje LIKE
+wildcardy, používá whitelist filtrů a řazení, stránkuje po 20 a eager-loaduje jen
+aktuální nebo vystavenou revizi a zákaznický snapshot potřebný pro řádek.
+Detail načte jediný relevantní agregát; issued detail čte výhradně
+`issuedRevision`. Auditní historie používá tenant-local `BusinessAuditService`
+a limit 30 sanitizovaných událostí.
+
+Preview endpoint je autentizovaný, CSRF chráněný, rate-limited a read-only.
+Validuje stejné obchodní vstupy jako vytvoření a vrací jen položkové výpočty,
+VAT summaries, slevu a totals z `InvoiceCalculator`; nevytváří transakci, audit
+ani zápis. JavaScriptový stav není zdrojem pravdy. UI konflikt verze nikdy
+automaticky nepřepisuje ani neslučuje.
+
+Stav „po splatnosti“ zůstává odvozenou informační projekcí pro issued doklad s
+minulým `due_on`. Autoritativní vyhodnocení dluhu smí vzniknout až s evidencí
+úplných a částečných plateb.
 
 ## 9.7 PDF a e-mail
 

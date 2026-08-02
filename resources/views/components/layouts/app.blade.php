@@ -12,7 +12,7 @@
         $navigationItems = [
             ['route' => 'dashboard', 'active' => 'dashboard', 'label' => 'Přehled'],
             ...($navigationActiveBusiness ? [
-                ['route' => 'invoices.index', 'active' => 'invoices.*', 'label' => 'Vydané faktury'],
+                ['route' => 'invoices.index', 'active' => 'invoices.*', 'label' => 'Faktury'],
                 ['route' => 'clients.index', 'active' => 'clients.*', 'label' => 'Klienti'],
                 ['route' => 'recurring.index', 'active' => 'recurring.*', 'label' => 'Pravidelné fakturace'],
                 ['route' => 'exports.index', 'active' => 'exports.*', 'label' => 'Export'],
@@ -120,9 +120,12 @@
             </div>
 
             <main class="min-w-0 flex-1">
-                @if (session('status'))
-                    <div class="mb-5 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-                        {{ session('status') }}
+                @if (session('status') || session('error'))
+                    <div
+                        class="mb-5 rounded-lg p-3 text-sm {{ session('error') ? 'border border-red-200 bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800' }}"
+                        role="{{ session('error') ? 'alert' : 'status' }}"
+                    >
+                        {{ session('error') ?? session('status') }}
                     </div>
                 @endif
                 {{ $slot }}

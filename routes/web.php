@@ -11,6 +11,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
+use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\VatRateController;
 use Illuminate\Support\Facades\Route;
 
@@ -121,8 +122,19 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
         Route::get('/nastaveni/audit/{uuid}', [BusinessAuditController::class, 'show'])
             ->whereUuid('uuid')->name('business-audit.show');
 
-        Route::view('/vydane-faktury', 'coming-soon', ['module' => 'Vydané faktury'])
-            ->name('invoices.index');
+        Route::get('/faktury', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('/faktury/nova', [InvoiceController::class, 'create'])->name('invoices.create');
+        Route::post('/faktury/nahled-vypoctu', [InvoiceController::class, 'preview'])
+            ->middleware('throttle:60,1')->name('invoices.preview');
+        Route::post('/faktury', [InvoiceController::class, 'store'])->name('invoices.store');
+        Route::get('/faktury/{uuid}/upravit', [InvoiceController::class, 'edit'])
+            ->whereUuid('uuid')->name('invoices.edit');
+        Route::put('/faktury/{uuid}', [InvoiceController::class, 'update'])
+            ->whereUuid('uuid')->name('invoices.update');
+        Route::post('/faktury/{uuid}/vystavit', [InvoiceController::class, 'issue'])
+            ->whereUuid('uuid')->name('invoices.issue');
+        Route::get('/faktury/{uuid}', [InvoiceController::class, 'show'])
+            ->whereUuid('uuid')->name('invoices.show');
         Route::get('/klienti', [ClientController::class, 'index'])->name('clients.index');
         Route::get('/klienti/novy', [ClientController::class, 'create'])->name('clients.create');
         Route::post('/klienti', [ClientController::class, 'store'])->name('clients.store');

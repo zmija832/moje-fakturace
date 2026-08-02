@@ -36,6 +36,11 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Doplnit optimistické zamykání a idempotentní editaci návrhu
 - [x] Napojit vystavení faktury na transakční allocator číselných řad
 - [x] Doplnit stavy draft/issued, idempotentní vystavení a neměnnost issued revize
+- [x] Doplnit responzivní Blade seznam, hledání, filtry a stránkování faktur
+- [x] Doplnit UI vytvoření a revizní editace návrhu s optimistic lockingem
+- [x] Doplnit serverový read-only preview výpočtu a přístupný editor položek
+- [x] Doplnit nevratné vystavení z UI, draft/issued detail a auditní historii
+- [x] Doplnit policy pro admin/viewer a tenant-safe HTTP/UI testy
 - [ ] Doplnit archivaci a další budoucí workflow stavy až s jejich doménovou logikou
 - [ ] Přidat zálohové faktury a dobropisy
 
@@ -55,11 +60,25 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [ ] Přidat upomínky po splatnosti
 - [ ] Připravit bezpečné plánované úlohy
 
+## Budoucí modul – Notifikace správci a klientovi
+
+- [ ] Umožnit samostatně zapínat každý typ notifikace
+- [ ] Připravit vlastní šablony a neměnnou historii odeslání
+- [ ] Správci: faktura vystavena, zaplacena nebo částečně zaplacena
+- [ ] Správci: faktura po splatnosti a blížící se splatnost
+- [ ] Správci: chyba odeslání a selhání automatické úlohy
+- [ ] Klientovi: faktura vystavena a odeslána
+- [ ] Klientovi: připomenutí před splatností, první a další upomínka
+- [ ] Klientovi: potvrzení o zaplacení
+
+Notifikace vzniknou až po návrhu e-mailu, plateb a plánovaných úloh. Jednotlivé
+typy budou mít vlastní zapnutí, šablonu, adresáty, audit a historii odeslání.
+
 ## Etapa 7 – Exporty a přehledy
 
 - [ ] Přidat přehledy pro aktivní subjekt
 - [ ] Implementovat účetní exporty
-- [ ] Přidat filtrování a vyhledávání dokladů
+- [x] Přidat filtrování a vyhledávání vydaných faktur
 - [ ] Doplnit základní fakturační statistiky
 
 ## Etapa 8 – Produkční nasazení
