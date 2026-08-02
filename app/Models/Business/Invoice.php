@@ -2,6 +2,7 @@
 
 namespace App\Models\Business;
 
+use App\Domain\Invoices\Exceptions\InvoiceIssuedImmutable;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\DocumentType;
 use App\Enums\InvoiceStatus;
@@ -15,6 +16,20 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Invoice extends BusinessModel
 {
     use HasServerGeneratedUuid;
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $invoice): void {
+            if ($invoice->getOriginal('status') === InvoiceStatus::Issued->value || $invoice->status === InvoiceStatus::Issued) {
+                throw InvoiceIssuedImmutable::mutationDenied();
+            }
+        });
+        static::deleting(function (self $invoice): void {
+            if ($invoice->status === InvoiceStatus::Issued) {
+                throw InvoiceIssuedImmutable::mutationDenied();
+            }
+        });
+    }
 
     public function items(): HasMany
     {
@@ -51,6 +66,21 @@ class Invoice extends BusinessModel
         return $this->belongsTo(InvoiceRevision::class, 'current_revision_id');
     }
 
+    public function issuedRevision(): BelongsTo
+    {
+        return $this->belongsTo(InvoiceRevision::class, 'issued_revision_id');
+    }
+
+    public function numberAllocation(): BelongsTo
+    {
+        return $this->belongsTo(DocumentNumberAllocation::class, 'document_number_allocation_id');
+    }
+
+    public function documentSequence(): BelongsTo
+    {
+        return $this->belongsTo(DocumentSequence::class);
+    }
+
     protected function casts(): array
     {
         return [
@@ -61,6 +91,7 @@ class Invoice extends BusinessModel
             'due_on' => 'date',
             'payment_method' => DefaultPaymentMethod::class,
             'version' => 'integer',
+            'issued_at' => 'immutable_datetime',
         ];
     }
 }

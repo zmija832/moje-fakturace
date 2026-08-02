@@ -115,6 +115,40 @@ class BusinessAuditSanitizer
     }
 
     /** @return array<string, mixed> */
+    public function issuedInvoice(Invoice $invoice, DocumentNumberAllocation $allocation): array
+    {
+        $invoice->loadMissing('issuedRevision.items', 'issuedRevision.vatSummaries');
+        $revision = $invoice->issuedRevision;
+
+        if ($revision === null) {
+            throw new InvalidArgumentException('Vystavená faktura nemá uzamknutou revizi.');
+        }
+
+        return [
+            'invoice_uuid' => $invoice->uuid,
+            'document_number' => $invoice->document_number,
+            'document_type' => $this->scalar($invoice->document_type),
+            'allocation_correlation_uuid' => $allocation->correlation_uuid,
+            'issued_revision_uuid' => $revision->uuid,
+            'version' => $invoice->version,
+            'issued_on' => $this->scalar($revision->issued_on),
+            'taxable_supply_on' => $this->scalar($revision->taxable_supply_on),
+            'due_on' => $this->scalar($revision->due_on),
+            'currency' => $revision->currency,
+            'payment_method' => $this->scalar($revision->payment_method),
+            'subtotal_before_discount' => $revision->subtotal_before_discount,
+            'discount_total' => $revision->discount_total,
+            'tax_base_total' => $revision->tax_base_total,
+            'vat_total' => $revision->vat_total,
+            'total_before_rounding' => $revision->total_before_rounding,
+            'rounding_adjustment' => $revision->rounding_adjustment,
+            'grand_total' => $revision->grand_total,
+            'item_count' => $revision->items->count(),
+            'vat_summary_count' => $revision->vatSummaries->count(),
+        ];
+    }
+
+    /** @return array<string, mixed> */
     private function companySettings(CompanySetting $setting): array
     {
         return $this->withoutNulls([

@@ -2,8 +2,10 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Invoices\Exceptions\InvoiceIssuedImmutable;
 use App\Domain\Invoices\InvoiceCalculator;
 use App\Domain\Invoices\InvoiceDecimal;
+use App\Enums\InvoiceStatus;
 use App\Enums\VatTaxType;
 use App\Models\Business\BankAccount;
 use App\Models\Business\Client;
@@ -102,6 +104,11 @@ class InvoiceRevisionFactory
     public function persist(Invoice $invoice, int $revisionNumber, array $prepared): InvoiceRevision
     {
         $this->requireBusinessTransaction();
+
+        if ($invoice->status === InvoiceStatus::Issued) {
+            throw InvoiceIssuedImmutable::mutationDenied();
+        }
+
         $revision = new InvoiceRevision;
         $revision->forceFill([
             'invoice_id' => $invoice->id,

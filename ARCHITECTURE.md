@@ -15,7 +15,7 @@
 | Výchozí Laravel connection | `central` |
 | Povolené business connections | `business_1`, `business_2` |
 | Veřejná registrace | Zakázaná |
-| Stav business schématu | Implementována nastavení, účty, klienti, číselné řady, sazby DPH, datový základ faktur a business audit |
+| Stav business schématu | Implementována nastavení, účty, klienti, číselné řady, sazby DPH, revizní draft a atomické vystavení faktur a business audit |
 
 Tento dokument popisuje závazná architektonická pravidla. Pokud se implementace
 a dokumentace rozcházejí, nesmí být rozdíl tiše ignorován. Nejdříve je nutné
@@ -326,16 +326,16 @@ ve stejné transakci.
 | `sequence_number` | unsigned bigint | Přidělené pořadové číslo |
 | `formatted_number` | varchar(255) | Neměnná výsledná reprezentace |
 | `allocated_at` | timestamp | Okamžik skutečné alokace |
-| `document_uuid` | UUID, nullable | Budoucí vazba; doklady zatím neexistují |
+| `document_uuid` | UUID, nullable, unique | UUID vystavené faktury; null zůstává jen mimo dokončené workflow dokladu |
 | `created_at`, `updated_at` | timestamps | Časová metadata |
 
 Unikátní `(document_sequence_id, period, sequence_number)` brání opakování
 pořadí v řadě a periodě. Unikátní `(document_type, formatted_number)` brání
 stejnému viditelnému číslu v rámci jednoho typu dokladu, ale dovoluje shodný
 formát různým typům. `correlation_uuid` je unikátní v jedné fyzické business
-databázi. Allocation je ledger: model odmítá update/delete a neexistuje pro něj
-HTTP update ani delete route. Fyzická izolace zabraňuje čtení correlation UUID
-z druhého subjektu.
+databázi. Allocation je ledger: model i MySQL triggery odmítají update/delete a
+neexistuje pro něj HTTP update ani delete route. Fyzická izolace zabraňuje čtení
+correlation UUID z druhého subjektu.
 
 ### Schéma `audit_logs`
 
@@ -370,7 +370,7 @@ autoritativní proměnlivý obsah je v `invoice_revisions`.
 
 | Tabulka | Klíčové sloupce | Autoritativní význam |
 |---|---|---|
-| `invoices` | `id`, serverové `uuid`, `document_type`, `status`, `current_revision_id`, `version`, kompatibilní projekce hlavičky, timestamps | Identita, workflow stav, optimistic-lock verze a právě jeden pointer na aktuální revizi |
+| `invoices` | `id`, serverové `uuid`, `document_type`, `status`, `document_number`, vazba na řadu a allocation, `current_revision_id`, `issued_revision_id`, `issued_at`, `issue_correlation_uuid`, `version`, kompatibilní projekce hlavičky, timestamps | Identita, workflow stav, optimistic-lock verze; draft ukazuje na current revision, issued navíc neměnně zamyká právě tuto revizi a allocation |
 | `invoice_revisions` | `id`, serverové `uuid`, `invoice_id`, `revision_number`, hlavička, typ/hodnota/skutečná částka celkové slevy, sedm totals, `created_by_actor`, timestamps | Neměnná úplná verze obsahu návrhu; `(invoice_id, revision_number)` je unikátní |
 | `invoice_supplier_snapshots` | PK/FK `invoice_revision_id`, úplná identita, adresa, kontakty a fakturační texty dodavatele | Immutable dodavatel konkrétní revize |
 | `invoice_customer_snapshots` | PK/FK `invoice_revision_id`, skalární `source_client_uuid`, identita, adresy a kontakty | Immutable odběratel konkrétní revize; source UUID není živý vztah |
@@ -404,8 +404,11 @@ na celé koruny. Rozdíl se proto nestává součástí žádného VAT summary.
 Všechny FK jsou lokální uvnitř jedné fyzické business databáze a používají
 `RESTRICT`. `invoice_revisions`, snapshoty, položky, VAT summaries a idempotency
 operace mají Eloquent ochranu i MySQL `BEFORE UPDATE`/`BEFORE DELETE` triggery.
-`invoices` může měnit pouze pointer, `version`, kompatibilní projekci hlavičky,
-`updated_at` a v budoucnu řízený workflow stav.
+Draft `invoices` může přes úzké služby měnit pouze pointer, `version` a
+kompatibilní projekci hlavičky. Přechod `draft` → `issued` nastaví celou sadu
+vystavovacích polí najednou; MySQL trigger potom odmítá každý update a delete.
+Složené lokální FK vynucují, že issued revision patří stejné invoice a že
+allocation odpovídá řadě, typu, document number i UUID faktury.
 
 Doplňující migrace bezpečně převádí případné řádky části 1 na revizi 1: vytvoří
 revizi, převede snapshoty a položky pod její FK, dopočítá řádkové částky,
@@ -1112,7 +1115,7 @@ Tabulka rozlišuje implementované části a další plán.
 | Kontaktní osoby | Plán | Více kontaktů u jednoho klienta | Business DB |
 | Číselné řady | Implementováno | Konfigurace, default pro typ, neměnný ledger a bezpečná konkurenční alokace | Business DB |
 | Sazby DPH | Implementováno | Sazby, daňové režimy, časová platnost a default pro prodej | Business DB |
-| Faktury | Části 1 a 2 implementovány | Revizní draft, immutable snapshoty, totals, optimistic locking a idempotentní editace; vystavení a číslo zůstává plán | Business DB |
+| Faktury | Části 1 až 3 implementovány | Revizní draft, immutable snapshoty, totals, optimistic locking, idempotentní editace a atomické vystavení s číslem a issued revision | Business DB |
 | Položky faktur | Části 1 a 2 implementovány | Přesné množství, cena bez DPH, slevy, VAT snapshot a serverové výpočty bez float | Business DB |
 | Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
 | Dobropisy | Plán | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
@@ -1255,12 +1258,13 @@ neplátce, může být výchozí pouze `out_of_scope` nebo `exempt`; evidence ji
 sazeb je dovolena jako budoucí příprava a plátcovství se tím nemění. Deaktivace
 a jednosměrná archivace odstraní default ve stejné transakci.
 
-Výběr pro budoucí doklad musí vždy dostat explicitní datum zdanitelného plnění.
+Výběr pro doklad musí vždy dostat explicitní datum zdanitelného plnění.
 Konfigurační sazba není historickým záznamem faktury. Každá draftová revize
 ukládá vlastní neměnný snapshot typu, procenta a režimu, ale draft není účetní
-historický doklad a živou sazbu trvale nezamyká. Budoucí vystavení musí zamknout
-konkrétní revizi; teprve použití na skutečně vystaveném dokladu uzamkne
-historická pole živé sazby. Změna konfigurace nikdy nesmí zpětně změnit snapshot.
+historický doklad a živou sazbu trvale nezamyká. `hasIssuedDocumentUsage()` uzná
+použití pouze tehdy, když snapshot patří přesně do `issued_revision_id` faktury
+ve stavu `issued`; pak uzamkne historická pole živé sazby. Změna konfigurace
+nikdy nesmí zpětně změnit snapshot.
 
 České legislativní sazby se nesmějí hardcodovat do domény, migrací ani skrytých
 produkčních seederů. Administrátor je zadává vědomě; aplikace neposkytuje
@@ -1269,8 +1273,8 @@ změna, stavy, archivace a defaulty jsou auditovány explicitně a atomicky.
 
 ## 9.6 Faktury a položky
 
-Části 1 a 2 implementují návrh vydané faktury jako verzovaný agregát. `invoices`
-obsahuje identitu, stav `draft`, optimistic-lock `version` a pointer
+Části 1 až 3 implementují vydanou fakturu jako verzovaný agregát. `invoices`
+obsahuje identitu, stav, optimistic-lock `version` a pointer
 `current_revision_id`. Proměnlivá hlavička, snapshoty, položky, souhrny a totals
 patří do immutable `invoice_revisions`. Čtení návrhu musí vždy explicitně načíst
 `currentRevision`; historickou revizi nelze aktualizovat ani smazat.
@@ -1313,13 +1317,24 @@ idempotency ledger mají `RESTRICT` FK, Eloquent ochranu a MySQL triggery proti
 update/delete. Selhání snapshotu, položky, summary, výpočtu, pointeru nebo auditu
 rollbackne celou editaci včetně version a idempotency záznamu.
 
-Draft není účetní historický doklad. Jeho snapshot sazby zůstává immutable, ale
-`VatRateService::hasIssuedDocumentUsage()` draft nepovažuje za důvod navždy
-uzamknout živou sazbu. Budoucí workflow vystavení musí zamknout konkrétní revizi
-a teprve skutečně vystavené použití musí blokovat změnu historických polí sazby.
+Draft není účetní historický doklad a jeho VAT snapshot živou sazbu nezamyká.
+`InvoiceIssuer` pod zámkem znovu ověří vlastnictví current revision, úplnost
+snapshotů, bankovní snapshot pro `bank_transfer`, položky a summaries a pomocí
+`InvoiceCalculator` porovná uložené částky se serverovým přepočtem bez `float`.
 
-Číslování přes `DocumentNumberAllocator`, vystavení, další workflow stavy,
-archivace dokladu, PDF, e-mail, QR, platby a exporty patří do dalších částí.
+Vystavení používá explicitní nebo tenant-local výchozí řadu typu
+`issued_invoice`. `DocumentNumberAllocator` vloží allocation už s UUID faktury;
+invoice, číslo, allocation, `issued_revision_id`, `issued_at`, zvýšení verze a
+audit vzniknou v jedné fyzické business transakci. Stejná issue correlation UUID
+stejné faktury vrací původní výsledek. Zámek invoice řádku a databázové
+unikátnosti zajišťují, že dva procesy nepřidělí dvě čísla.
+
+Po přechodu do `issued` je faktura přísně neměnná v modelu i databázi: nelze
+posunout current/issued revision, změnit číslo, allocation, čas nebo status,
+přidat revizi ani invoice fyzicky smazat. Read služba pro issued dokument vždy
+načítá `issuedRevision`, nikdy živé zdroje. Autoritativní stavy jsou zatím pouze
+`draft` a `issued`; `paid` ani `overdue` nejsou workflow stavy. Archivace
+dokladu, PDF, e-mail, QR, platby a exporty patří do dalších částí.
 
 ## 9.7 PDF a e-mail
 

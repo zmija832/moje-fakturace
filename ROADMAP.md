@@ -34,8 +34,9 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [x] Implementovat immutable revize návrhu a bezpečný převod draftů z části 1
 - [x] Implementovat přesné výpočty položek, položkových i celkových slev, DPH, totals a VAT summaries
 - [x] Doplnit optimistické zamykání a idempotentní editaci návrhu
-- [ ] Napojit faktury na hotový transakční allocator číselných řad
-- [ ] Doplnit stavy faktur a archivaci
+- [x] Napojit vystavení faktury na transakční allocator číselných řad
+- [x] Doplnit stavy draft/issued, idempotentní vystavení a neměnnost issued revize
+- [ ] Doplnit archivaci a další budoucí workflow stavy až s jejich doménovou logikou
 - [ ] Přidat zálohové faktury a dobropisy
 
 ## Etapa 5 – PDF a e-mail

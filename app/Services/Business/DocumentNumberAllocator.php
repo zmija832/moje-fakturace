@@ -28,6 +28,7 @@ class DocumentNumberAllocator
         string $sequenceUuid,
         DateTimeInterface $documentDate,
         ?string $correlationUuid = null,
+        ?string $documentUuid = null,
     ): DocumentNumberAllocation {
         $correlationUuid ??= (string) Str::uuid();
 
@@ -37,12 +38,19 @@ class DocumentNumberAllocator
             ]);
         }
 
+        if ($documentUuid !== null && ! Str::isUuid($documentUuid)) {
+            throw ValidationException::withMessages([
+                'document_uuid' => 'UUID dokladu musí mít platný formát.',
+            ]);
+        }
+
         $connection = $this->connectionResolver->resolve()->connectionName();
 
         return DB::connection($connection)->transaction(function () use (
             $sequenceUuid,
             $documentDate,
             $correlationUuid,
+            $documentUuid,
         ): DocumentNumberAllocation {
             $sequence = DocumentSequence::query()
                 ->where('uuid', $sequenceUuid)
@@ -57,9 +65,10 @@ class DocumentNumberAllocator
                 if (
                     $existing->document_sequence_id !== $sequence->id
                     || $existing->document_type !== $sequence->document_type
+                    || $existing->document_uuid !== $documentUuid
                 ) {
                     throw ValidationException::withMessages([
-                        'correlation_uuid' => 'Idempotency klíč již patří jiné číselné řadě.',
+                        'correlation_uuid' => 'Idempotency klíč již patří jiné číselné řadě nebo dokladu.',
                     ]);
                 }
 
@@ -85,7 +94,7 @@ class DocumentNumberAllocator
                 'sequence_number' => $sequenceNumber,
                 'formatted_number' => $formattedNumber,
                 'allocated_at' => now(),
-                'document_uuid' => null,
+                'document_uuid' => $documentUuid,
             ]);
             $allocation->save();
 

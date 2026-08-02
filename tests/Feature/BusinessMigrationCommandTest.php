@@ -53,6 +53,18 @@ class BusinessMigrationCommandTest extends TestCase
             $this->assertTrue(Schema::connection('business_2')->hasTable($table));
             $this->assertFalse(Schema::connection('central')->hasTable($table));
         }
+        $issuanceColumns = [
+            'document_number', 'document_sequence_id', 'document_number_allocation_id',
+            'issued_revision_id', 'issued_at', 'issue_correlation_uuid',
+        ];
+        foreach (['business_1', 'business_2'] as $connection) {
+            $this->assertTrue(Schema::connection($connection)->hasColumns('invoices', $issuanceColumns));
+            $this->assertFalse(Schema::connection($connection)->hasColumn('invoices', 'business_id'));
+            $foreignKeys = collect(Schema::connection($connection)->getForeignKeys('invoices'))->pluck('name');
+            $this->assertContains('invoices_issued_revision_foreign', $foreignKeys);
+            $this->assertContains('invoices_allocation_link_foreign', $foreignKeys);
+        }
+        $this->assertFalse(Schema::connection('central')->hasTable('invoices'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('audit_logs'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('audit_logs'));
         $this->assertFalse(Schema::connection('central')->hasTable('audit_logs'));
@@ -327,13 +339,20 @@ class BusinessMigrationCommandTest extends TestCase
                   'invoice_bank_account_snapshots', 'invoice_vat_snapshots', 'invoice_items',
                   'invoice_vat_summaries', 'invoice_draft_operations')",
             );
-            $this->assertSame(16, (int) $triggers->aggregate);
+            $this->assertSame(17, (int) $triggers->aggregate);
         }
     }
 
     public function test_invoice_revision_migration_preserves_and_converts_existing_part_one_draft(): void
     {
         $this->assertSame(0, Artisan::call('app:migrate-businesses', ['--business' => 'business_1']));
+        $this->assertSame(0, Artisan::call('migrate:rollback', [
+            '--database' => 'business_1',
+            '--path' => database_path('migrations/business/2026_08_02_000000_add_invoice_issuance_workflow.php'),
+            '--realpath' => true,
+            '--step' => 1,
+            '--force' => true,
+        ]), Artisan::output());
         $this->assertSame(0, Artisan::call('migrate:rollback', [
             '--database' => 'business_1',
             '--path' => database_path('migrations/business/2026_08_01_020000_add_invoice_draft_revisions.php'),
@@ -375,6 +394,12 @@ class BusinessMigrationCommandTest extends TestCase
             '--realpath' => true,
             '--force' => true,
         ]), Artisan::output());
+        $this->assertSame(0, Artisan::call('migrate', [
+            '--database' => 'business_1',
+            '--path' => database_path('migrations/business/2026_08_02_000000_add_invoice_issuance_workflow.php'),
+            '--realpath' => true,
+            '--force' => true,
+        ]), Artisan::output());
 
         $invoice = $database->table('invoices')->where('id', $invoiceId)->first();
         $revision = $database->table('invoice_revisions')->where('invoice_id', $invoiceId)->first();
@@ -382,6 +407,10 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertSame(1, (int) $invoice->version);
         $this->assertSame((int) $revision->id, (int) $invoice->current_revision_id);
         $this->assertSame(1, (int) $revision->revision_number);
+        $this->assertSame('draft', $invoice->status);
+        $this->assertNull($invoice->document_number);
+        $this->assertNull($invoice->issued_revision_id);
+        $this->assertNull($invoice->issued_at);
         $this->assertSame('250.0000', $revision->tax_base_total);
         $this->assertSame('52.5000', $revision->vat_total);
         $this->assertSame('302.5000', $revision->grand_total);
@@ -412,6 +441,25 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertFalse(Schema::connection('business_2')->hasTable('vat_rates'));
         $this->assertFalse(Schema::connection('business_2')->hasTable('vat_rate_defaults'));
         $this->assertFalse(Schema::connection('central')->hasTable('company_settings'));
+    }
+
+    public function test_invoice_issuance_migration_can_roll_back_without_issued_documents(): void
+    {
+        $this->assertSame(0, Artisan::call('app:migrate-businesses', ['--business' => 'business_1']));
+        $this->assertTrue(Schema::connection('business_1')->hasColumn('invoices', 'issued_revision_id'));
+
+        $this->assertSame(0, Artisan::call('migrate:rollback', [
+            '--database' => 'business_1',
+            '--path' => database_path('migrations/business/2026_08_02_000000_add_invoice_issuance_workflow.php'),
+            '--realpath' => true,
+            '--step' => 1,
+            '--force' => true,
+        ]), Artisan::output());
+
+        $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'issued_revision_id'));
+        $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'document_number'));
+        $this->assertTrue(Schema::connection('business_1')->hasColumn('document_number_allocations', 'document_uuid'));
+        $this->assertSame('central', DB::getDefaultConnection());
     }
 
     #[DataProvider('invalidConnections')]

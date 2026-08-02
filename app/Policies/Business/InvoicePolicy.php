@@ -30,4 +30,9 @@ class InvoicePolicy extends BusinessPolicy
     {
         return $this->canManage($user);
     }
+
+    public function issue(User $user): bool
+    {
+        return $this->canManage($user);
+    }
 }

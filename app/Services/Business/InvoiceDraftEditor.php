@@ -6,6 +6,7 @@ use App\Domain\Audit\BusinessAuditSanitizer;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Invoices\Exceptions\InvoiceDraftIdempotencyConflict;
 use App\Domain\Invoices\Exceptions\InvoiceDraftVersionConflict;
+use App\Domain\Invoices\Exceptions\InvoiceNotDraft;
 use App\Enums\BusinessAuditableType;
 use App\Enums\BusinessAuditEvent;
 use App\Enums\InvoiceStatus;
@@ -42,7 +43,7 @@ class InvoiceDraftEditor
             $invoice = Invoice::query()->where('uuid', $invoiceUuid)->lockForUpdate()->firstOrFail();
 
             if ($invoice->status !== InvoiceStatus::Draft) {
-                throw ValidationException::withMessages(['invoice' => 'Upravovat lze pouze návrh faktury.']);
+                throw InvoiceNotDraft::forEdit();
             }
 
             $operation = InvoiceDraftOperation::query()

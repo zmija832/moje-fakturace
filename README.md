@@ -6,9 +6,9 @@ business moduly: centrální databáze, přihlášení, oprávnění, audit, bez
 přepínač aktivního subjektu, fail-closed business modely a nastavení
 fakturačního subjektu včetně bankovních účtů a klientů.
 
-Je implementovaný datový základ návrhu vydané faktury a jeho neměnné snapshoty.
-Vystavení, číslo dokladu, výpočty, platby, PDF, e-mail, pravidelné fakturace a
-exporty zatím nejsou implementované.
+Je implementovaný revizní návrh vydané faktury, přesné výpočty a atomické
+vystavení s číslem z tenant-local číselné řady. Platby, PDF, e-mail, pravidelné
+fakturace a exporty zatím nejsou implementované.
 
 ## Technický základ
 
@@ -338,20 +338,21 @@ výchozí vazbu ve stejné transakci. Fyzické mazání není podporováno.
 Sazba v databázi je pouze aktuální konfigurační údaj. Budoucí faktura musí
 vybrat sazbu podle data zdanitelného plnění a uložit vlastní neměnný snapshot
 typu, procenta a daňového režimu. Pozdější změna konfigurace nesmí změnit
-historickou fakturu. Po zavedení vystavených faktur musí služba uzamknout
-historická pole sazby, která už byla použita.
+historickou fakturu. Draft živou sazbu nezamyká; teprve snapshot patřící přesně
+do `issued_revision` vystavené faktury uzamkne historická pole živé sazby.
 
 Všechny významné změny sazeb a výchozí vazby vznikají v business auditu ve
 stejné transakci. Modul neposkytuje daňové poradenství, výpočty faktur,
 legislativní aktualizace ani externí daňové API.
 
-## Faktury – části 1 a 2: snapshoty, revize a výpočty
+## Faktury – části 1 až 3: draft, revize, výpočty a vystavení
 
 `InvoiceDraftService` vytváří návrh vydané faktury a jeho immutable revizi 1.
 `invoices` je identita a workflow kořen; drží stav `draft`, `version` a odkaz
 `current_revision_id`. Proměnlivá hlavička, přesné součty, položky, VAT summaries
 a úplné snapshoty dodavatele, odběratele, zvoleného účtu a sazeb patří do
-`invoice_revisions`. Návrh stále nemá číslo dokladu ani workflow vystavení.
+`invoice_revisions`. Návrh nemá číslo dokladu ani `issued_at`; ty vzniknou až
+atomickým workflow vystavení.
 
 `InvoiceDraftEditor` používá číselné optimistické zamykání. Request předává
 očekávanou `version`; skutečná změna vytvoří novou immutable revizi a atomicky
@@ -388,10 +389,27 @@ konkrétní účetní postup a případné zvláštní režimy dokladů.
 Vytvoření či editace, nové snapshoty, položky, summaries, idempotency záznam,
 pointer a sanitizovaný business audit commitnou nebo rollbacknou v jedné
 business transakci. Draftový snapshot sazby DPH je neměnný, ale samotná
-existence draftu živou sazbu trvale neuzamyká; historický zámek začne dávat
-smysl až pro budoucí vystavený doklad.
+existence draftu živou sazbu trvale neuzamyká. Vystavení uzamkne konkrétní
+`issued_revision` a její VAT snapshoty se stanou historickým použitím sazeb.
 
-Veřejné routy, controller, UI, vystavení, číslování, PDF a e-mail zatím nevznikly.
+`InvoiceIssuer` tenant-safe zamkne draft a ověří optimistic-lock `version`,
+úplnost snapshotů, položek a VAT summaries a znovu serverově přepočítá všechny
+částky bez `float`. Pro `bank_transfer` je povinný bankovní snapshot. Potom ve
+stejné fyzické business transakci použije explicitní nebo výchozí řadu typu
+`issued_invoice`, vytvoří idempotentní allocation svázanou s UUID faktury,
+uloží číslo, `issued_revision_id`, `issued_at`, zvýší verzi právě jednou a zapíše
+audity `document_number.allocated` a `invoice.issued`. Selhání kteréhokoli kroku
+vrátí fakturu, allocation, čítač i audit.
+
+Stavový automat v této etapě obsahuje pouze `draft` (Návrh) a `issued`
+(Vystavená). Vystavená faktura čte výhradně `issuedRevision`; Eloquent ochrana,
+lokální složené FK, `CHECK` a MySQL triggery blokují další revizi, změnu čísla,
+allocation, času, obou revision pointerů, návrat do draftu i fyzické smazání.
+Stejné issue correlation UUID je tenant-local idempotency klíč a nevytvoří druhé
+číslo ani audit.
+
+Veřejné routy, controller a UI vystavení zatím nevznikly; issuer je interní
+aplikační služba. PDF a e-mail zůstávají mimo tuto etapu.
 
 ## Business audit změn
 

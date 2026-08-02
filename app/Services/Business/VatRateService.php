@@ -294,7 +294,8 @@ class VatRateService
             ->join('invoice_revisions', 'invoice_revisions.id', '=', 'invoice_vat_snapshots.invoice_revision_id')
             ->join('invoices', 'invoices.id', '=', 'invoice_revisions.invoice_id')
             ->where('invoice_vat_snapshots.source_vat_rate_uuid', $rate->uuid)
-            ->where('invoices.status', '<>', InvoiceStatus::Draft->value)
+            ->where('invoices.status', InvoiceStatus::Issued->value)
+            ->whereColumn('invoice_vat_snapshots.invoice_revision_id', 'invoices.issued_revision_id')
             ->exists();
     }
 

@@ -39,18 +39,6 @@ class DocumentSequenceServiceTest extends TestCase
     protected function tearDown(): void
     {
         try {
-            $this->ensureSafeTestDatabases();
-
-            foreach (BusinessConnection::cases() as $connection) {
-                $name = $connection->connectionName();
-
-                if (Schema::connection($name)->hasTable('document_number_allocations')) {
-                    DB::connection($name)->table('document_number_allocations')->delete();
-                    DB::connection($name)->table('document_sequence_defaults')->delete();
-                    DB::connection($name)->table('document_sequences')->delete();
-                }
-            }
-
             app(ActiveBusinessContext::class)->clear();
         } finally {
             parent::tearDown();

@@ -3,14 +3,21 @@
 namespace App\Models\Business;
 
 use App\Enums\DocumentType;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
+#[Fillable([])]
 class DocumentNumberAllocation extends BusinessModel
 {
     public function sequence(): BelongsTo
     {
         return $this->belongsTo(DocumentSequence::class, 'document_sequence_id');
+    }
+
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'document_uuid', 'uuid');
     }
 
     protected static function booted(): void
