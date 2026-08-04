@@ -44,6 +44,10 @@ enum BusinessAuditEvent: string
     case InvoiceEmailSendRequested = 'invoice.email_send_requested';
     case InvoiceEmailSent = 'invoice.email_sent';
     case InvoiceEmailFailed = 'invoice.email_failed';
+    case InvoicePaymentRecorded = 'invoice.payment_recorded';
+    case InvoicePaymentReversed = 'invoice.payment_reversed';
+    case InvoicePaymentStatusChanged = 'invoice.payment_status_changed';
+    case InvoicePaymentConflict = 'invoice.payment_conflict';
 
     public function label(): string
     {
@@ -88,6 +92,10 @@ enum BusinessAuditEvent: string
             self::InvoiceEmailSendRequested => 'Vyžádáno odeslání faktury',
             self::InvoiceEmailSent => 'Faktura odeslána e-mailem',
             self::InvoiceEmailFailed => 'Odeslání faktury selhalo',
+            self::InvoicePaymentRecorded => 'Zaevidována platba faktury',
+            self::InvoicePaymentReversed => 'Vytvořeno storno platby faktury',
+            self::InvoicePaymentStatusChanged => 'Změněn odvozený stav úhrady',
+            self::InvoicePaymentConflict => 'Konflikt platební operace',
         };
     }
 

@@ -16,6 +16,7 @@ enum BusinessAuditableType: string
     case Invoice = 'invoice';
     case InvoiceDocument = 'invoice_document';
     case InvoiceEmailDelivery = 'invoice_email_delivery';
+    case InvoicePayment = 'invoice_payment';
 
     public function label(): string
     {
@@ -32,6 +33,7 @@ enum BusinessAuditableType: string
             self::Invoice => 'Faktura',
             self::InvoiceDocument => 'PDF dokument faktury',
             self::InvoiceEmailDelivery => 'Odeslání faktury',
+            self::InvoicePayment => 'Platba faktury',
         };
     }
 

@@ -59,4 +59,21 @@ class InvoicePolicy extends BusinessPolicy
     {
         return $this->canManage($user) && $invoice->status === InvoiceStatus::Issued;
     }
+
+    public function viewPayments(User $user, ?Invoice $invoice = null): bool
+    {
+        return $this->canView($user)
+            && ($invoice === null || $invoice->status === InvoiceStatus::Issued);
+    }
+
+    public function recordPayment(User $user, ?Invoice $invoice = null): bool
+    {
+        return $this->canManage($user)
+            && ($invoice === null || $invoice->status === InvoiceStatus::Issued);
+    }
+
+    public function reversePayment(User $user, ?Invoice $invoice = null): bool
+    {
+        return $this->recordPayment($user, $invoice);
+    }
 }

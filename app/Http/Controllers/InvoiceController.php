@@ -11,6 +11,7 @@ use App\Domain\Invoices\Exceptions\InvoiceIssueVersionConflict;
 use App\Domain\Invoices\Exceptions\InvoiceNotDraft;
 use App\Domain\Invoices\Exceptions\InvoiceNotReadyForIssue;
 use App\Enums\BusinessAuditableType;
+use App\Enums\DefaultPaymentMethod;
 use App\Enums\InvoiceStatus;
 use App\Http\Requests\InvoiceIndexRequest;
 use App\Http\Requests\IssueInvoiceRequest;
@@ -23,6 +24,7 @@ use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceFormOptions;
 use App\Services\Business\InvoiceIssuer;
+use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePreviewService;
 use App\Services\Business\InvoiceReader;
 use Illuminate\Http\JsonResponse;
@@ -68,12 +70,14 @@ class InvoiceController extends Controller
         InvoiceReader $reader,
         InvoiceFormOptions $options,
         BusinessAuditService $audit,
+        InvoicePaymentReader $paymentReader,
     ): View {
         Gate::authorize('view', Invoice::class);
         $invoice = $reader->find($uuid);
         $revision = $invoice->status === InvoiceStatus::Issued ? $invoice->issuedRevision : $invoice->currentRevision;
         $issueOptions = $invoice->status === InvoiceStatus::Draft
             ? $options->forDate($revision->issued_on->format('Y-m-d')) : [];
+        $paymentSummary = $invoice->status === InvoiceStatus::Issued ? $paymentReader->summary($invoice) : null;
 
         return view('business.invoices.show', [
             'invoice' => $invoice,
@@ -81,6 +85,9 @@ class InvoiceController extends Controller
             'audits' => $audit->forEntity(BusinessAuditableType::Invoice, $invoice->uuid, 30),
             'issueCorrelationUuid' => (string) Str::uuid(),
             'generationCorrelationUuid' => (string) Str::uuid(),
+            'paymentCorrelationUuid' => (string) Str::uuid(),
+            'paymentSummary' => $paymentSummary,
+            'paymentMethods' => DefaultPaymentMethod::options(),
             ...$issueOptions,
         ]);
     }

@@ -8,8 +8,9 @@ fakturačního subjektu včetně bankovních účtů a klientů.
 
 Je implementovaný revizní návrh vydané faktury, přesné výpočty, atomické
 vystavení s číslem z tenant-local číselné řady, soukromé PDF s QR Platbou a
-synchronní odeslání vystavené faktury e-mailem. Platby, pravidelné fakturace,
-notifikace a exporty zatím nejsou implementované.
+synchronní odeslání vystavené faktury e-mailem a immutable ledger ručních plateb
+včetně částečných úhrad, přeplatků a storen. Pravidelné fakturace, automatické
+notifikace, bankovní import a exporty zatím nejsou implementované.
 
 ## Technický základ
 
@@ -430,9 +431,10 @@ neprovádí overwrite ani merge, ale vrátí českou zprávu a vyžádá nové n
 Vystavení má explicitní nevratné potvrzení a dovoluje výchozí nebo konkrétní
 aktivní řadu `issued_invoice`; controller nikdy nevolá allocator přímo.
 
-Štítek „Po splatnosti“ je pouze informativně odvozen z data vystaveného dokladu.
-Dokud nevznikne modul Platby, nepotvrzuje neuhrazený dluh a nemění `InvoiceStatus`.
-Notifikace, platby a kopírování faktury zůstávají otevřené.
+Štítek „Po splatnosti“ je odvozen pouze pro vystavený doklad s minulou splatností
+a kladným zbývajícím zůstatkem podle platebního ledgeru. Úplnou úhradou nebo
+přeplatkem zmizí; nikdy nemění `InvoiceStatus`. Notifikace a kopírování faktury
+zůstávají otevřené.
 
 ## Faktury – část 5: PDF, QR Platba a e-mail
 
@@ -480,6 +482,43 @@ host, port, šifrování, uživatele, heslo a odesílatele v nesledovaném `.env
 odešlete jednu zkušební issued fakturu do kontrolované schránky a ověřte přílohu
 i stav historie. Heslo nevkládejte do CLI argumentu, logu ani databáze.
 
+## Faktury – část 6: platby
+
+`invoice_payments` je samostatný tenant-local immutable ledger pouze v obou
+business databázích. Záznam typu `payment` přičítá kladnou částku, záznam typu
+`reversal` ji odečítá a odkazuje složeným lokálním cizím klíčem na původní platbu
+téže faktury. Původní záznam se neupravuje ani nemaže; Eloquent ochrana a MySQL
+triggery blokují `UPDATE` i `DELETE`. Částečná storna jsou povolena nejvýše do
+dosud nereverzované částky původní platby.
+
+Ledger je zdroj pravdy. `paid_total` vzniká jako součet plateb minus součet
+reversalů, `remaining_total = grand_total - paid_total`; všechny operace používají
+`InvoiceDecimal` a přesné `DECIMAL(19,4)`, nikdy `float`. Stav úhrady se neukládá
+do faktury ani do issued revize, ale odvozuje se jako `unpaid`, `partially_paid`,
+`paid` nebo `overpaid`. Přeplatek je záporný remaining total a samostatně se
+zobrazuje jeho absolutní hodnota.
+
+Platbu lze přidat pouze k `issued` faktuře a ve stejné měně. Služba resolverem
+vybere aktivní business connection, v explicitní transakci zamkne fakturu,
+ověří correlation UUID, vloží ledger a atomicky zapíše sanitizovaný audit.
+Correlation UUID je unikátní uvnitř fyzické business DB; opakování stejné
+operace nevytvoří druhý záznam ani audit. Reversal má vlastní UUID, datum, důvod
+a correlation UUID. Selhání auditu rollbackne celý insert.
+
+Admin může na detailu vystavené faktury přidat platbu nebo vytvořit částečné či
+úplné storno. Viewer vidí souhrn a historii pouze pro čtení. Seznam faktur nabízí
+platební filtry a přesné agregované projekce bez N+1; dashboard ukazuje tenant-local
+souhrn po měnách. Request nesmí poslat autoritativní součty, stav, invoice ID,
+business ID, connection, external ID ani reversal vazbu. Automatický bankovní
+import a párování zůstávají budoucí; enum `future_bank_import` a unikátní dvojice
+source/external ID jsou pouze schématická příprava.
+
+Po commitu vzniká explicitní immutable `InvoicePaymentChanged` snapshot s
+notifikačními záměry pro správce a klienta. Nemá žádný listener, neposílá e-mail,
+není persistentní outbox a neslibuje exactly-once doručení. Budoucí notifikační
+modul musí před zapojením SMTP doplnit tenant-local outbox, retry pravidla,
+preference adresátů a vlastní immutable historii doručení.
+
 ## Business audit změn
 
 Read-only modul je dostupný na `/nastaveni/audit`. `central` nadále obsahuje jen
@@ -488,7 +527,7 @@ do `audit_logs` výhradně ve fyzické databázi aktivního subjektu.
 
 Audit pokrývá nastavení subjektu, bankovní účty a jejich defaulty, klienty,
 číselné řady a jejich defaulty, alokace čísel a vytvoření či skutečnou editaci
-fakturačního draftu. Doménové služby volají
+fakturačního draftu, vystavení, dokumenty, doručení i platební ledger. Doménové služby volají
 `BusinessAuditWriter` explicitně uvnitř své transakce. Writer odmítne samostatný
 zápis mimo transakci; selhání auditu proto rollbackne i obchodní změnu.
 

@@ -91,6 +91,11 @@ class Invoice extends BusinessModel
         return $this->hasMany(InvoiceEmailDelivery::class)->latest('attempted_at')->latest('id');
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(InvoicePayment::class)->oldest('paid_on')->oldest('id');
+    }
+
     protected function casts(): array
     {
         return [

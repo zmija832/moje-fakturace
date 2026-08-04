@@ -1119,14 +1119,14 @@ Tabulka rozlišuje implementované části a další plán.
 | Položky faktur | Části 1 a 2 implementovány | Přesné množství, cena bez DPH, slevy, VAT snapshot a serverové výpočty bez float | Business DB |
 | Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
 | Dobropisy | Plán | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
-| Platby | Plán | Přijaté platby, párování, částečné úhrady a přeplatky | Business DB |
+| Platby | Implementováno | Immutable ledger ručních plateb, částečných úhrad, storen a přeplatků | Business DB |
 | PDF | Implementováno | Neměnná vizuální reprezentace issued snapshotu, hash a privátní stažení | Business DB + neveřejné úložiště |
 | QR Platba | Implementováno | SPD 1.0 odvozené výhradně z issued a bankovního snapshotu | Bez samostatné DB entity |
 | E-mail | Implementováno | Synchronní odeslání konkrétního PDF, stav a audit | Business DB |
 | Pravidelná fakturace | Plán | Předpisy pro opakované vytváření návrhů faktur | Business DB |
 | Upomínky | Plán | Pravidla a evidence upomínek po splatnosti | Business DB |
 | Exporty | Plán | Účetní a datové exporty bez spojování subjektů | Business DB |
-| Dashboard | Plán | Souhrny pouze pro právě aktivní subjekt | Business DB |
+| Dashboard | Částečně implementováno | Platební souhrny po měnách pouze pro právě aktivní subjekt | Business DB |
 | Business audit | Implementováno | Atomická sanitizovaná historie změn s read-only UI | Business DB |
 | Centrální bezpečnostní audit | Implementováno | Přihlášení, odhlášení, odmítnuté přístupy a přepnutí subjektu | `central` |
 
@@ -1357,9 +1357,9 @@ VAT summaries, slevu a totals z `InvoiceCalculator`; nevytváří transakci, aud
 ani zápis. JavaScriptový stav není zdrojem pravdy. UI konflikt verze nikdy
 automaticky nepřepisuje ani neslučuje.
 
-Stav „po splatnosti“ zůstává odvozenou informační projekcí pro issued doklad s
-minulým `due_on`. Autoritativní vyhodnocení dluhu smí vzniknout až s evidencí
-úplných a částečných plateb.
+Stav „po splatnosti“ je od části 6 odvozenou projekcí pro issued doklad s minulým
+`due_on` a kladným `remaining_total` z platebního ledgeru. Plně uhrazený nebo
+přeplacený doklad se po splatnosti neoznačuje a `InvoiceStatus` se tím nemění.
 
 ## 9.7 PDF a e-mail
 
@@ -1415,7 +1415,54 @@ business DB; interní storage cesta se v UI, URL ani auditu nezobrazuje. Veřejn
 nebo interní technické route, přímý filesystem parametr a delete API neexistují.
 Retence dokumentů zůstává otevřeným rozhodnutím.
 
-## 9.8 Audit
+## 9.8 Platby faktur
+
+`invoice_payments` je společná business migrace aplikovaná shodně do obou
+fyzických business databází. Neobsahuje `business_id` ani vazbu do `central`.
+Každý záznam má serverové UUID, kladné `DECIMAL(19,4)`, měnu issued faktury,
+datum, způsob, zdroj, actor snapshot a tenant-local unikátní correlation UUID.
+Budoucí import má připravený zdroj `future_bank_import` a unikátní dvojici
+`(source, external_id)`, ale import ani párování nejsou implementované.
+
+Typ `payment` částku přičítá. Typ `reversal` ji doménově odečítá, v databázi však
+také ukládá kladnou částku a složeným FK `(reverses_payment_id, invoice_id)`
+odkazuje na původní platbu stejné faktury. Služba pod zámkem faktury kontroluje
+součet všech částečných storen, takže nepřekročí originál ani nevytvoří záporný
+celkový paid total. MySQL insert trigger znovu ověřuje issued stav, měnu, původní
+typ a rozsah reversalu. Update a delete blokuje model i databázové triggery;
+rollback migrace odmítne zahodit neprázdnou historii.
+
+`InvoicePaymentService` nepřijímá connection. Resolver určí aktivní business DB,
+transakce zamkne invoice řádek, ověří stav, correlation UUID, přesnou částku a
+měnu, vloží ledger a audit. Idempotentní retry vrátí původní operaci bez druhého
+insertu, auditu a události. Selhání auditu rollbackne ledger. Konfliktní pokus
+má samostatný sanitizovaný audit a nesmí změnit výsledek původní transakce.
+
+`InvoicePaymentSummary` počítá pouze přes `InvoiceDecimal`:
+
+```text
+paid_total      = SUM(payment.amount) - SUM(reversal.amount)
+remaining_total = issued_revision.grand_total - paid_total
+```
+
+Ledger je jediný zdroj pravdy; agregáty ani platební stav se neukládají do
+`invoices` a už vůbec ne do immutable issued revize. Stav je `unpaid` při nule,
+`partially_paid` mezi nulou a grand total, `paid` při rovnosti a `overpaid` nad
+grand total. Seznam používá korelovanou agregační projekci a dashboard jedinou
+seskupenou tenant-local projekci, takže UI nevytváří N+1.
+
+Admin smí platbu přidat a vytvořit reversal pouze POST routami; viewer má ledger
+read-only. DELETE ani PUT platební route neexistují. FormRequest zakazuje interní
+ID, connection, business ID, source/import údaje, reversal vazbu i autoritativní
+totals a status. UUID z jiné fyzické DB skončí 404.
+
+Po úspěšném commitu služba dispatchne in-memory immutable
+`InvoicePaymentChanged` snapshot s explicitními budoucími notifikačními záměry
+pro správce a klienta. Listener, SMTP, cron a persistentní outbox zatím neexistují.
+Budoucí doručení proto nesmí tvrdit exactly-once; před automatizací je nutný
+tenant-local outbox, preference notifikací, retry a immutable delivery ledger.
+
+## 9.9 Audit
 
 Centrální a business audit mají odlišné bezpečnostní hranice. `login_audits` a
 `business_switch_audits` v `central` evidují pouze bezpečnostní události.

@@ -11,6 +11,7 @@ use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoiceEmailDelivery;
+use App\Models\Business\InvoicePayment;
 use App\Models\Business\InvoiceRevision;
 use App\Models\Business\VatRate;
 use BackedEnum;
@@ -33,6 +34,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::Invoice => $this->invoice($this->expect($model, Invoice::class)),
             BusinessAuditableType::InvoiceDocument => $this->invoiceDocument($this->expect($model, InvoiceDocument::class)),
             BusinessAuditableType::InvoiceEmailDelivery => $this->invoiceEmailDelivery($this->expect($model, InvoiceEmailDelivery::class)),
+            BusinessAuditableType::InvoicePayment => $this->invoicePayment($this->expect($model, InvoicePayment::class)),
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
@@ -82,7 +84,8 @@ class BusinessAuditSanitizer
                 'due_on', 'payment_method', 'variable_symbol', 'note',
             ],
             BusinessAuditableType::InvoiceDocument,
-            BusinessAuditableType::InvoiceEmailDelivery => [],
+            BusinessAuditableType::InvoiceEmailDelivery,
+            BusinessAuditableType::InvoicePayment => [],
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => [],
@@ -297,6 +300,28 @@ class BusinessAuditSanitizer
             'subject' => mb_substr($delivery->subject, 0, 160),
             'correlation_uuid' => $delivery->send_correlation_uuid,
             'failure_code' => $delivery->failure_code,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function invoicePayment(InvoicePayment $payment): array
+    {
+        $payment->loadMissing(['invoice', 'originalPayment']);
+
+        return $this->withoutNulls([
+            'invoice_uuid' => $payment->invoice?->uuid,
+            'document_number' => $payment->invoice?->document_number,
+            'payment_uuid' => $payment->uuid,
+            'payment_type' => $this->scalar($payment->payment_type),
+            'amount' => $payment->amount,
+            'currency' => $payment->currency,
+            'paid_on' => $this->scalar($payment->paid_on),
+            'payment_method' => $this->scalar($payment->payment_method),
+            'reference_masked' => $this->maskLastFour($payment->reference),
+            'variable_symbol_masked' => $this->maskLastFour($payment->variable_symbol),
+            'source' => $this->scalar($payment->source),
+            'correlation_uuid' => $payment->correlation_uuid,
+            'reverses_payment_uuid' => $payment->originalPayment?->uuid,
         ]);
     }
 

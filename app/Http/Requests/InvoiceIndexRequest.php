@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Domain\CompanySettings\CompanySettingOptions;
+use App\Enums\InvoicePaymentStatus;
 use App\Enums\InvoiceStatus;
 use App\Models\Business\Invoice;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,6 +29,7 @@ class InvoiceIndexRequest extends FormRequest
             'due_from' => ['nullable', 'date_format:Y-m-d'],
             'due_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:due_from'],
             'overdue' => ['nullable', 'boolean'],
+            'payment_status' => ['nullable', Rule::in(['all', ...array_column(InvoicePaymentStatus::cases(), 'value')])],
             'sort' => ['nullable', Rule::in(['created_at', 'issued_on', 'due_on', 'document_number'])],
             'direction' => ['nullable', Rule::in(['asc', 'desc'])],
             'connection' => ['prohibited'],
@@ -41,6 +43,7 @@ class InvoiceIndexRequest extends FormRequest
             'search' => $this->filled('search') ? trim((string) $this->input('search')) : null,
             'status' => $this->input('status', 'all'),
             'currency' => $this->input('currency', 'all'),
+            'payment_status' => $this->input('payment_status', 'all'),
         ]);
     }
 }

@@ -9,7 +9,6 @@
         <section class="card text-center"><h2 class="font-bold">Žádné faktury</h2><p class="mt-2 text-sm text-slate-600">Pro zvolené filtry nebyl nalezen žádný doklad.</p></section>
     @else
         <x-invoices.listing :invoices="$invoices" />
-        <p class="mt-3 text-xs text-slate-500">* Informativní označení bez evidence plateb; nejde o potvrzený dluh.</p>
         <div class="mt-6">{{ $invoices->links() }}</div>
     @endif
 </x-layouts.app>

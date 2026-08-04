@@ -13,6 +13,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
+use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\VatRateController;
 use Illuminate\Support\Facades\Route;
 
@@ -146,6 +147,10 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.update');
         Route::post('/faktury/{uuid}/vystavit', [InvoiceController::class, 'issue'])
             ->whereUuid('uuid')->name('invoices.issue');
+        Route::post('/faktury/{uuid}/platby', [InvoicePaymentController::class, 'store'])
+            ->whereUuid('uuid')->name('invoices.payments.store');
+        Route::post('/faktury/{uuid}/platby/{paymentUuid}/storno', [InvoicePaymentController::class, 'reverse'])
+            ->whereUuid(['uuid', 'paymentUuid'])->name('invoices.payments.reverse');
         Route::get('/faktury/{uuid}', [InvoiceController::class, 'show'])
             ->whereUuid('uuid')->name('invoices.show');
         Route::get('/klienti', [ClientController::class, 'index'])->name('clients.index');

@@ -9,7 +9,10 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 class InvoiceReader
 {
-    public function __construct(private readonly BusinessConnectionResolver $connectionResolver) {}
+    public function __construct(
+        private readonly BusinessConnectionResolver $connectionResolver,
+        private readonly InvoicePaymentReader $paymentReader,
+    ) {}
 
     public function find(string $invoiceUuid): Invoice
     {
@@ -22,7 +25,7 @@ class InvoiceReader
             $revisionRelation.'.supplierSnapshot', $revisionRelation.'.customerSnapshot',
             $revisionRelation.'.bankAccountSnapshot', $revisionRelation.'.vatSnapshots',
             $revisionRelation.'.items.vatSnapshot', $revisionRelation.'.vatSummaries',
-            'documents', 'emailDeliveries.document',
+            'documents', 'emailDeliveries.document', 'payments.originalPayment', 'payments.reversals',
         ]);
     }
 
@@ -35,7 +38,9 @@ class InvoiceReader
             'currentRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
             'issuedRevision:id,invoice_id,revision_number,grand_total',
             'issuedRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
-        ]);
+        ])->select('invoices.*')->selectRaw(
+            "(SELECT COALESCE(SUM(CASE WHEN invoice_payments.payment_type = 'payment' THEN invoice_payments.amount ELSE -invoice_payments.amount END), 0) FROM invoice_payments WHERE invoice_payments.invoice_id = invoices.id) AS payment_paid_total",
+        );
 
         if (in_array($filters['status'] ?? null, [InvoiceStatus::Draft->value, InvoiceStatus::Issued->value], true)) {
             $query->where('status', $filters['status']);
@@ -49,8 +54,22 @@ class InvoiceReader
                 $query->where($column, $operator, $filters[$field]);
             }
         }
-        if (($filters['overdue'] ?? false) === true) {
-            $query->where('status', InvoiceStatus::Issued->value)->whereDate('due_on', '<', today());
+        $paidSql = "(SELECT COALESCE(SUM(CASE WHEN ip.payment_type = 'payment' THEN ip.amount ELSE -ip.amount END), 0) FROM invoice_payments ip WHERE ip.invoice_id = invoices.id)";
+        $grandTotalSql = '(SELECT ir.grand_total FROM invoice_revisions ir WHERE ir.id = invoices.issued_revision_id)';
+        $paymentStatus = $filters['payment_status'] ?? null;
+        if (in_array($paymentStatus, ['unpaid', 'partially_paid', 'paid', 'overpaid'], true)) {
+            $query->where('status', InvoiceStatus::Issued->value);
+            match ($paymentStatus) {
+                'unpaid' => $query->whereRaw("{$paidSql} = 0"),
+                'partially_paid' => $query->whereRaw("{$paidSql} > 0 AND {$paidSql} < {$grandTotalSql}"),
+                'paid' => $query->whereRaw("{$paidSql} = {$grandTotalSql}"),
+                'overpaid' => $query->whereRaw("{$paidSql} > {$grandTotalSql}"),
+            };
+        }
+        if (in_array($filters['overdue'] ?? false, [true, '1', 1], true)) {
+            $query->where('status', InvoiceStatus::Issued->value)
+                ->whereDate('due_on', '<', today())
+                ->whereRaw("{$grandTotalSql} - {$paidSql} > 0");
         }
 
         $clientUuid = $filters['client_uuid'] ?? null;
@@ -77,8 +96,13 @@ class InvoiceReader
             ? $filters['sort'] : 'created_at';
         $direction = ($filters['direction'] ?? null) === 'asc' ? 'asc' : 'desc';
 
-        return $query->orderBy($sort, $direction)->orderBy('id', $direction)
+        $invoices = $query->orderBy($sort, $direction)->orderBy('id', $direction)
             ->paginate(20)->withQueryString();
+        $invoices->getCollection()->each(function (Invoice $invoice): void {
+            $invoice->setRelation('paymentSummary', $this->paymentReader->summaryFromAggregate($invoice));
+        });
+
+        return $invoices;
     }
 
     private function whereRevisionSnapshot(mixed $query, callable $constraint): void

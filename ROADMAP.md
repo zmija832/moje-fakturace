@@ -56,8 +56,8 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 
 ## Etapa 6 – Platby a automatizace
 
-- [ ] Evidovat úplné i částečné platby
-- [ ] Automaticky vyhodnocovat stav úhrady
+- [x] Evidovat úplné i částečné platby, přeplatky a immutable storna
+- [x] Automaticky odvozovat stav úhrady a po splatnosti z platebního ledgeru
 - [ ] Implementovat pravidelnou fakturaci
 - [ ] Přidat upomínky po splatnosti
 - [ ] Připravit bezpečné plánované úlohy
