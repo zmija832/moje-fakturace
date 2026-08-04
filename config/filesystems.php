@@ -30,6 +30,14 @@ return [
 
     'disks' => [
 
+        'invoice_documents' => [
+            'driver' => 'local',
+            'root' => env('INVOICE_DOCUMENTS_ROOT') ?: storage_path('app/private/invoices'),
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => true,
+        ],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),

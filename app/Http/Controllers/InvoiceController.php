@@ -80,6 +80,7 @@ class InvoiceController extends Controller
             'revision' => $revision,
             'audits' => $audit->forEntity(BusinessAuditableType::Invoice, $invoice->uuid, 30),
             'issueCorrelationUuid' => (string) Str::uuid(),
+            'generationCorrelationUuid' => (string) Str::uuid(),
             ...$issueOptions,
         ]);
     }

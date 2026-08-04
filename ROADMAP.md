@@ -46,11 +46,13 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 
 ## Etapa 5 – PDF a e-mail
 
-- [ ] Generovat PDF faktur
-- [ ] Přidat QR Platbu
-- [ ] Bezpečně ukládat vytvořené dokumenty
-- [ ] Odesílat faktury e-mailem
-- [ ] Evidovat historii odeslání
+- [x] Generovat PDF pouze z immutable issued snapshotu
+- [x] Přidat QR Platbu SPD 1.0 s bezpečným fallbackem
+- [x] Bezpečně ukládat immutable dokumenty mimo veřejný webroot
+- [x] Odesílat faktury synchronně e-mailem s přiloženým PDF
+- [x] Evidovat tenant-local historii odeslání a sanitizovaný audit
+- [ ] Navrhnout retenční pravidla a případné řízené mazání dokumentů
+- [ ] Vyřešit provider-level delivery/webhooky a hranici exactly-once
 
 ## Etapa 6 – Platby a automatizace
 

@@ -1120,9 +1120,9 @@ Tabulka rozlišuje implementované části a další plán.
 | Zálohové doklady | Plán | Zálohové faktury a jejich vazby na konečné vyúčtování | Business DB |
 | Dobropisy | Plán | Opravné daňové a účetní doklady bez přepisování historie | Business DB |
 | Platby | Plán | Přijaté platby, párování, částečné úhrady a přeplatky | Business DB |
-| PDF | Plán | Neměnná vizuální reprezentace vydané verze dokladu | Business DB + neveřejné úložiště |
-| QR Platba | Plán | Platební QR údaje odvozené z faktury a bankovního účtu | Business DB |
-| E-mail | Plán | Odeslání dokladu, stav doručení a audit odeslání | Business DB |
+| PDF | Implementováno | Neměnná vizuální reprezentace issued snapshotu, hash a privátní stažení | Business DB + neveřejné úložiště |
+| QR Platba | Implementováno | SPD 1.0 odvozené výhradně z issued a bankovního snapshotu | Bez samostatné DB entity |
+| E-mail | Implementováno | Synchronní odeslání konkrétního PDF, stav a audit | Business DB |
 | Pravidelná fakturace | Plán | Předpisy pro opakované vytváření návrhů faktur | Business DB |
 | Upomínky | Plán | Pravidla a evidence upomínek po splatnosti | Business DB |
 | Exporty | Plán | Účetní a datové exporty bez spojování subjektů | Business DB |
@@ -1334,7 +1334,8 @@ posunout current/issued revision, změnit číslo, allocation, čas nebo status,
 přidat revizi ani invoice fyzicky smazat. Read služba pro issued dokument vždy
 načítá `issuedRevision`, nikdy živé zdroje. Autoritativní stavy jsou zatím pouze
 `draft` a `issued`; `paid` ani `overdue` nejsou workflow stavy. Archivace
-dokladu, PDF, e-mail, QR, platby a exporty patří do dalších částí.
+dokladu, platby a exporty patří do dalších částí. PDF, QR Platba a základní
+synchronní e-mailové odeslání jsou popsány v 9.7.
 
 HTTP rozhraní používá pouze stávající middleware `web`, `business.request-id`,
 `auth`, `business.context` a `business.required`. `InvoiceController` je tenký:
@@ -1362,9 +1363,57 @@ minulým `due_on`. Autoritativní vyhodnocení dluhu smí vzniknout až s eviden
 
 ## 9.7 PDF a e-mail
 
-PDF nesmí být veřejně dostupné z předvídatelné URL. Odeslání e-mailem se
-auditovatelně váže ke konkrétní verzi dokladu. Tajné SMTP údaje patří pouze do
-environment konfigurace.
+`InvoiceDocumentViewModelFactory` je jediná vstupní hranice tiskového dokumentu.
+Přijímá vystavenou fakturu a její `issuedRevision` a sestaví explicitní pole z
+immutable snapshotů; nepředává Blade šabloně živé modely. `InvoicePdfGenerator`
+renderuje verzovanou šablonu `invoice-v1` přes Dompdf s DejaVu Sans, zakázaným
+načítáním vzdálených zdrojů a zakázaným PHP. QR je vložené SVG data URI.
+
+`invoice_documents` je tenant-local immutable ledger. Uchovává UUID faktury a
+dokumentu, logický typ, pevný interní disk, neveřejnou cestu, bezpečný původní
+název, MIME, velikost, SHA-256, verzi šablony, čas, actor snapshot a unikátní
+generation correlation UUID. Složený klíč `(id, invoice_id)` brání připojení
+dokumentu k cizí faktuře. Triggery odmítají dokument draftu i update/delete.
+Binární data jsou na samostatném Laravel disku `invoice_documents`, který není v
+`public` ani v seznamu veřejných storage linků.
+
+Generování nejdříve vytvoří PDF na dočasné cestě, spočítá SHA-256 a velikost a
+potom pod zámkem faktury vloží metadata, přesune soubor na finální cestu a zapíše
+audit v jedné business transakci. Při chybě odstraní pouze nový dočasný nebo právě
+přesunutý soubor; existující dokumenty nemaže. Běžné generování vrací poslední
+existující PDF, explicitní regenerace vytvoří novou immutable verzi. Correlation
+UUID je tenant-local idempotency klíč a konflikt s jinou fakturou selže uzavřeně.
+Tvrdý pád procesu mezi přesunem souboru a DB commitem může zanechat pouze
+neodkazovaný soubor, nikdy commitnutý DB záznam bez souboru; budoucí provozní
+reconciliation smí uklízet jen prokazatelně neodkazované soubory.
+
+QR Platba je odvozená reprezentace bez vlastního ledgeru. Používá formát SPD 1.0,
+ECC M, CZK, validní IBAN a případný BIC ze snapshotu, `AM` sestavené stringovou
+decimal matematikou, `DT`, zprávu a číselný `X-VS` do deseti znaků. Pro draft,
+jinou měnu/metodu, nekladnou částku nebo neplatný IBAN vznikne pouze explicitní
+fallback; generování faktury pokračuje bez QR.
+
+`invoice_email_deliveries` ukládá UUID, vazbu na tutéž fakturu a konkrétní PDF,
+snapshot adresáta, předmětu a obou těl, stav `pending|sent|failed`, provider ID,
+attempted/sent/failed časy, generický failure kód a actor snapshot. Obsahová pole
+jsou immutable; databáze povolí jen přechod `pending` na jeden terminální stav a
+zakazuje delete. Unikátní send correlation UUID zajišťuje, že retry stejné
+operace nevytvoří ani neodešle druhou zprávu.
+
+`InvoiceMailer` nejdříve v business transakci vloží `pending` a audit requested,
+potom synchronně volá Laravel Mail s privátní PDF přílohou a následně v nové
+business transakci uloží `sent` nebo sanitizované `failed` a audit. SMTP tajemství
+a původní transportní výjimka se nikam neukládají. MySQL a SMTP nemají společný
+commit: pokud SMTP zprávu přijme a proces skončí před zápisem `sent`, nelze bez
+provider-level idempotence garantovat exactly-once. To je známý provozní limit,
+nikoli důvod k automatickému opakování pending záznamu.
+
+HTTP náhled i stažení vyžadují přihlášení, aktivní Business Context, policy a UUID.
+Viewer smí číst již existující dokument a historii, admin navíc generovat a
+odesílat. Controller metadata vždy scopeuje přes fakturu v právě aktivní fyzické
+business DB; interní storage cesta se v UI, URL ani auditu nezobrazuje. Veřejné
+nebo interní technické route, přímý filesystem parametr a delete API neexistují.
+Retence dokumentů zůstává otevřeným rozhodnutím.
 
 ## 9.8 Audit
 

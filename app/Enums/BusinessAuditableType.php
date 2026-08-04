@@ -14,6 +14,8 @@ enum BusinessAuditableType: string
     case VatRate = 'vat_rate';
     case VatRateDefault = 'vat_rate_default';
     case Invoice = 'invoice';
+    case InvoiceDocument = 'invoice_document';
+    case InvoiceEmailDelivery = 'invoice_email_delivery';
 
     public function label(): string
     {
@@ -28,6 +30,8 @@ enum BusinessAuditableType: string
             self::VatRate => 'Sazba DPH',
             self::VatRateDefault => 'Výchozí sazba DPH',
             self::Invoice => 'Faktura',
+            self::InvoiceDocument => 'PDF dokument faktury',
+            self::InvoiceEmailDelivery => 'Odeslání faktury',
         };
     }
 

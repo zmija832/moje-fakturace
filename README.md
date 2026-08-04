@@ -6,9 +6,10 @@ business moduly: centrální databáze, přihlášení, oprávnění, audit, bez
 přepínač aktivního subjektu, fail-closed business modely a nastavení
 fakturačního subjektu včetně bankovních účtů a klientů.
 
-Je implementovaný revizní návrh vydané faktury, přesné výpočty a atomické
-vystavení s číslem z tenant-local číselné řady. Platby, PDF, e-mail, pravidelné
-fakturace a exporty zatím nejsou implementované.
+Je implementovaný revizní návrh vydané faktury, přesné výpočty, atomické
+vystavení s číslem z tenant-local číselné řady, soukromé PDF s QR Platbou a
+synchronní odeslání vystavené faktury e-mailem. Platby, pravidelné fakturace,
+notifikace a exporty zatím nejsou implementované.
 
 ## Technický základ
 
@@ -26,10 +27,11 @@ Document root musí směřovat pouze na adresář `public`.
 
 ## Požadovaná PHP rozšíření
 
-Pro Etapu 2 jsou potřeba minimálně Ctype, cURL, DOM, Fileinfo, Filter, Hash,
-Mbstring, OpenSSL, PCRE, PDO, PDO MySQL, Session, Tokenizer, XML/XMLWriter a
-Sodium. Další rozšíření pro PDF, obrázky, XLSX a ZIP budou potvrzena v
-odpovídajících etapách.
+Potřeba jsou minimálně Ctype, cURL, DOM, Fileinfo, Filter, Hash, Iconv, Mbstring,
+OpenSSL, PCRE, PDO, PDO MySQL, Session, Tokenizer, XML/XMLWriter a Sodium. PDF
+renderuje `dompdf/dompdf`; QR Platbu vytváří `bacon/bacon-qr-code` jako SVG, takže
+není vyžadováno GD ani Imagick. Budoucí XLSX a ZIP mohou vyžadovat další
+rozšíření.
 
 ## Lokální instalace
 
@@ -430,7 +432,53 @@ aktivní řadu `issued_invoice`; controller nikdy nevolá allocator přímo.
 
 Štítek „Po splatnosti“ je pouze informativně odvozen z data vystaveného dokladu.
 Dokud nevznikne modul Platby, nepotvrzuje neuhrazený dluh a nemění `InvoiceStatus`.
-PDF, QR platba, e-mail, notifikace, platby a kopírování faktury zůstávají otevřené.
+Notifikace, platby a kopírování faktury zůstávají otevřené.
+
+## Faktury – část 5: PDF, QR Platba a e-mail
+
+PDF lze vytvořit pouze z neměnné `issuedRevision`. Samostatný view-model obsahuje
+výhradně explicitně povolené snapshoty dodavatele, odběratele, bankovního účtu,
+položek, souhrnů DPH a totals; změna živého klienta nebo nastavení proto historický
+dokument neovlivní. Dompdf používá vložený font DejaVu Sans, vypnuté vzdálené
+zdroje i PHP v šabloně a samostatnou tiskovou Blade šablonu bez navigace.
+Composer lock používá `dompdf/dompdf` 3.1.6 (LGPL-2.1) a
+`bacon/bacon-qr-code` 3.1.1 (BSD-2-Clause). Dompdf je záměrně použit pro
+kontrolovanou jednoduchou CSS 2.1 šablonu; není obecným prohlížečem a vzdálený
+HTML/CSS/obrázky nejsou podporovaným vstupem.
+
+Soubory leží na neveřejném disku `invoice_documents` (výchozí kořen
+`storage/app/private/invoices`, volitelně `INVOICE_DOCUMENTS_ROOT`). Webový server
+musí mít do kořene právo zápisu, ale kořen nesmí být symlinkován do `public`.
+Metadata obsahují UUID, bezpečný název, MIME, velikost, SHA-256, verzi šablony a
+čas generování. Cesta je interní a nevychází ze jména klienta. Generování používá
+dočasný soubor, business transakci, přesun na finální cestu a kompenzační úklid;
+záznamy i existující PDF jsou neměnné a regenerace vytváří nový dokument.
+
+QR Platba používá SPD 1.0, CZK, IBAN ze snapshotu, přesnou desetinnou částku,
+splatnost a případný nejvýše desetimístný variabilní symbol. Chybějící či neplatný
+IBAN, nepodporovaná měna/metoda nebo nekladná částka zobrazí bezpečný fallback a
+nezabrání vzniku PDF.
+
+Administrátor může PDF vygenerovat a fakturu synchronně odeslat; viewer smí pouze
+náhled, stažení existujícího dokumentu a historii. Stažení vždy prochází policy,
+aktivním Business Contextem a tenant-local metadaty, nikdy veřejnou URL. E-mail
+má výchozího adresáta ze snapshotu odběratele, dovoluje vědomý admin override,
+přikládá konkrétní PDF a ukládá snapshot adresáta, předmětu i těla se stavem
+`pending`, `sent` nebo `failed`. Opakování stejného correlation UUID neposílá
+druhou zprávu. Audit neobsahuje tělo e-mailu, interní cestu ani SMTP chybu/secrety.
+
+SMTP se nastavuje standardními `MAIL_*` proměnnými; `MAIL_TIMEOUT` je výchozích
+15 sekund. Odeslání je záměrně synchronní běžná funkce, nikoli obecný notifikační
+systém. SMTP neposkytuje transakční exactly-once hranici společnou s MySQL:
+výpadek po přijetí zprávy serverem a před zápisem `sent` může vyžadovat ruční
+ověření. Retence a mazání dokumentů nejsou rozhodnuty a aplikace nenabízí delete
+operaci.
+
+SMTP se automatickými testy nikdy nekontaktuje (používají `array`/Mail fake).
+Ruční ověření proveďte jen v bezpečném staging prostředí: nastavte `MAIL_MAILER`,
+host, port, šifrování, uživatele, heslo a odesílatele v nesledovaném `.env`,
+odešlete jednu zkušební issued fakturu do kontrolované schránky a ověřte přílohu
+i stav historie. Heslo nevkládejte do CLI argumentu, logu ani databáze.
 
 ## Business audit změn
 

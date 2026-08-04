@@ -6,7 +6,7 @@
     @if($isDraft && auth()->user()->can('issue',$invoice))
         <x-invoices.issue-panel :invoice="$invoice" :document-sequences="$documentSequences" :sequence-previews="$sequencePreviews" :default-sequence-uuid="$defaultSequenceUuid" :correlation-uuid="$issueCorrelationUuid" />
     @elseif(!$isDraft)
-        <section class="card mt-6"><h2 class="text-lg font-bold">Další možnosti</h2><p class="mt-2 text-sm text-slate-600">PDF a odeslání e-mailem budou doplněny v další etapě.</p></section>
+        <x-invoices.delivery-history :invoice="$invoice" :generation-correlation-uuid="$generationCorrelationUuid" />
     @endif
     <x-invoices.audit-history :audits="$audits" />
     <div class="mt-6"><a class="button-secondary" href="{{ route('invoices.index') }}">Zpět na faktury</a></div>

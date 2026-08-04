@@ -9,6 +9,8 @@ use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceDocument;
+use App\Models\Business\InvoiceEmailDelivery;
 use App\Models\Business\InvoiceRevision;
 use App\Models\Business\VatRate;
 use BackedEnum;
@@ -29,6 +31,8 @@ class BusinessAuditSanitizer
             BusinessAuditableType::DocumentNumberAllocation => $this->allocation($this->expect($model, DocumentNumberAllocation::class)),
             BusinessAuditableType::VatRate => $this->vatRate($this->expect($model, VatRate::class)),
             BusinessAuditableType::Invoice => $this->invoice($this->expect($model, Invoice::class)),
+            BusinessAuditableType::InvoiceDocument => $this->invoiceDocument($this->expect($model, InvoiceDocument::class)),
+            BusinessAuditableType::InvoiceEmailDelivery => $this->invoiceEmailDelivery($this->expect($model, InvoiceEmailDelivery::class)),
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
@@ -77,6 +81,8 @@ class BusinessAuditSanitizer
                 'document_type', 'status', 'currency', 'issued_on', 'taxable_supply_on',
                 'due_on', 'payment_method', 'variable_symbol', 'note',
             ],
+            BusinessAuditableType::InvoiceDocument,
+            BusinessAuditableType::InvoiceEmailDelivery => [],
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => [],
@@ -261,6 +267,44 @@ class BusinessAuditSanitizer
             'version' => $invoice->version,
             ...($revision === null ? [] : $this->invoiceRevision($revision)),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function invoiceDocument(InvoiceDocument $document): array
+    {
+        return [
+            'document_uuid' => $document->uuid,
+            'invoice_uuid' => $document->invoice?->uuid,
+            'document_number' => $document->invoice?->document_number,
+            'filename' => $document->original_filename,
+            'mime_type' => $document->mime_type,
+            'size_bytes' => $document->size_bytes,
+            'sha256' => $document->sha256,
+            'template_version' => $document->template_version,
+            'correlation_uuid' => $document->generation_correlation_uuid,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function invoiceEmailDelivery(InvoiceEmailDelivery $delivery): array
+    {
+        return $this->withoutNulls([
+            'delivery_uuid' => $delivery->uuid,
+            'invoice_uuid' => $delivery->invoice?->uuid,
+            'document_uuid' => $delivery->document?->uuid,
+            'recipient_email_masked' => $this->maskEmail($delivery->recipient_email),
+            'status' => $this->scalar($delivery->status),
+            'subject' => mb_substr($delivery->subject, 0, 160),
+            'correlation_uuid' => $delivery->send_correlation_uuid,
+            'failure_code' => $delivery->failure_code,
+        ]);
+    }
+
+    private function maskEmail(string $email): string
+    {
+        [$local, $domain] = array_pad(explode('@', $email, 2), 2, '');
+
+        return mb_substr($local, 0, 1).'•••@'.$domain;
     }
 
     private function maskLastFour(mixed $value): ?string

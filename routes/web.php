@@ -12,6 +12,7 @@ use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
 use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\InvoiceDeliveryController;
 use App\Http\Controllers\VatRateController;
 use Illuminate\Support\Facades\Route;
 
@@ -127,6 +128,18 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
         Route::post('/faktury/nahled-vypoctu', [InvoiceController::class, 'preview'])
             ->middleware('throttle:60,1')->name('invoices.preview');
         Route::post('/faktury', [InvoiceController::class, 'store'])->name('invoices.store');
+        Route::get('/faktury/{uuid}/tiskovy-nahled', [InvoiceDeliveryController::class, 'print'])
+            ->whereUuid('uuid')->name('invoices.print');
+        Route::post('/faktury/{uuid}/pdf/vygenerovat', [InvoiceDeliveryController::class, 'generate'])
+            ->whereUuid('uuid')->name('invoices.pdf.generate');
+        Route::get('/faktury/{uuid}/pdf', [InvoiceDeliveryController::class, 'download'])
+            ->whereUuid('uuid')->name('invoices.pdf.download');
+        Route::get('/faktury/{uuid}/pdf/{documentUuid}', [InvoiceDeliveryController::class, 'download'])
+            ->whereUuid(['uuid', 'documentUuid'])->name('invoices.pdf.download-version');
+        Route::get('/faktury/{uuid}/odeslat', [InvoiceDeliveryController::class, 'sendForm'])
+            ->whereUuid('uuid')->name('invoices.email.form');
+        Route::post('/faktury/{uuid}/odeslat', [InvoiceDeliveryController::class, 'send'])
+            ->whereUuid('uuid')->name('invoices.email.send');
         Route::get('/faktury/{uuid}/upravit', [InvoiceController::class, 'edit'])
             ->whereUuid('uuid')->name('invoices.edit');
         Route::put('/faktury/{uuid}', [InvoiceController::class, 'update'])

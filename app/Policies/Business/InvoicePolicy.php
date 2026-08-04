@@ -39,4 +39,24 @@ class InvoicePolicy extends BusinessPolicy
         return $this->canManage($user)
             && ($invoice === null || $invoice->status === InvoiceStatus::Draft);
     }
+
+    public function print(User $user, Invoice $invoice): bool
+    {
+        return $this->canView($user) && $invoice->status === InvoiceStatus::Issued;
+    }
+
+    public function downloadPdf(User $user, Invoice $invoice): bool
+    {
+        return $this->print($user, $invoice);
+    }
+
+    public function generatePdf(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user) && $invoice->status === InvoiceStatus::Issued;
+    }
+
+    public function sendEmail(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user) && $invoice->status === InvoiceStatus::Issued;
+    }
 }

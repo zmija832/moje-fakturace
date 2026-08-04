@@ -81,6 +81,16 @@ class Invoice extends BusinessModel
         return $this->belongsTo(DocumentSequence::class);
     }
 
+    public function documents(): HasMany
+    {
+        return $this->hasMany(InvoiceDocument::class)->latest('generated_at')->latest('id');
+    }
+
+    public function emailDeliveries(): HasMany
+    {
+        return $this->hasMany(InvoiceEmailDelivery::class)->latest('attempted_at')->latest('id');
+    }
+
     protected function casts(): array
     {
         return [

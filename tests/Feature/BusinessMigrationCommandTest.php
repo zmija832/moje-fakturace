@@ -16,6 +16,22 @@ class BusinessMigrationCommandTest extends TestCase
 {
     use InteractsWithBusinessDatabases;
 
+    private const PART_ONE_MIGRATIONS = [
+        '2026_07_30_000000_create_company_settings_table',
+        '2026_07_30_010000_create_bank_accounts_tables',
+        '2026_07_31_000000_create_clients_table',
+        '2026_07_31_010000_create_document_sequence_tables',
+        '2026_07_31_020000_create_audit_logs_table',
+        '2026_08_01_000000_create_vat_rate_tables',
+        '2026_08_01_010000_create_invoice_draft_tables',
+    ];
+
+    private const REVISION_MIGRATION = '2026_08_01_020000_add_invoice_draft_revisions';
+
+    private const ISSUANCE_MIGRATION = '2026_08_02_000000_add_invoice_issuance_workflow';
+
+    private const DELIVERY_MIGRATION = '2026_08_03_000000_add_invoice_documents_and_deliveries';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -345,21 +361,9 @@ class BusinessMigrationCommandTest extends TestCase
 
     public function test_invoice_revision_migration_preserves_and_converts_existing_part_one_draft(): void
     {
-        $this->assertSame(0, Artisan::call('app:migrate-businesses', ['--business' => 'business_1']));
-        $this->assertSame(0, Artisan::call('migrate:rollback', [
-            '--database' => 'business_1',
-            '--path' => database_path('migrations/business/2026_08_02_000000_add_invoice_issuance_workflow.php'),
-            '--realpath' => true,
-            '--step' => 1,
-            '--force' => true,
-        ]), Artisan::output());
-        $this->assertSame(0, Artisan::call('migrate:rollback', [
-            '--database' => 'business_1',
-            '--path' => database_path('migrations/business/2026_08_01_020000_add_invoice_draft_revisions.php'),
-            '--realpath' => true,
-            '--step' => 1,
-            '--force' => true,
-        ]), Artisan::output());
+        $this->resetBusinessConnection('business_1');
+        $this->runMigrationsInNewBatch('business_1', self::PART_ONE_MIGRATIONS);
+
         $database = DB::connection('business_1');
         $now = now();
         $invoiceId = $database->table('invoices')->insertGetId([
@@ -388,18 +392,7 @@ class BusinessMigrationCommandTest extends TestCase
             'unit_price' => '100.0000', 'created_at' => $now, 'updated_at' => $now,
         ]);
 
-        $this->assertSame(0, Artisan::call('migrate', [
-            '--database' => 'business_1',
-            '--path' => database_path('migrations/business/2026_08_01_020000_add_invoice_draft_revisions.php'),
-            '--realpath' => true,
-            '--force' => true,
-        ]), Artisan::output());
-        $this->assertSame(0, Artisan::call('migrate', [
-            '--database' => 'business_1',
-            '--path' => database_path('migrations/business/2026_08_02_000000_add_invoice_issuance_workflow.php'),
-            '--realpath' => true,
-            '--force' => true,
-        ]), Artisan::output());
+        $revisionBatch = $this->runMigrationsInNewBatch('business_1', [self::REVISION_MIGRATION]);
 
         $invoice = $database->table('invoices')->where('id', $invoiceId)->first();
         $revision = $database->table('invoice_revisions')->where('invoice_id', $invoiceId)->first();
@@ -408,9 +401,8 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertSame((int) $revision->id, (int) $invoice->current_revision_id);
         $this->assertSame(1, (int) $revision->revision_number);
         $this->assertSame('draft', $invoice->status);
-        $this->assertNull($invoice->document_number);
-        $this->assertNull($invoice->issued_revision_id);
-        $this->assertNull($invoice->issued_at);
+        $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'document_number'));
+        $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'issued_revision_id'));
         $this->assertSame('250.0000', $revision->tax_base_total);
         $this->assertSame('52.5000', $revision->vat_total);
         $this->assertSame('302.5000', $revision->grand_total);
@@ -418,6 +410,22 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertSame('250.0000', $item->line_net_amount);
         $this->assertSame(1, $database->table('invoice_vat_summaries')->count());
         $this->assertSame('Historický klient', $database->table('invoice_customer_snapshots')->value('display_name'));
+
+        $this->purgeInvoiceRevisionFixtures('business_1');
+        $this->rollbackExpectedBatch('business_1', self::REVISION_MIGRATION, $revisionBatch);
+
+        $this->assertFalse(Schema::connection('business_1')->hasTable('invoice_revisions'));
+        $this->assertFalse(Schema::connection('business_1')->hasTable('invoice_vat_summaries'));
+        $this->assertFalse(Schema::connection('business_1')->hasTable('invoice_draft_operations'));
+        $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'current_revision_id'));
+        $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'version'));
+        foreach ([
+            'invoice_supplier_snapshots', 'invoice_customer_snapshots', 'invoice_bank_account_snapshots',
+            'invoice_vat_snapshots', 'invoice_items',
+        ] as $table) {
+            $this->assertTrue(Schema::connection('business_1')->hasColumn($table, 'invoice_id'));
+            $this->assertFalse(Schema::connection('business_1')->hasColumn($table, 'invoice_revision_id'));
+        }
     }
 
     public function test_command_can_migrate_only_one_enum_connection(): void
@@ -445,20 +453,24 @@ class BusinessMigrationCommandTest extends TestCase
 
     public function test_invoice_issuance_migration_can_roll_back_without_issued_documents(): void
     {
-        $this->assertSame(0, Artisan::call('app:migrate-businesses', ['--business' => 'business_1']));
-        $this->assertTrue(Schema::connection('business_1')->hasColumn('invoices', 'issued_revision_id'));
+        $this->resetBusinessConnection('business_1');
+        $this->runMigrationsInNewBatch('business_1', [
+            ...self::PART_ONE_MIGRATIONS,
+            self::REVISION_MIGRATION,
+        ]);
+        $issuanceBatch = $this->runMigrationsInNewBatch('business_1', [self::ISSUANCE_MIGRATION]);
 
-        $this->assertSame(0, Artisan::call('migrate:rollback', [
-            '--database' => 'business_1',
-            '--path' => database_path('migrations/business/2026_08_02_000000_add_invoice_issuance_workflow.php'),
-            '--realpath' => true,
-            '--step' => 1,
-            '--force' => true,
-        ]), Artisan::output());
+        $this->assertTrue(Schema::connection('business_1')->hasColumn('invoices', 'issued_revision_id'));
+        $this->assertTrue($this->invoiceCheckConstraintExists('business_1', 'invoices_issuance_values_check'));
+        $this->assertFalse($this->invoiceCheckConstraintExists('business_1', 'invoices_part_one_values_check'));
+
+        $this->rollbackExpectedBatch('business_1', self::ISSUANCE_MIGRATION, $issuanceBatch);
 
         $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'issued_revision_id'));
         $this->assertFalse(Schema::connection('business_1')->hasColumn('invoices', 'document_number'));
         $this->assertTrue(Schema::connection('business_1')->hasColumn('document_number_allocations', 'document_uuid'));
+        $this->assertFalse($this->invoiceCheckConstraintExists('business_1', 'invoices_issuance_values_check'));
+        $this->assertTrue($this->invoiceCheckConstraintExists('business_1', 'invoices_part_one_values_check'));
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
@@ -503,6 +515,129 @@ class BusinessMigrationCommandTest extends TestCase
             DB::connection('business_1')->table('migration_sentinel')->value('value'),
         );
         $this->assertSame('central', DB::getDefaultConnection());
+    }
+
+    private function resetBusinessConnection(string $connection): void
+    {
+        $this->ensureSafeTestDatabases();
+        $this->assertContains($connection, ['business_1', 'business_2']);
+        $defaultConnection = DB::getDefaultConnection();
+
+        $exitCode = Artisan::call('migrate:reset', [
+            '--database' => $connection,
+            '--path' => [database_path('migrations/business')],
+            '--realpath' => true,
+            '--force' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode, Artisan::output());
+        $this->assertSame(0, DB::connection($connection)->table('migrations')->count());
+        $this->assertSame($defaultConnection, DB::getDefaultConnection());
+    }
+
+    /**
+     * @param  list<string>  $migrations
+     */
+    private function runMigrationsInNewBatch(string $connection, array $migrations): int
+    {
+        $database = DB::connection($connection);
+        $previousBatch = (int) ($database->table('migrations')->max('batch') ?? 0);
+        $paths = array_map(
+            static fn (string $migration): string => database_path("migrations/business/{$migration}.php"),
+            $migrations,
+        );
+
+        $exitCode = Artisan::call('migrate', [
+            '--database' => $connection,
+            '--path' => $paths,
+            '--realpath' => true,
+            '--force' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode, Artisan::output());
+        $batch = (int) $database->table('migrations')->max('batch');
+        $this->assertSame($previousBatch + 1, $batch);
+
+        $expectedMigrations = $migrations;
+        sort($expectedMigrations);
+        $this->assertSame(
+            $expectedMigrations,
+            $database->table('migrations')->where('batch', $batch)->orderBy('migration')->pluck('migration')->all(),
+        );
+        $this->assertSame('central', DB::getDefaultConnection());
+
+        return $batch;
+    }
+
+    private function rollbackExpectedBatch(string $connection, string $migration, int $batch): void
+    {
+        $database = DB::connection($connection);
+        $before = $database->table('migrations')->orderBy('migration')->pluck('batch', 'migration')->all();
+
+        $this->assertArrayHasKey($migration, $before);
+        $this->assertSame($batch, (int) $before[$migration]);
+        $this->assertSame($batch, (int) $database->table('migrations')->max('batch'));
+        $this->assertSame(
+            [$migration],
+            $database->table('migrations')->where('batch', $batch)->pluck('migration')->all(),
+        );
+        $this->assertArrayNotHasKey(self::DELIVERY_MIGRATION, $before);
+
+        $exitCode = Artisan::call('migrate:rollback', [
+            '--database' => $connection,
+            '--path' => [database_path("migrations/business/{$migration}.php")],
+            '--realpath' => true,
+            '--batch' => $batch,
+            '--force' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode, Artisan::output());
+
+        unset($before[$migration]);
+        $this->assertSame(
+            $before,
+            $database->table('migrations')->orderBy('migration')->pluck('batch', 'migration')->all(),
+        );
+        $this->assertFalse($database->table('migrations')->where('migration', $migration)->exists());
+        $this->assertFalse($database->table('migrations')->where('migration', self::DELIVERY_MIGRATION)->exists());
+        $this->assertSame('central', DB::getDefaultConnection());
+    }
+
+    private function purgeInvoiceRevisionFixtures(string $connection): void
+    {
+        $this->ensureSafeTestDatabases();
+        $database = DB::connection($connection);
+        $database->statement('SET FOREIGN_KEY_CHECKS=0');
+
+        try {
+            foreach ([
+                'invoice_draft_operations', 'invoice_vat_summaries', 'invoice_items',
+                'invoice_supplier_snapshots', 'invoice_customer_snapshots',
+                'invoice_bank_account_snapshots', 'invoice_vat_snapshots',
+                'invoice_revisions', 'invoices',
+            ] as $table) {
+                $database->table($table)->truncate();
+            }
+        } finally {
+            $database->statement('SET FOREIGN_KEY_CHECKS=1');
+        }
+    }
+
+    private function invoiceCheckConstraintExists(string $connection, string $constraint): bool
+    {
+        $result = DB::connection($connection)->selectOne(
+            <<<'SQL'
+                SELECT COUNT(*) AS aggregate
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'invoices'
+                  AND CONSTRAINT_NAME = ?
+                  AND CONSTRAINT_TYPE = 'CHECK'
+                SQL,
+            [$constraint],
+        );
+
+        return (int) $result->aggregate === 1;
     }
 
     /**

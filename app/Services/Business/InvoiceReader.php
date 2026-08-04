@@ -22,6 +22,7 @@ class InvoiceReader
             $revisionRelation.'.supplierSnapshot', $revisionRelation.'.customerSnapshot',
             $revisionRelation.'.bankAccountSnapshot', $revisionRelation.'.vatSnapshots',
             $revisionRelation.'.items.vatSnapshot', $revisionRelation.'.vatSummaries',
+            'documents', 'emailDeliveries.document',
         ]);
     }
 

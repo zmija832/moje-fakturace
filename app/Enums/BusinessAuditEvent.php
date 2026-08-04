@@ -39,6 +39,11 @@ enum BusinessAuditEvent: string
     case InvoiceDraftUpdateConflict = 'invoice.draft_update_conflict';
     case InvoiceIssued = 'invoice.issued';
     case InvoiceIssueConflict = 'invoice.issue_conflict';
+    case InvoicePdfGenerated = 'invoice.pdf_generated';
+    case InvoicePdfGenerationFailed = 'invoice.pdf_generation_failed';
+    case InvoiceEmailSendRequested = 'invoice.email_send_requested';
+    case InvoiceEmailSent = 'invoice.email_sent';
+    case InvoiceEmailFailed = 'invoice.email_failed';
 
     public function label(): string
     {
@@ -78,6 +83,11 @@ enum BusinessAuditEvent: string
             self::InvoiceDraftUpdateConflict => 'Konflikt při úpravě návrhu faktury',
             self::InvoiceIssued => 'Vystavena faktura',
             self::InvoiceIssueConflict => 'Konflikt při vystavení faktury',
+            self::InvoicePdfGenerated => 'Vygenerováno PDF faktury',
+            self::InvoicePdfGenerationFailed => 'Generování PDF faktury selhalo',
+            self::InvoiceEmailSendRequested => 'Vyžádáno odeslání faktury',
+            self::InvoiceEmailSent => 'Faktura odeslána e-mailem',
+            self::InvoiceEmailFailed => 'Odeslání faktury selhalo',
         };
     }
 

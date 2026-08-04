@@ -12,7 +12,7 @@ return new class extends Migration
     {
         $connection = BusinessConnection::fromConfiguredValue(DB::getDefaultConnection())->connectionName();
 
-        DB::connection($connection)->statement('ALTER TABLE `invoices` DROP CHECK `invoices_part_one_values_check`');
+        $this->dropInvoiceCheckConstraint($connection, 'invoices_part_one_values_check');
 
         Schema::connection($connection)->table('invoice_revisions', function (Blueprint $table): void {
             $table->unique(['id', 'invoice_id'], 'invoice_revisions_id_invoice_unique');
@@ -147,9 +147,7 @@ return new class extends Migration
             DB::connection($connection)->unprepared('DROP TRIGGER IF EXISTS `'.$trigger.'`');
         }
 
-        DB::connection($connection)->statement(
-            'ALTER TABLE `invoices` DROP CHECK `invoices_issuance_values_check`',
-        );
+        $this->dropInvoiceCheckConstraint($connection, 'invoices_issuance_values_check');
         $this->dropIssuanceColumns($connection);
         $this->restoreAllocationIndexes($connection);
         $this->restoreDraftConstraint($connection);
@@ -194,5 +192,14 @@ return new class extends Migration
             ALTER TABLE `invoices` ADD CONSTRAINT `invoices_part_one_values_check`
             CHECK (`document_type` = 'issued_invoice' AND `status` = 'draft' AND `due_on` >= `issued_on`)
             SQL);
+    }
+
+    private function dropInvoiceCheckConstraint(string $connection, string $constraint): void
+    {
+        $database = DB::connection($connection);
+        $serverVersion = strtolower((string) $database->getPdo()->getAttribute(PDO::ATTR_SERVER_VERSION));
+        $dropClause = str_contains($serverVersion, 'mariadb') ? 'DROP CONSTRAINT' : 'DROP CHECK';
+
+        $database->statement("ALTER TABLE `invoices` {$dropClause} `{$constraint}`");
     }
 };
