@@ -29,6 +29,11 @@ class VatRateServiceTest extends TestCase
     use BuildsBusinessProcessEnvironment;
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_audit_failure_rolls_back_domain_change',
+        'test_two_real_processes_cannot_create_overlapping_periods',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();

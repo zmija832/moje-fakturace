@@ -21,6 +21,8 @@ class InvoicePaymentMigrationTest extends TestCase
     use CreatesInvoiceDeliveryFixtures;
     use InteractsWithBusinessDatabases;
 
+    protected bool $businessDatabaseTransactions = false;
+
     protected function tearDown(): void
     {
         app(ActiveBusinessContext::class)->clear();

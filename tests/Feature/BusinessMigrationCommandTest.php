@@ -16,6 +16,8 @@ class BusinessMigrationCommandTest extends TestCase
 {
     use InteractsWithBusinessDatabases;
 
+    protected bool $businessDatabaseTransactions = false;
+
     private const PART_ONE_MIGRATIONS = [
         '2026_07_30_000000_create_company_settings_table',
         '2026_07_30_010000_create_bank_accounts_tables',
@@ -37,15 +39,6 @@ class BusinessMigrationCommandTest extends TestCase
         parent::setUp();
 
         $this->resetBusinessTestMigrations();
-    }
-
-    protected function tearDown(): void
-    {
-        try {
-            $this->refreshBusinessTestDatabases();
-        } finally {
-            parent::tearDown();
-        }
     }
 
     public function test_command_migrates_both_business_databases_but_not_central(): void

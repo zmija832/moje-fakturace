@@ -11,45 +11,39 @@ trait InteractsWithBusinessDatabases
 {
     protected function refreshBusinessTestDatabases(): void
     {
-        $this->ensureSafeTestDatabases();
-        $defaultConnection = DB::getDefaultConnection();
-
-        foreach (BusinessConnection::cases() as $connection) {
-            $exitCode = Artisan::call('migrate:fresh', [
-                '--database' => $connection->connectionName(),
-                '--path' => [database_path('migrations/business')],
-                '--realpath' => true,
-                '--force' => true,
-            ]);
-
-            if ($exitCode !== 0) {
-                throw new RuntimeException(
-                    "Obnova testovací databáze {$connection->connectionName()} selhala.",
-                );
-            }
+        if ($this->usesBusinessDatabaseTransactions()) {
+            return;
         }
 
-        if (DB::getDefaultConnection() !== $defaultConnection) {
-            throw new RuntimeException('Obnova business testovacích databází změnila default connection.');
-        }
+        $this->migrateFreshBusinessTestDatabases();
+        $this->markBusinessTestDatabasesDirty();
     }
 
     protected function resetBusinessTestMigrations(): void
     {
-        $this->refreshBusinessTestDatabases();
+        $this->ensureSafeTestDatabases();
         $defaultConnection = DB::getDefaultConnection();
 
         foreach (BusinessConnection::cases() as $connection) {
-            $exitCode = Artisan::call('migrate:reset', [
+            $exitCode = Artisan::call('db:wipe', [
                 '--database' => $connection->connectionName(),
-                '--path' => [database_path('migrations/business')],
-                '--realpath' => true,
+                '--drop-views' => true,
                 '--force' => true,
             ]);
 
             if ($exitCode !== 0) {
                 throw new RuntimeException(
-                    "Reset migrací testovací databáze {$connection->connectionName()} selhal.",
+                    "Vyčištění testovací databáze {$connection->connectionName()} selhalo.",
+                );
+            }
+
+            $exitCode = Artisan::call('migrate:install', [
+                '--database' => $connection->connectionName(),
+            ]);
+
+            if ($exitCode !== 0) {
+                throw new RuntimeException(
+                    "Vytvoření migration repository v testovací databázi {$connection->connectionName()} selhalo.",
                 );
             }
         }
@@ -57,5 +51,7 @@ trait InteractsWithBusinessDatabases
         if (DB::getDefaultConnection() !== $defaultConnection) {
             throw new RuntimeException('Reset business testovacích migrací změnil default connection.');
         }
+
+        $this->markBusinessTestDatabasesDirty();
     }
 }

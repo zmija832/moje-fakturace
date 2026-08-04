@@ -32,6 +32,13 @@ class InvoiceDraftEditorTest extends TestCase
     use BuildsBusinessProcessEnvironment;
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_audit_failure_rolls_back_revision_operation_pointer_and_version',
+        'test_item_or_snapshot_insert_failure_and_overflow_leave_no_partial_revision',
+        'test_snapshot_summary_and_current_pointer_failures_each_rollback_the_whole_revision',
+        'test_two_processes_with_same_version_allow_exactly_one_revision',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();

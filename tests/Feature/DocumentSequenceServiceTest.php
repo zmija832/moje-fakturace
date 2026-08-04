@@ -29,6 +29,10 @@ class DocumentSequenceServiceTest extends TestCase
     use BuildsBusinessProcessEnvironment;
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_two_real_processes_allocate_unique_numbers_repeatedly',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();

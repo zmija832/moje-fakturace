@@ -38,6 +38,10 @@ class InvoiceDraftServiceTest extends TestCase
 {
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_audit_is_safe_tenant_local_and_failure_rolls_back_every_table',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();

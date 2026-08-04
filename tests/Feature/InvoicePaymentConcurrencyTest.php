@@ -19,6 +19,8 @@ class InvoicePaymentConcurrencyTest extends TestCase
     use CreatesInvoiceDeliveryFixtures;
     use InteractsWithBusinessDatabases;
 
+    protected bool $businessDatabaseTransactions = false;
+
     protected function setUp(): void
     {
         parent::setUp();

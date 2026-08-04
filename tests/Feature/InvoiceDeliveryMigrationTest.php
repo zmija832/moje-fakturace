@@ -20,6 +20,8 @@ class InvoiceDeliveryMigrationTest extends TestCase
     use CreatesInvoiceDeliveryFixtures;
     use InteractsWithBusinessDatabases;
 
+    protected bool $businessDatabaseTransactions = false;
+
     public function test_document_and_delivery_schema_exists_only_in_identical_business_databases(): void
     {
         $this->refreshBusinessTestDatabases();

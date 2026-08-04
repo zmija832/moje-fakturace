@@ -33,6 +33,10 @@ class BusinessAuditTest extends TestCase
 {
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_audit_insert_failure_rolls_back_domain_change',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();

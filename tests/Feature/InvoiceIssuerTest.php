@@ -43,6 +43,12 @@ class InvoiceIssuerTest extends TestCase
     use BuildsBusinessProcessEnvironment;
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_valid_draft_is_issued_once_and_becomes_strictly_immutable',
+        'test_readiness_and_audit_failure_leave_draft_numbering_untouched',
+        'test_two_processes_issue_same_draft_exactly_once',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();

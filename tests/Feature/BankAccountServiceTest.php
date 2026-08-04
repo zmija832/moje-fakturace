@@ -25,6 +25,10 @@ class BankAccountServiceTest extends TestCase
     use BuildsBusinessProcessEnvironment;
     use InteractsWithBusinessDatabases;
 
+    protected array $businessDatabaseTransactionExclusions = [
+        'test_concurrent_default_changes_leave_exactly_one_default_per_currency',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
