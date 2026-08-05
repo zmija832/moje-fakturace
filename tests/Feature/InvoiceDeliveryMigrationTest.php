@@ -98,11 +98,17 @@ class InvoiceDeliveryMigrationTest extends TestCase
         }
 
         try {
+            $deliveryBatch = (int) DB::connection(BusinessConnection::Business1->connectionName())
+                ->table('migrations')
+                ->where('migration', '2026_08_03_000000_add_invoice_documents_and_deliveries')
+                ->value('batch');
+            $this->assertGreaterThan(0, $deliveryBatch);
+
             $exitCode = Artisan::call('migrate:rollback', [
                 '--database' => BusinessConnection::Business1->connectionName(),
                 '--path' => [database_path('migrations/business/2026_08_03_000000_add_invoice_documents_and_deliveries.php')],
                 '--realpath' => true,
-                '--step' => 1,
+                '--batch' => $deliveryBatch,
                 '--force' => true,
             ]);
             $this->assertNotSame(0, $exitCode);

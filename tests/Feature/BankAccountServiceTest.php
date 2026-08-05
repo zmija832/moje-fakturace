@@ -26,6 +26,7 @@ class BankAccountServiceTest extends TestCase
     use InteractsWithBusinessDatabases;
 
     protected array $businessDatabaseTransactionExclusions = [
+        'test_same_uuid_and_id_in_both_databases_do_not_cross_business_boundary',
         'test_concurrent_default_changes_leave_exactly_one_default_per_currency',
     ];
 

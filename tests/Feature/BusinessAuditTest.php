@@ -34,6 +34,8 @@ class BusinessAuditTest extends TestCase
     use InteractsWithBusinessDatabases;
 
     protected array $businessDatabaseTransactionExclusions = [
+        'test_writer_refuses_to_create_audit_outside_domain_transaction',
+        'test_audits_are_physically_isolated_and_same_uuid_can_exist_in_both_databases',
         'test_audit_insert_failure_rolls_back_domain_change',
     ];
 
