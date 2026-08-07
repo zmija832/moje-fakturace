@@ -70,7 +70,6 @@ Jednoduchý plán dalšího vývoje soukromé fakturační aplikace.
 - [ ] Správci: faktura po splatnosti a blížící se splatnost
 - [ ] Správci: chyba odeslání a selhání automatické úlohy
 - [ ] Klientovi: faktura vystavena a odeslána
-- [ ] Klientovi: připomenutí před splatností, první a další upomínka
 - [ ] Klientovi: potvrzení o zaplacení
 
 Notifikace vzniknou až po návrhu e-mailu, plateb a plánovaných úloh. Jednotlivé
