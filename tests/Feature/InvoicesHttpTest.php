@@ -96,6 +96,8 @@ class InvoicesHttpTest extends TestCase
 
         $this->get(route('invoices.create'))->assertOk()->assertSee('Nová faktura')
             ->assertSee('name="_token"', false)->assertSee('Finální částky vždy znovu vypočítá server')
+            ->assertSee('aria-label="Vytvořit nového klienta"', false)
+            ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
         $before = $this->counts();
         $this->postJson(route('invoices.preview'), $this->payload($client, $account, $rate))
@@ -107,6 +109,9 @@ class InvoicesHttpTest extends TestCase
         $response->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status', 'Návrh faktury byl vytvořen.');
         $this->assertSame(1, $invoice->currentRevision->revision_number);
         $this->assertSame('100.0000', $invoice->currentRevision->grand_total);
+        $this->get(route('invoices.edit', $invoice->uuid))->assertOk()
+            ->assertDontSee('aria-label="Vytvořit nového klienta"', false)
+            ->assertDontSee('Nový klient');
 
         $this->post(route('invoices.store'), $this->payload($client, $account, $rate) + ['grand_total' => '0', 'connection' => 'business_2'])
             ->assertSessionHasErrors(['grand_total', 'connection']);
@@ -119,6 +124,34 @@ class InvoicesHttpTest extends TestCase
         $stale = $this->payload($client, $account, $rate, ['note' => 'Přepsat', 'version' => 1, 'correlation_uuid' => (string) Str::uuid()]);
         $this->put(route('invoices.update', $invoice->uuid), $stale)->assertSessionHas('error');
         $this->assertSame('Nová bezpečná poznámka', $invoice->fresh()->currentRevision->note);
+    }
+
+    public function test_quick_created_client_can_be_used_immediately_for_invoice_snapshot(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [, $account, $rate] = $this->sources();
+        $this->defaults($account, $rate);
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $quickClient = $this->postJson(route('clients.store'), [
+            'type' => 'company', 'company_name' => 'Rychlý odběratel s.r.o.',
+            'registration_number' => '00123456', 'tax_id' => 'CZ00123456',
+            'phone' => '+420 111 222 333', 'email' => 'rychly@example.test',
+            'street' => 'Rychlá 10', 'city' => 'Brno', 'postal_code' => '60200', 'country_code' => 'CZ',
+        ])->assertCreated()->json('client');
+
+        $client = Client::query()->where('uuid', $quickClient['uuid'])->firstOrFail();
+        $this->post(route('invoices.store'), $this->payload($client, $account, $rate))->assertSessionHasNoErrors();
+
+        $snapshot = Invoice::query()->firstOrFail()->currentRevision->customerSnapshot;
+        $this->assertSame($client->uuid, $snapshot->source_client_uuid);
+        $this->assertSame('Rychlý odběratel s.r.o.', $snapshot->display_name);
+        $this->assertSame('Rychlá 10', $snapshot->street);
+        $this->assertSame('Brno', $snapshot->city);
+        $this->assertSame('60200', $snapshot->postal_code);
+        $this->assertSame('CZ', $snapshot->country_code);
     }
 
     public function test_issue_ui_is_idempotent_and_issued_detail_uses_only_snapshots(): void

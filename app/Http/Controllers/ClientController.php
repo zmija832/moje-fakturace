@@ -11,6 +11,7 @@ use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Business\Client;
 use App\Services\Business\ClientService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -35,9 +36,26 @@ class ClientController extends Controller
         return view('business.clients.create', $this->formData($service->newForForm()));
     }
 
-    public function store(StoreClientRequest $request, ClientService $service): RedirectResponse
+    public function store(StoreClientRequest $request, ClientService $service): RedirectResponse|JsonResponse
     {
-        $client = $service->create($request->validated());
+        $attributes = $request->validated();
+
+        if ($request->expectsJson()) {
+            $attributes['is_active'] = true;
+        }
+
+        $client = $service->create($attributes);
+
+        if ($request->expectsJson()) {
+            return response()->json(['client' => [
+                'uuid' => $client->uuid,
+                'display_name' => $client->display_name,
+                'registration_number' => $client->registration_number,
+                'default_currency' => $client->default_currency,
+                'default_due_days' => $client->default_due_days,
+                'default_payment_method' => $client->default_payment_method,
+            ]], 201);
+        }
 
         return redirect()->route('clients.show', $client->uuid)
             ->with('status', 'Klient byl vytvořen.');

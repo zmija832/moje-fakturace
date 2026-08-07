@@ -10,6 +10,10 @@
 }
 
 @layer base {
+    [x-cloak] {
+        display: none !important;
+    }
+
     body {
         @apply bg-slate-50 text-slate-900 antialiased;
     }

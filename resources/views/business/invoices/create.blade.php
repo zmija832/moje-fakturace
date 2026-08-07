@@ -4,6 +4,7 @@
         :action="route('invoices.store')" method="POST" submit-label="Vytvořit návrh"
         :defaults="$defaults" :clients="$clients" :clients-truncated="$clientsTruncated"
         :bank-accounts="$bankAccounts" :vat-rates="$vatRates" :currencies="$currencies"
+        :client-types="$clientTypes" :countries="$countries" :allow-inline-client-creation="true"
         :payment-methods="$paymentMethods" :discount-types="$discountTypes"
         :default-bank-accounts="$defaultBankAccounts" :default-vat-rate-uuid="$defaultVatRateUuid" />
 </x-layouts.app>

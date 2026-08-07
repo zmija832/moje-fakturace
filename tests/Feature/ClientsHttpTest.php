@@ -108,6 +108,61 @@ class ClientsHttpTest extends TestCase
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
+    public function test_admin_quick_creates_active_client_with_json_without_accepting_technical_fields(): void
+    {
+        [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
+        $payload = $this->companyPayload([
+            'display_name' => '', 'company_name' => '  Rychlý klient s.r.o. ',
+            'email' => ' RYCHLY@EXAMPLE.TEST ', 'is_active' => '0',
+            'connection' => 'business_2', 'business_id' => 999, 'uuid' => (string) Str::uuid(),
+        ]);
+
+        $response = $this->actingAs($user)->withSession($this->businessSession($business))
+            ->postJson(route('clients.store').'?connection=business_2', $payload)
+            ->assertCreated()
+            ->assertJsonPath('client.display_name', 'Rychlý klient s.r.o.')
+            ->assertJsonPath('client.registration_number', '12345678')
+            ->assertJsonStructure(['client' => [
+                'uuid', 'display_name', 'registration_number', 'default_currency',
+                'default_due_days', 'default_payment_method',
+            ]]);
+
+        $uuid = $response->json('client.uuid');
+        $this->assertTrue(Str::isUuid($uuid));
+        $this->assertDatabaseHas('clients', [
+            'uuid' => $uuid, 'display_name' => 'Rychlý klient s.r.o.',
+            'email' => 'rychly@example.test', 'is_active' => true,
+            'street' => 'Testovací', 'city' => 'Praha', 'postal_code' => '11000', 'country_code' => 'CZ',
+        ], 'business_1');
+        $this->assertSame(0, DB::connection('business_2')->table('clients')->count());
+        $this->assertDatabaseHas('audit_logs', [
+            'event' => 'client.created', 'auditable_uuid' => $uuid,
+        ], 'business_1');
+        $this->assertArrayNotHasKey('id', $response->json('client'));
+        $this->assertArrayNotHasKey('connection', $response->json('client'));
+        $this->assertArrayNotHasKey('business_id', $response->json('client'));
+    }
+
+    public function test_quick_client_json_keeps_existing_address_validation(): void
+    {
+        [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
+        $payload = $this->companyPayload([
+            'street' => '', 'city' => '', 'postal_code' => '', 'country_code' => '',
+        ]);
+        unset($payload['is_active']);
+
+        $response = $this->actingAs($user)->withSession($this->businessSession($business))
+            ->postJson(route('clients.store'), $payload)
+            ->assertUnprocessable();
+
+        $validationErrors = $response->json('errors');
+        foreach (['street', 'city', 'postal_code', 'country_code'] as $field) {
+            $this->assertArrayHasKey($field, $validationErrors);
+        }
+
+        $this->assertSame(0, DB::connection('business_1')->table('clients')->count());
+    }
+
     public function test_admin_updates_lifecycle_and_archived_client_is_read_only_but_visible(): void
     {
         [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);

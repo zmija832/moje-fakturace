@@ -4,6 +4,7 @@ namespace App\Services\Business;
 
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\CompanySettings\CompanySettingOptions;
+use App\Enums\ClientType;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\DocumentType;
 use App\Enums\InvoiceDiscountType;
@@ -58,6 +59,8 @@ class InvoiceFormOptions
                 ->mapWithKeys(fn (BankAccountDefault $default): array => [$default->currency => $default->account?->uuid]),
             'defaultVatRateUuid' => VatRateDefault::query()->with('rate')->where('context', 'sales')->first()?->rate?->uuid,
             'companySettings' => $company,
+            'clientTypes' => ClientType::options(),
+            'countries' => CompanySettingOptions::COUNTRIES,
             'currencies' => CompanySettingOptions::CURRENCIES,
             'paymentMethods' => DefaultPaymentMethod::options(),
             'discountTypes' => collect(InvoiceDiscountType::cases())->mapWithKeys(
