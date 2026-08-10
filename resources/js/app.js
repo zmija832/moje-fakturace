@@ -14,6 +14,20 @@ Alpine.data('invoiceEditor', (config) => ({
     quickClientGeneralError: '',
     quickClientSubmitting: false,
     quickClientSuccess: '',
+    aresLoading: false,
+    aresMessage: '',
+    aresWarning: '',
+    init() {
+        if (Object.keys(this.errors).length === 0) return;
+
+        this.$nextTick(() => requestAnimationFrame(() => {
+            const firstInvalid = this.$refs.form?.querySelector('[aria-invalid="true"]');
+            if (!firstInvalid) return;
+
+            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstInvalid.focus({ preventScroll: true });
+        }));
+    },
     addItem() {
         this.items.push({ description: '', quantity: '1', unit: 'ks', unit_price: '0', discount_type: 'none', discount_value: '0', vat_rate_uuid: config.defaultVatRateUuid ?? '' });
     },
@@ -28,22 +42,104 @@ Alpine.data('invoiceEditor', (config) => ({
     fieldError(index, field) {
         return this.errors[`items.${index}.${field}`]?.[0] ?? '';
     },
+    hasFieldError(index, field) {
+        return this.fieldError(index, field) !== '';
+    },
+    focusErrorField(id) {
+        this.$nextTick(() => {
+            const target = document.getElementById(id);
+            if (!target) return;
+
+            const focusTarget = target.matches('input, select, textarea, button, [tabindex]')
+                ? target
+                : target.querySelector('input:not([type="hidden"]), select, textarea, button, [tabindex]');
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            focusTarget?.focus({ preventScroll: true });
+        });
+    },
     openQuickClient() {
         this.quickClientErrors = {};
         this.quickClientGeneralError = '';
         this.quickClientSuccess = '';
+        this.aresMessage = '';
+        this.aresWarning = '';
         this.quickClientType = 'company';
         this.quickClientOpen = true;
         this.$nextTick(() => this.$refs.quickClientFirst?.focus());
     },
     closeQuickClient() {
-        if (!this.quickClientSubmitting) this.quickClientOpen = false;
+        if (!this.quickClientSubmitting && !this.aresLoading) this.quickClientOpen = false;
     },
     quickClientFieldError(field) {
         return this.quickClientErrors[field]?.[0] ?? '';
     },
+    async loadQuickClientFromAres() {
+        if (this.aresLoading || this.quickClientSubmitting || !config.aresLookupUrl) return;
+
+        const registrationInput = this.$refs.quickClientForm.elements.namedItem('registration_number');
+        const ico = String(registrationInput?.value ?? '').replace(/\s+/g, '');
+        this.aresMessage = '';
+        this.aresWarning = '';
+        this.quickClientGeneralError = '';
+
+        if (!/^\d{8}$/.test(ico)) {
+            this.quickClientErrors = {
+                ...this.quickClientErrors,
+                registration_number: ['IČO musí obsahovat přesně 8 číslic.'],
+            };
+            return;
+        }
+
+        registrationInput.value = ico;
+        this.quickClientErrors = { ...this.quickClientErrors, registration_number: [] };
+        this.aresLoading = true;
+
+        try {
+            const response = await fetch(config.aresLookupUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': config.csrf,
+                },
+                body: JSON.stringify({ ico }),
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (response.status === 422) {
+                this.quickClientErrors = {
+                    ...this.quickClientErrors,
+                    registration_number: data.errors?.ico ?? ['Zadané IČO není platné.'],
+                };
+                return;
+            }
+
+            if (!response.ok || !data.subject) {
+                throw new Error(data.message ?? 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.');
+            }
+
+            this.quickClientType = 'company';
+            for (const field of [
+                'company_name', 'registration_number', 'tax_id', 'street',
+                'city', 'postal_code', 'country_code',
+            ]) {
+                const value = data.subject[field];
+                const input = this.$refs.quickClientForm.elements.namedItem(field);
+                if (input && typeof value === 'string' && value !== '') input.value = value;
+            }
+
+            this.aresMessage = 'Údaje byly načteny z ARES. Před uložením je můžete upravit.';
+            this.aresWarning = Array.isArray(data.warnings) ? data.warnings.join(' ') : '';
+        } catch (error) {
+            this.quickClientGeneralError = error instanceof Error
+                ? error.message
+                : 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.';
+        } finally {
+            this.aresLoading = false;
+        }
+    },
     async createQuickClient() {
-        if (this.quickClientSubmitting || !config.clientStoreUrl) return;
+        if (this.quickClientSubmitting || this.aresLoading || !config.clientStoreUrl) return;
         this.quickClientSubmitting = true;
         this.quickClientErrors = {};
         this.quickClientGeneralError = '';

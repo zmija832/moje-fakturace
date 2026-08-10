@@ -4,15 +4,43 @@
     $storedItems = $revision?->items->map(fn($item)=>['description'=>$item->description,'quantity'=>$item->quantity,'unit'=>$item->unit,'unit_price'=>$item->unit_price,'discount_type'=>$item->discount_type->value,'discount_value'=>$item->discount_value,'vat_rate_uuid'=>$item->vatSnapshot->source_vat_rate_uuid])->all();
     $initialItems = old('items', $storedItems ?: [['description'=>'','quantity'=>'1','unit'=>'ks','unit_price'=>'0','discount_type'=>'none','discount_value'=>'0','vat_rate_uuid'=>$defaultVatRateUuid ?? '']]);
     $canCreateClientInline = $allowInlineClientCreation && auth()->user()?->can('create', \App\Models\Business\Client::class);
-    $editorConfig = ['items'=>$initialItems,'errors'=>$errors->toArray(),'previewUrl'=>route('invoices.preview'),'clientStoreUrl'=>$canCreateClientInline ? route('clients.store') : null,'csrf'=>csrf_token(),'defaultVatRateUuid'=>$defaultVatRateUuid,'currency'=>old('currency',$values['currency'] ?? 'CZK'),'paymentMethod'=>old('payment_method',$values['payment_method'] ?? 'bank_transfer')];
+    $editorConfig = ['items'=>$initialItems,'errors'=>$errors->toArray(),'previewUrl'=>route('invoices.preview'),'clientStoreUrl'=>$canCreateClientInline ? route('clients.store') : null,'aresLookupUrl'=>$canCreateClientInline ? route('clients.ares.lookup') : null,'csrf'=>csrf_token(),'defaultVatRateUuid'=>$defaultVatRateUuid,'currency'=>old('currency',$values['currency'] ?? 'CZK'),'paymentMethod'=>old('payment_method',$values['payment_method'] ?? 'bank_transfer')];
+    $errorLabels = ['customer_uuid'=>'Klient','bank_account_uuid'=>'Bankovní účet','currency'=>'Měna','payment_method'=>'Způsob úhrady','issued_on'=>'Datum vystavení','taxable_supply_on'=>'DUZP','due_on'=>'Datum splatnosti','variable_symbol'=>'Variabilní symbol','invoice_discount_type'=>'Celková sleva','invoice_discount_value'=>'Hodnota celkové slevy','note'=>'Poznámka','items'=>'Položky'];
+    $itemErrorLabels = ['position'=>'Pořadí','description'=>'Popis','quantity'=>'Množství','unit'=>'Jednotka','unit_price'=>'Cena bez DPH','discount_type'=>'Sleva','discount_value'=>'Hodnota slevy','vat_rate_uuid'=>'Sazba DPH'];
+    $errorTarget = static function (string $key) use ($errorLabels): string {
+        if (preg_match('/^items\.(\d+)\.([a-z_]+)$/', $key, $matches) === 1) {
+            $suffixes = ['unit_price'=>'price','discount_type'=>'discount-type','discount_value'=>'discount-value','vat_rate_uuid'=>'vat'];
+
+            return 'item-'.$matches[1].'-'.($suffixes[$matches[2]] ?? $matches[2]);
+        }
+
+        return $key === 'items' ? 'invoice-items' : (array_key_exists($key, $errorLabels) ? $key : 'invoice-form');
+    };
+    $errorLabel = static function (string $key) use ($errorLabels, $itemErrorLabels): string {
+        if (preg_match('/^items\.(\d+)\.([a-z_]+)$/', $key, $matches) === 1) {
+            return 'Položka '.((int) $matches[1] + 1).' – '.($itemErrorLabels[$matches[2]] ?? $matches[2]);
+        }
+
+        return $errorLabels[$key] ?? $key;
+    };
 @endphp
+<div x-data="invoiceEditor({{ Illuminate\Support\Js::from($editorConfig) }})">
 @if($errors->any())
-    <div class="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert" tabindex="-1" autofocus><p class="font-semibold">Formulář se nepodařilo uložit.</p><p>Opravte označená pole. Zadané hodnoty zůstaly zachované.</p></div>
+    <div class="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
+        <p class="font-semibold">Formulář se nepodařilo uložit.</p>
+        <p>Opravte označená pole. Zadané hodnoty zůstaly zachované.</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+            @foreach($errors->getMessages() as $field => $messages)
+                @foreach($messages as $message)
+                    <li><a class="underline hover:no-underline" href="#{{ $errorTarget($field) }}" @click.prevent="focusErrorField('{{ $errorTarget($field) }}')"><span class="font-medium">{{ $errorLabel($field) }}:</span> {{ $message }}</a></li>
+                @endforeach
+            @endforeach
+        </ul>
+    </div>
 @endif
 @if($clientsTruncated)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Zobrazeno je prvních 200 klientů. Upřesněte adresář před vytvořením faktury.</div>@endif
 @if(!$defaultVatRateUuid)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.</div>@endif
-<div x-data="invoiceEditor({{ Illuminate\Support\Js::from($editorConfig) }})">
-<form x-ref="form" method="POST" action="{{ $action }}" class="space-y-6" @input.debounce.600ms="refreshPreview">
+<form id="invoice-form" x-ref="form" method="POST" action="{{ $action }}" class="space-y-6" @input.debounce.600ms="refreshPreview">
     @csrf
     @if($method !== 'POST') @method($method) @endif
     @if($revision)<input type="hidden" name="version" value="{{ $invoice->version }}"><input type="hidden" name="correlation_uuid" value="{{ $correlationUuid }}">@endif
@@ -40,9 +68,9 @@
                 <p x-cloak x-show="quickClientSuccess" x-text="quickClientSuccess" class="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-800" role="status"></p>
             @endif
         </div>
-        <div><label for="currency">Měna *</label><select id="currency" name="currency" x-model="currency" required>@foreach($currencies as $value=>$label)<option value="{{ $value }}" @selected(old('currency',$values['currency'] ?? 'CZK') === $value)>{{ $label }}</option>@endforeach</select>@error('currency')<p class="field-error">{{ $message }}</p>@enderror</div>
-        <div><label for="payment_method">Způsob úhrady *</label><select id="payment_method" name="payment_method" x-model="paymentMethod" required>@foreach($paymentMethods as $value=>$label)<option value="{{ $value }}" @selected(old('payment_method',$values['payment_method'] ?? 'bank_transfer') === $value)>{{ $label }}</option>@endforeach</select>@error('payment_method')<p class="field-error">{{ $message }}</p>@enderror</div>
-        <div x-show="paymentMethod === 'bank_transfer'"><label for="bank_account_uuid">Bankovní účet *</label><select id="bank_account_uuid" name="bank_account_uuid"><option value="">Vyberte účet</option>@foreach($bankAccounts as $account)<option value="{{ $account->uuid }}" data-currency="{{ $account->currency }}" x-show="currency === '{{ $account->currency }}'" :disabled="currency !== '{{ $account->currency }}'" @selected(old('bank_account_uuid',$values['bank_account_uuid'] ?? ($defaultBankAccounts[old('currency',$values['currency'] ?? 'CZK')] ?? '')) === $account->uuid)>{{ $account->name }} · {{ $account->currency }}</option>@endforeach</select>@error('bank_account_uuid')<p class="field-error">{{ $message }}</p>@enderror</div>
+        <div><label for="currency">Měna *</label><select id="currency" name="currency" x-model="currency" required @error('currency') aria-invalid="true" aria-describedby="currency-error" @enderror>@foreach($currencies as $value=>$label)<option value="{{ $value }}" @selected(old('currency',$values['currency'] ?? 'CZK') === $value)>{{ $label }}</option>@endforeach</select>@error('currency')<p id="currency-error" class="field-error">{{ $message }}</p>@enderror</div>
+        <div><label for="payment_method">Způsob úhrady *</label><select id="payment_method" name="payment_method" x-model="paymentMethod" required @error('payment_method') aria-invalid="true" aria-describedby="payment_method-error" @enderror>@foreach($paymentMethods as $value=>$label)<option value="{{ $value }}" @selected(old('payment_method',$values['payment_method'] ?? 'bank_transfer') === $value)>{{ $label }}</option>@endforeach</select>@error('payment_method')<p id="payment_method-error" class="field-error">{{ $message }}</p>@enderror</div>
+        <div x-show="paymentMethod === 'bank_transfer'"><label for="bank_account_uuid">Bankovní účet *</label><select id="bank_account_uuid" name="bank_account_uuid" @error('bank_account_uuid') aria-invalid="true" aria-describedby="bank_account_uuid-error" @enderror><option value="">Vyberte účet</option>@foreach($bankAccounts as $account)<option value="{{ $account->uuid }}" data-currency="{{ $account->currency }}" x-show="currency === '{{ $account->currency }}'" :disabled="currency !== '{{ $account->currency }}'" @selected(old('bank_account_uuid',$values['bank_account_uuid'] ?? ($defaultBankAccounts[old('currency',$values['currency'] ?? 'CZK')] ?? '')) === $account->uuid)>{{ $account->name }} · {{ $account->currency }}</option>@endforeach</select>@error('bank_account_uuid')<p id="bank_account_uuid-error" class="field-error">{{ $message }}</p>@enderror</div>
     </div></section>
     <x-invoices.header-fields :values="$values" :discount-types="$discountTypes" />
     <x-invoices.items-editor :vat-rates="$vatRates" :discount-types="$discountTypes" />

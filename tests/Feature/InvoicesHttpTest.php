@@ -97,6 +97,7 @@ class InvoicesHttpTest extends TestCase
         $this->get(route('invoices.create'))->assertOk()->assertSee('Nová faktura')
             ->assertSee('name="_token"', false)->assertSee('Finální částky vždy znovu vypočítá server')
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
+            ->assertSee('Načíst z ARES')
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
         $before = $this->counts();
@@ -111,6 +112,7 @@ class InvoicesHttpTest extends TestCase
         $this->assertSame('100.0000', $invoice->currentRevision->grand_total);
         $this->get(route('invoices.edit', $invoice->uuid))->assertOk()
             ->assertDontSee('aria-label="Vytvořit nového klienta"', false)
+            ->assertDontSee('Načíst z ARES')
             ->assertDontSee('Nový klient');
 
         $this->post(route('invoices.store'), $this->payload($client, $account, $rate) + ['grand_total' => '0', 'connection' => 'business_2'])
@@ -152,6 +154,58 @@ class InvoicesHttpTest extends TestCase
         $this->assertSame('Brno', $snapshot->city);
         $this->assertSame('60200', $snapshot->postal_code);
         $this->assertSame('CZ', $snapshot->country_code);
+    }
+
+    public function test_create_form_maps_validation_errors_to_static_and_dynamic_fields(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources();
+        $this->defaults($account, $rate);
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $payload = $this->payload($client, $account, $rate, [
+            'customer_uuid' => 'invalid-client',
+            'bank_account_uuid' => 'invalid-account',
+            'currency' => 'INVALID',
+            'issued_on' => 'invalid-date',
+            'items' => [
+                ['position' => 1, 'description' => '', 'quantity' => 'invalid', 'unit' => str_repeat('x', 33), 'unit_price' => 'invalid', 'discount_type' => 'invalid', 'discount_value' => 'invalid', 'vat_rate_uuid' => 'invalid-vat'],
+                ['position' => 2, 'description' => '', 'quantity' => '1', 'unit' => 'ks', 'unit_price' => '10', 'discount_type' => 'none', 'discount_value' => '0', 'vat_rate_uuid' => ''],
+            ],
+        ]);
+
+        $this->from(route('invoices.create'))->post(route('invoices.store'), $payload)
+            ->assertRedirect(route('invoices.create'))
+            ->assertSessionHasErrors([
+                'customer_uuid', 'bank_account_uuid', 'currency', 'issued_on',
+                'items.0.description', 'items.0.quantity', 'items.0.unit',
+                'items.0.unit_price', 'items.0.discount_type', 'items.0.discount_value',
+                'items.0.vat_rate_uuid', 'items.1.description', 'items.1.vat_rate_uuid',
+            ]);
+
+        $response = $this->followingRedirects()->from(route('invoices.create'))
+            ->post(route('invoices.store'), $payload)->assertOk();
+        $response->assertSee('Formulář se nepodařilo uložit.')
+            ->assertSee('href="#customer_uuid"', false)
+            ->assertSee('href="#bank_account_uuid"', false)
+            ->assertSee('href="#currency"', false)
+            ->assertSee('href="#issued_on"', false)
+            ->assertSee('href="#item-0-quantity"', false)
+            ->assertSee('href="#item-0-unit"', false)
+            ->assertSee('href="#item-0-price"', false)
+            ->assertSee('href="#item-0-discount-type"', false)
+            ->assertSee('href="#item-0-discount-value"', false)
+            ->assertSee('href="#item-0-vat"', false)
+            ->assertSee('href="#item-1-description"', false)
+            ->assertSee('href="#item-1-vat"', false)
+            ->assertSee('id="customer_uuid" name="customer_uuid" required', false)
+            ->assertSee('aria-invalid="true" aria-describedby="customer_uuid-error"', false)
+            ->assertSee(':aria-invalid="hasFieldError(index,\'description\') ? \'true\' : null"', false)
+            ->assertSee(':aria-invalid="hasFieldError(index,\'vat_rate_uuid\') ? \'true\' : null"', false)
+            ->assertSee('focusErrorField', false)
+            ->assertSee('items.1.description', false);
     }
 
     public function test_issue_ui_is_idempotent_and_issued_detail_uses_only_snapshots(): void
