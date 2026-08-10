@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'ares' => [
+        'base_url' => env('ARES_BASE_URL', 'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest'),
+        'connect_timeout_seconds' => env('ARES_CONNECT_TIMEOUT_SECONDS', 2),
+        'timeout_seconds' => env('ARES_TIMEOUT_SECONDS', 5),
+        'cache_ttl_seconds' => env('ARES_CACHE_TTL_SECONDS', 21600),
+    ],
+
 ];

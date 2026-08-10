@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AresClientLookupController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
@@ -155,6 +156,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.show');
         Route::get('/klienti', [ClientController::class, 'index'])->name('clients.index');
         Route::get('/klienti/novy', [ClientController::class, 'create'])->name('clients.create');
+        Route::post('/klienti/ares/nacist', AresClientLookupController::class)
+            ->middleware('throttle:20,1')->name('clients.ares.lookup');
         Route::post('/klienti', [ClientController::class, 'store'])->name('clients.store');
         Route::get('/klienti/{uuid}', [ClientController::class, 'show'])
             ->whereUuid('uuid')->name('clients.show');

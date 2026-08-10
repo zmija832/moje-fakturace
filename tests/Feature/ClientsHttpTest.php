@@ -8,7 +8,9 @@ use App\Models\Business;
 use App\Models\Business\Client;
 use App\Models\User;
 use App\Services\Business\ClientService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Concerns\InteractsWithBusinessDatabases;
@@ -161,6 +163,131 @@ class ClientsHttpTest extends TestCase
         }
 
         $this->assertSame(0, DB::connection('business_1')->table('clients')->count());
+    }
+
+    public function test_admin_loads_normalized_ares_subject_by_ico_and_response_is_cached_without_database_writes(): void
+    {
+        Cache::clear();
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/12345678' => Http::response([
+                'ico' => '12345678',
+                'obchodniJmeno' => "  Testovací\nARES s.r.o.  ",
+                'dic' => 'CZ12345678',
+                'dicSkDph' => 'CZ99999999',
+                'sidlo' => [
+                    'kodStatu' => '203', 'nazevObce' => 'Praha',
+                    'nazevUlice' => 'Dlouhá', 'cisloDomovni' => 12,
+                    'cisloOrientacni' => 3, 'cisloOrientacniPismeno' => 'a',
+                    'psc' => 11000, 'textovaAdresa' => 'Tento text se nesmí parsovat',
+                ],
+                'untrusted' => '<script>alert(1)</script>',
+            ]),
+        ]);
+
+        [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
+        $this->actingAs($user)->withSession($this->businessSession($business));
+
+        foreach (range(1, 2) as $attempt) {
+            $this->postJson(route('clients.ares.lookup'), ['ico' => '1234 5678'])
+                ->assertOk()
+                ->assertExactJson([
+                    'subject' => [
+                        'company_name' => 'Testovací ARES s.r.o.',
+                        'registration_number' => '12345678',
+                        'tax_id' => 'CZ12345678',
+                        'street' => 'Dlouhá 12/3a',
+                        'city' => 'Praha',
+                        'postal_code' => '11000',
+                        'country_code' => 'CZ',
+                    ],
+                    'warnings' => [],
+                ]);
+        }
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+            && $request->url() === 'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/12345678');
+        $this->assertSame(0, DB::connection('business_1')->table('clients')->count());
+        $this->assertSame(0, DB::connection('business_1')->table('audit_logs')->count());
+        $this->assertSame(0, DB::connection('business_2')->table('clients')->count());
+    }
+
+    public function test_ares_lookup_returns_available_fields_and_warning_without_deriving_missing_tax_id(): void
+    {
+        Cache::clear();
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/87654321' => Http::response([
+                'ico' => '87654321',
+                'obchodniJmeno' => 'Neúplný subjekt',
+                'sidlo' => ['nazevObce' => 'Brno', 'pscTxt' => '602 00'],
+            ]),
+        ]);
+
+        [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
+        $this->actingAs($user)->withSession($this->businessSession($business))
+            ->postJson(route('clients.ares.lookup'), ['ico' => '87654321'])
+            ->assertOk()
+            ->assertJsonPath('subject.company_name', 'Neúplný subjekt')
+            ->assertJsonPath('subject.registration_number', '87654321')
+            ->assertJsonPath('subject.tax_id', null)
+            ->assertJsonPath('subject.street', null)
+            ->assertJsonPath('subject.city', 'Brno')
+            ->assertJsonPath('subject.postal_code', '60200')
+            ->assertJsonPath('subject.country_code', null)
+            ->assertJsonCount(1, 'warnings');
+
+        $this->assertSame(0, DB::connection('business_1')->table('clients')->count());
+    }
+
+    public function test_ares_lookup_is_authorized_tenant_safe_and_handles_validation_and_unavailability(): void
+    {
+        Cache::clear();
+        Http::preventStrayRequests();
+
+        $this->postJson(route('clients.ares.lookup'), ['ico' => '12345678'])
+            ->assertRedirect(route('login'));
+
+        [$viewer, $business] = $this->userWithBusiness('viewer', BusinessConnection::Business1);
+        $this->actingAs($viewer)->withSession($this->businessSession($business))
+            ->postJson(route('clients.ares.lookup'), ['ico' => '12345678'])
+            ->assertForbidden();
+
+        $admin = User::factory()->create();
+        $admin->businesses()->attach($business, ['role' => 'admin']);
+        $this->actingAs($admin)->withSession($this->businessSession($business))
+            ->postJson(route('clients.ares.lookup'), ['ico' => '123', 'connection' => 'business_2'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['ico', 'connection']);
+        Http::assertNothingSent();
+
+        Http::fake([
+            'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/12345678' => Http::response([
+                'kod' => 'NENALEZENO', 'popis' => 'Záznam nenalezen',
+            ], 404),
+            'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/87654321' => Http::response([], 500),
+        ]);
+
+        $this->actingAs($admin)->withSession($this->businessSession($business))
+            ->postJson(route('clients.ares.lookup'), ['ico' => '12345678'])
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Subjekt s tímto IČO nebyl v ARES nalezen.');
+        $this->postJson(route('clients.ares.lookup'), ['ico' => '87654321'])
+            ->assertServiceUnavailable()
+            ->assertJsonPath('message', 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.');
+
+        Cache::clear();
+        Http::fake([
+            'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/11111111' => Http::failedConnection(),
+        ]);
+        $this->postJson(route('clients.ares.lookup'), ['ico' => '11111111'])
+            ->assertServiceUnavailable()
+            ->assertJsonPath('message', 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.');
+
+        $this->assertSame('central', DB::getDefaultConnection());
+        $this->assertSame(0, DB::connection('business_1')->table('clients')->count());
+        $this->assertSame(0, DB::connection('business_2')->table('clients')->count());
     }
 
     public function test_admin_updates_lifecycle_and_archived_client_is_read_only_but_visible(): void
