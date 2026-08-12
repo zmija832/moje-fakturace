@@ -7,13 +7,18 @@ use App\Domain\Invoices\InvoiceDecimal;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\InvoiceDiscountType;
 use App\Models\Business\Invoice;
+use App\Services\Business\InvoiceVatResolver;
+use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class StoreInvoiceDraftRequest extends FormRequest
 {
+    private ?bool $invoiceVatPayer = null;
+
     public function authorize(): bool
     {
         return Gate::allows('create', Invoice::class);
@@ -41,7 +46,11 @@ class StoreInvoiceDraftRequest extends FormRequest
             'items.*.unit_price' => ['required', 'string', 'max:32'],
             'items.*.discount_type' => ['nullable', Rule::enum(InvoiceDiscountType::class)],
             'items.*.discount_value' => ['nullable', 'string', 'max:32'],
-            'items.*.vat_rate_uuid' => ['required', 'uuid'],
+            'items.*.vat_rate_uuid' => [
+                Rule::requiredIf(fn (): bool => $this->isInvoiceVatPayer()),
+                Rule::prohibitedIf(fn (): bool => ! $this->isInvoiceVatPayer()),
+                'uuid',
+            ],
             'id' => ['prohibited'],
             'uuid' => ['prohibited'],
             'status' => ['prohibited'],
@@ -176,5 +185,25 @@ class StoreInvoiceDraftRequest extends FormRequest
                 : null,
             'items' => $items,
         ]);
+    }
+
+    protected function failedValidation(ValidatorContract $validator): void
+    {
+        $forgedNonPayerVat = ! $this->isInvoiceVatPayer()
+            && $validator->errors()->has('items.*.vat_rate_uuid');
+
+        if ($this->expectsJson() || $forgedNonPayerVat) {
+            throw new HttpResponseException(response()->json([
+                'message' => 'Zadané údaje faktury nejsou platné.',
+                'errors' => $validator->errors()->toArray(),
+            ], 422));
+        }
+
+        parent::failedValidation($validator);
+    }
+
+    private function isInvoiceVatPayer(): bool
+    {
+        return $this->invoiceVatPayer ??= app(InvoiceVatResolver::class)->isVatPayer();
     }
 }

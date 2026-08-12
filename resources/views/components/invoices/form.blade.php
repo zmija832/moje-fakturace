@@ -1,14 +1,18 @@
-@props(['action','method','submitLabel','clients','clientsTruncated'=>false,'bankAccounts','vatRates','currencies','paymentMethods','discountTypes','defaultBankAccounts','defaultVatRateUuid'=>null,'defaults'=>[],'invoice'=>null,'revision'=>null,'correlationUuid'=>null,'allowInlineClientCreation'=>false,'clientTypes'=>[],'countries'=>[]])
+@props(['action','method','submitLabel','clients','clientsTruncated'=>false,'bankAccounts','vatRates','currencies','paymentMethods','discountTypes','defaultBankAccounts','defaultVatRateUuid'=>null,'isVatPayer'=>false,'defaults'=>[],'invoice'=>null,'revision'=>null,'correlationUuid'=>null,'allowInlineClientCreation'=>false,'clientTypes'=>[],'countries'=>[]])
 @php
     $values = $revision ? ['customer_uuid'=>$revision->customerSnapshot->source_client_uuid,'bank_account_uuid'=>$revision->bankAccountSnapshot?->source_bank_account_uuid,'currency'=>$revision->currency,'issued_on'=>$revision->issued_on->format('Y-m-d'),'taxable_supply_on'=>$revision->taxable_supply_on->format('Y-m-d'),'due_on'=>$revision->due_on->format('Y-m-d'),'payment_method'=>$revision->payment_method->value,'variable_symbol'=>$revision->variable_symbol,'note'=>$revision->note,'invoice_discount_type'=>$revision->invoice_discount_type->value,'invoice_discount_value'=>$revision->invoice_discount_value] : $defaults;
-    $storedItems = $revision?->items->map(fn($item)=>['description'=>$item->description,'quantity'=>$item->quantity,'unit'=>$item->unit,'unit_price'=>$item->unit_price,'discount_type'=>$item->discount_type->value,'discount_value'=>$item->discount_value,'vat_rate_uuid'=>$item->vatSnapshot->source_vat_rate_uuid])->all();
-    $initialItems = old('items', $storedItems ?: [['description'=>'','quantity'=>'1','unit'=>'ks','unit_price'=>'0','discount_type'=>'none','discount_value'=>'0','vat_rate_uuid'=>$defaultVatRateUuid ?? '']]);
+    $storedItems = $revision?->items->map(fn($item)=>['description'=>$item->description,'quantity'=>$item->quantity,'unit'=>$item->unit,'unit_price'=>$item->unit_price,'discount_type'=>$item->discount_type->value,'discount_value'=>$item->discount_value,...$isVatPayer ? ['vat_rate_uuid'=>$item->vatSnapshot->source_vat_rate_uuid] : []])->all();
+    $emptyItem = ['description'=>'','quantity'=>'1','unit'=>'ks','unit_price'=>'0','discount_type'=>'none','discount_value'=>'0',...$isVatPayer ? ['vat_rate_uuid'=>$defaultVatRateUuid ?? ''] : []];
+    $initialItems = old('items', $storedItems ?: [$emptyItem]);
     $canCreateClientInline = $allowInlineClientCreation && auth()->user()?->can('create', \App\Models\Business\Client::class);
-    $editorConfig = ['items'=>$initialItems,'errors'=>$errors->toArray(),'previewUrl'=>route('invoices.preview'),'clientStoreUrl'=>$canCreateClientInline ? route('clients.store') : null,'aresLookupUrl'=>$canCreateClientInline ? route('clients.ares.lookup') : null,'csrf'=>csrf_token(),'defaultVatRateUuid'=>$defaultVatRateUuid,'currency'=>old('currency',$values['currency'] ?? 'CZK'),'paymentMethod'=>old('payment_method',$values['payment_method'] ?? 'bank_transfer')];
+    $editorConfig = ['items'=>$initialItems,'errors'=>$errors->toArray(),'previewUrl'=>route('invoices.preview'),'clientStoreUrl'=>$canCreateClientInline ? route('clients.store') : null,'aresLookupUrl'=>$canCreateClientInline ? route('clients.ares.lookup') : null,'csrf'=>csrf_token(),'isVatPayer'=>$isVatPayer,'defaultVatRateUuid'=>$isVatPayer ? $defaultVatRateUuid : null,'currency'=>old('currency',$values['currency'] ?? 'CZK'),'paymentMethod'=>old('payment_method',$values['payment_method'] ?? 'bank_transfer')];
     $errorLabels = ['customer_uuid'=>'Klient','bank_account_uuid'=>'Bankovní účet','currency'=>'Měna','payment_method'=>'Způsob úhrady','issued_on'=>'Datum vystavení','taxable_supply_on'=>'DUZP','due_on'=>'Datum splatnosti','variable_symbol'=>'Variabilní symbol','invoice_discount_type'=>'Celková sleva','invoice_discount_value'=>'Hodnota celkové slevy','note'=>'Poznámka','items'=>'Položky'];
     $itemErrorLabels = ['position'=>'Pořadí','description'=>'Popis','quantity'=>'Množství','unit'=>'Jednotka','unit_price'=>'Cena bez DPH','discount_type'=>'Sleva','discount_value'=>'Hodnota slevy','vat_rate_uuid'=>'Sazba DPH'];
-    $errorTarget = static function (string $key) use ($errorLabels): string {
+    $errorTarget = static function (string $key) use ($errorLabels, $isVatPayer): string {
         if (preg_match('/^items\.(\d+)\.([a-z_]+)$/', $key, $matches) === 1) {
+            if (! $isVatPayer && $matches[2] === 'vat_rate_uuid') {
+                return 'invoice-items';
+            }
             $suffixes = ['unit_price'=>'price','discount_type'=>'discount-type','discount_value'=>'discount-value','vat_rate_uuid'=>'vat'];
 
             return 'item-'.$matches[1].'-'.($suffixes[$matches[2]] ?? $matches[2]);
@@ -39,7 +43,7 @@
     </div>
 @endif
 @if($clientsTruncated)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Zobrazeno je prvních 200 klientů. Upřesněte adresář před vytvořením faktury.</div>@endif
-@if(!$defaultVatRateUuid)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.</div>@endif
+@if($isVatPayer && !$defaultVatRateUuid)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.</div>@endif
 <form id="invoice-form" x-ref="form" method="POST" action="{{ $action }}" class="space-y-6" @input.debounce.600ms="refreshPreview">
     @csrf
     @if($method !== 'POST') @method($method) @endif
@@ -73,7 +77,7 @@
         <div x-show="paymentMethod === 'bank_transfer'"><label for="bank_account_uuid">Bankovní účet *</label><select id="bank_account_uuid" name="bank_account_uuid" @error('bank_account_uuid') aria-invalid="true" aria-describedby="bank_account_uuid-error" @enderror><option value="">Vyberte účet</option>@foreach($bankAccounts as $account)<option value="{{ $account->uuid }}" data-currency="{{ $account->currency }}" x-show="currency === '{{ $account->currency }}'" :disabled="currency !== '{{ $account->currency }}'" @selected(old('bank_account_uuid',$values['bank_account_uuid'] ?? ($defaultBankAccounts[old('currency',$values['currency'] ?? 'CZK')] ?? '')) === $account->uuid)>{{ $account->name }} · {{ $account->currency }}</option>@endforeach</select>@error('bank_account_uuid')<p id="bank_account_uuid-error" class="field-error">{{ $message }}</p>@enderror</div>
     </div></section>
     <x-invoices.header-fields :values="$values" :discount-types="$discountTypes" />
-    <x-invoices.items-editor :vat-rates="$vatRates" :discount-types="$discountTypes" />
+    <x-invoices.items-editor :vat-rates="$vatRates" :discount-types="$discountTypes" :is-vat-payer="$isVatPayer" />
     <x-invoices.preview-panel />
     <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><a class="button-secondary" href="{{ $invoice ? route('invoices.show',$invoice->uuid) : route('invoices.index') }}">Zrušit</a><button class="button-primary" type="submit">{{ $submitLabel }}</button></div>
 </form>

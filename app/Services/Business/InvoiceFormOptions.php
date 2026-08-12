@@ -59,6 +59,7 @@ class InvoiceFormOptions
                 ->mapWithKeys(fn (BankAccountDefault $default): array => [$default->currency => $default->account?->uuid]),
             'defaultVatRateUuid' => VatRateDefault::query()->with('rate')->where('context', 'sales')->first()?->rate?->uuid,
             'companySettings' => $company,
+            'isVatPayer' => (bool) $company?->is_vat_payer,
             'clientTypes' => ClientType::options(),
             'countries' => CompanySettingOptions::COUNTRIES,
             'currencies' => CompanySettingOptions::CURRENCIES,

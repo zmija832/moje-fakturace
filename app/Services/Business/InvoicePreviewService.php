@@ -15,7 +15,7 @@ class InvoicePreviewService
 {
     public function __construct(
         private readonly BusinessConnectionResolver $connectionResolver,
-        private readonly VatRateService $vatRateService,
+        private readonly InvoiceVatResolver $vatResolver,
         private readonly InvoiceCalculator $calculator,
     ) {}
 
@@ -40,21 +40,15 @@ class InvoicePreviewService
         }
 
         $date = CarbonImmutable::createFromFormat('!Y-m-d', (string) $attributes['taxable_supply_on']);
-        $rates = [];
-        foreach ($attributes['items'] as $item) {
-            $uuid = (string) $item['vat_rate_uuid'];
-            if (isset($rates[$uuid])) {
-                continue;
-            }
-            $rate = $this->vatRateService->resolveForDate($uuid, $date);
-            if (! $supplier->is_vat_payer && ! $rate->tax_type->allowedAsNonPayerDefault()) {
-                throw ValidationException::withMessages(['items' => 'Neplátce DPH může použít pouze osvobozené plnění nebo plnění mimo předmět DPH.']);
-            }
-            $rates[$uuid] = ['tax_type' => $rate->tax_type, 'percentage' => $rate->percentage];
-        }
+        $resolved = $this->vatResolver->resolve($attributes['items'], $date, (bool) $supplier->is_vat_payer);
+        $items = $resolved['items'];
+        $rates = array_map(static fn ($rate): array => [
+            'tax_type' => $rate->tax_type,
+            'percentage' => $rate->percentage,
+        ], $resolved['rates']);
 
         $calculation = $this->calculator->calculate(
-            $attributes['items'],
+            $items,
             $rates,
             ['type' => $attributes['invoice_discount_type'] ?? 'none', 'value' => $attributes['invoice_discount_value'] ?? null],
             $currency === 'CZK' && $attributes['payment_method'] === DefaultPaymentMethod::Cash->value ? 0 : 2,

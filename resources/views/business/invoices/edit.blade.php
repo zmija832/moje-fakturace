@@ -6,5 +6,5 @@
         :clients="$clients" :clients-truncated="$clientsTruncated" :bank-accounts="$bankAccounts"
         :vat-rates="$vatRates" :currencies="$currencies" :payment-methods="$paymentMethods"
         :discount-types="$discountTypes" :default-bank-accounts="$defaultBankAccounts"
-        :default-vat-rate-uuid="$defaultVatRateUuid" />
+        :default-vat-rate-uuid="$defaultVatRateUuid" :is-vat-payer="$isVatPayer" />
 </x-layouts.app>

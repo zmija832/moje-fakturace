@@ -98,6 +98,7 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('name="_token"', false)->assertSee('Finální částky vždy znovu vypočítá server')
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
             ->assertSee('Načíst z ARES')
+            ->assertSee('name="items[0][vat_rate_uuid]"', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
         $before = $this->counts();
@@ -154,6 +155,73 @@ class InvoicesHttpTest extends TestCase
         $this->assertSame('Brno', $snapshot->city);
         $this->assertSame('60200', $snapshot->postal_code);
         $this->assertSame('CZ', $snapshot->country_code);
+    }
+
+    public function test_non_payer_create_preview_and_edit_resolve_vat_only_on_server(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources();
+        CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)
+            ->update(['is_vat_payer' => false, 'vat_id' => null]);
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $create = $this->get(route('invoices.create'))->assertOk();
+        $create->assertDontSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertDontSee('id="ns-vat"', false)
+            ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
+
+        $payload = $this->payloadWithoutVat($client, $account, $rate);
+        $preview = $this->postJson(route('invoices.preview'), $payload)->assertOk();
+        $preview->assertJsonPath('summaries.0.tax_type', 'out_of_scope')
+            ->assertJsonPath('summaries.0.vat_amount', '0.0000')
+            ->assertJsonPath('totals.grand_total', '100.0000');
+
+        $this->post(route('invoices.store'), $payload)->assertSessionHasNoErrors();
+        $invoice = Invoice::query()->firstOrFail();
+        $firstRevision = $invoice->currentRevision;
+        $this->assertSame($rate->uuid, $firstRevision->vatSnapshots->sole()->source_vat_rate_uuid);
+        $this->assertSame('out_of_scope', $firstRevision->vatSnapshots->sole()->tax_type->value);
+        $this->assertSame('0.0000', $firstRevision->vat_total);
+
+        $edit = $this->get(route('invoices.edit', $invoice->uuid))->assertOk();
+        $edit->assertDontSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertDontSee('id="ns-vat"', false)
+            ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
+
+        $updated = $payload;
+        $updated['note'] = 'Nová revize neplátce';
+        $updated['version'] = 1;
+        $updated['correlation_uuid'] = (string) Str::uuid();
+        $this->put(route('invoices.update', $invoice->uuid), $updated)->assertSessionHasNoErrors();
+
+        $invoice->refresh();
+        $this->assertSame(2, $invoice->version);
+        $this->assertSame(2, $invoice->revisions()->count());
+        $this->assertSame($rate->uuid, $invoice->currentRevision->vatSnapshots->sole()->source_vat_rate_uuid);
+        $this->assertSame($rate->uuid, $firstRevision->vatSnapshots->sole()->fresh()->source_vat_rate_uuid);
+
+        $forged = $payload;
+        $forged['items'][0]['vat_rate_uuid'] = $rate->uuid;
+        $forgedResponse = $this->post(route('invoices.store'), $forged);
+        $this->assertSame(422, $forgedResponse->getStatusCode(), $forgedResponse->getContent());
+        $forgedResponse->assertJsonValidationErrors('items.0.vat_rate_uuid');
+        $this->assertSame(1, Invoice::query()->count());
+    }
+
+    public function test_vat_payer_keeps_required_select_and_missing_default_warning(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        $this->sources();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $this->get(route('invoices.create'))->assertOk()
+            ->assertSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertSee('id="ns-vat"', false)
+            ->assertSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
     }
 
     public function test_create_form_maps_validation_errors_to_static_and_dynamic_fields(): void
@@ -309,7 +377,8 @@ class InvoicesHttpTest extends TestCase
             'singleton_key' => '1', 'legal_name' => 'Dodavatel s.r.o.', 'registration_number' => '12345678',
             'street' => 'Dodavatelská', 'house_number' => '10', 'city' => 'Praha', 'postal_code' => '11000',
             'country_code' => 'CZ', 'email' => 'dodavatel@example.test', 'default_currency' => 'CZK',
-            'document_locale' => 'cs', 'timezone' => 'Europe/Prague', 'is_vat_payer' => false,
+            'document_locale' => 'cs', 'timezone' => 'Europe/Prague', 'is_vat_payer' => true,
+            'vat_id' => 'CZ12345678',
             'default_due_days' => 14, 'default_payment_method' => 'bank_transfer',
         ])->save();
         $client = $this->client($clientName);
@@ -384,6 +453,19 @@ class InvoicesHttpTest extends TestCase
                 'vat_rate_uuid' => $rate->uuid,
             ]],
         ], $overrides);
+    }
+
+    /** @return array<string, mixed> */
+    private function payloadWithoutVat(Client $client, BankAccount $account, VatRate $rate): array
+    {
+        $payload = $this->payload($client, $account, $rate);
+
+        foreach ($payload['items'] as &$item) {
+            unset($item['vat_rate_uuid']);
+        }
+        unset($item);
+
+        return $payload;
     }
 
     /** @return array<string,int> */

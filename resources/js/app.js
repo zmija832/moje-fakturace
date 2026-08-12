@@ -29,7 +29,11 @@ Alpine.data('invoiceEditor', (config) => ({
         }));
     },
     addItem() {
-        this.items.push({ description: '', quantity: '1', unit: 'ks', unit_price: '0', discount_type: 'none', discount_value: '0', vat_rate_uuid: config.defaultVatRateUuid ?? '' });
+        this.items.push({
+            description: '', quantity: '1', unit: 'ks', unit_price: '0',
+            discount_type: 'none', discount_value: '0',
+            ...(config.isVatPayer ? { vat_rate_uuid: config.defaultVatRateUuid ?? '' } : {}),
+        });
     },
     removeItem(index) {
         if (this.items.length > 1) this.items.splice(index, 1);

@@ -18,7 +18,6 @@ use App\Models\Business\InvoiceRevision;
 use App\Models\Business\InvoiceSupplierSnapshot;
 use App\Models\Business\InvoiceVatSnapshot;
 use App\Models\Business\InvoiceVatSummary;
-use App\Models\Business\VatRate;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +28,7 @@ use LogicException;
 class InvoiceRevisionFactory
 {
     public function __construct(
-        private readonly VatRateService $vatRateService,
+        private readonly InvoiceVatResolver $vatResolver,
         private readonly InvoiceCalculator $calculator,
     ) {}
 
@@ -58,7 +57,9 @@ class InvoiceRevisionFactory
         $bankAccount = $this->bankAccount($attributes['bank_account_uuid'] ?? null, $currency);
         $items = $this->normalizeItems((array) ($attributes['items'] ?? []));
         $taxDate = CarbonImmutable::parse((string) ($attributes['taxable_supply_on'] ?? ''));
-        $rates = $this->vatRates($items, $taxDate, (bool) $supplier->is_vat_payer);
+        $resolved = $this->vatResolver->resolve($items, $taxDate, (bool) $supplier->is_vat_payer, true);
+        $items = $resolved['items'];
+        $rates = $resolved['rates'];
         $vatPayloads = [];
         $calculatorRates = [];
 
@@ -299,7 +300,7 @@ class InvoiceRevisionFactory
                 'unit_price' => $item['unit_price'] ?? '',
                 'discount_type' => (string) ($item['discount_type'] ?? 'none'),
                 'discount_value' => $item['discount_value'] ?? null,
-                'vat_rate_uuid' => (string) ($item['vat_rate_uuid'] ?? ''),
+                ...array_key_exists('vat_rate_uuid', $item) ? ['vat_rate_uuid' => (string) $item['vat_rate_uuid']] : [],
             ];
         }
         usort($normalized, fn (array $left, array $right): int => $left['position'] <=> $right['position']);
@@ -309,32 +310,6 @@ class InvoiceRevisionFactory
         }
 
         return $normalized;
-    }
-
-    /** @param list<array<string, mixed>> $items @return array<string, VatRate> */
-    private function vatRates(array $items, CarbonImmutable $taxDate, bool $isVatPayer): array
-    {
-        $rates = [];
-
-        foreach ($items as $item) {
-            $uuid = (string) $item['vat_rate_uuid'];
-
-            if (isset($rates[$uuid])) {
-                continue;
-            }
-
-            VatRate::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
-            $rate = $this->vatRateService->resolveForDate($uuid, $taxDate);
-
-            if (! $isVatPayer && ! $rate->tax_type->allowedAsNonPayerDefault()) {
-                throw ValidationException::withMessages([
-                    'items' => 'Neplátce DPH může použít pouze osvobozené plnění nebo plnění mimo předmět DPH.',
-                ]);
-            }
-            $rates[$uuid] = $rate;
-        }
-
-        return $rates;
     }
 
     private function bankAccount(mixed $uuid, string $currency): ?BankAccount
