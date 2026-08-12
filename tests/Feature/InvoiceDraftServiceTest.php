@@ -88,7 +88,7 @@ class InvoiceDraftServiceTest extends TestCase
         $this->assertSame('Dodavatel s.r.o.', $invoice->supplierSnapshot->legal_name);
         $this->assertSame('Původní klient', $invoice->customerSnapshot->display_name);
         $this->assertSame('CZ6508000000192000145399', $invoice->bankAccountSnapshot->iban);
-        $this->assertSame('out_of_scope', $invoice->vatSnapshots->sole()->tax_type->value);
+        $this->assertSame('non_payer', $invoice->vatSnapshots->sole()->tax_type->value);
         $this->assertNull($invoice->vatSnapshots->sole()->percentage);
         $this->assertCount(2, $invoice->items);
         $this->assertSame('2.5000', $invoice->items[0]->quantity);
@@ -116,14 +116,14 @@ class InvoiceDraftServiceTest extends TestCase
         $this->assertSame('Původní', $invoice->customerSnapshot->street);
         $this->assertSame('1', $invoice->customerSnapshot->house_number);
         $this->assertSame('CZ6508000000192000145399', $invoice->bankAccountSnapshot->iban);
-        $this->assertSame('Mimo DPH', $invoice->vatSnapshots->sole()->name);
+        $this->assertSame('Neplátce DPH', $invoice->vatSnapshots->sole()->name);
 
         app(VatRateService::class)->update($rate->uuid, [
             'name' => 'Změna živé sazby draftu', 'code' => 'OUT', 'tax_type' => 'out_of_scope',
             'percentage' => null, 'valid_from' => '2026-01-01', 'valid_to' => null,
             'is_active' => true, 'sort_order' => 0,
         ]);
-        $this->assertSame('Mimo DPH', $invoice->vatSnapshots->sole()->fresh()->name);
+        $this->assertSame('Neplátce DPH', $invoice->vatSnapshots->sole()->fresh()->name);
 
         try {
             $invoice->supplierSnapshot->forceFill(['legal_name' => 'Přepis'])->save();

@@ -31,6 +31,11 @@ class VatRate extends BusinessModel
         return $this->archived_at !== null;
     }
 
+    public function isSystemManaged(): bool
+    {
+        return $this->tax_type === VatTaxType::NonPayer;
+    }
+
     protected function casts(): array
     {
         return [

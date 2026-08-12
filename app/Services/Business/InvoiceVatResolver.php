@@ -3,11 +3,9 @@
 namespace App\Services\Business;
 
 use App\Domain\BusinessContext\BusinessConnectionResolver;
-use App\Enums\VatRateDefaultContext;
 use App\Enums\VatTaxType;
 use App\Models\Business\CompanySetting;
 use App\Models\Business\VatRate;
-use App\Models\Business\VatRateDefault;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
@@ -48,10 +46,11 @@ class InvoiceVatResolver
 
         foreach ($items as $index => $item) {
             $uuid = (string) ($item['vat_rate_uuid'] ?? '');
+            $errorKey = 'items.'.$index.'.vat_rate_uuid';
 
             if ($uuid === '') {
                 throw ValidationException::withMessages([
-                    "items.{$index}.vat_rate_uuid" => 'Vyberte sazbu DPH.',
+                    $errorKey => 'Vyberte sazbu DPH.',
                 ]);
             }
             if (isset($rates[$uuid])) {
@@ -66,7 +65,12 @@ class InvoiceVatResolver
 
             if ($resolved === null) {
                 throw ValidationException::withMessages([
-                    "items.{$index}.vat_rate_uuid" => 'Vybraná sazba DPH není pro zadané DUZP dostupná.',
+                    $errorKey => 'Vybraná sazba DPH není pro zadané DUZP dostupná.',
+                ]);
+            }
+            if ($resolved->tax_type === VatTaxType::NonPayer) {
+                throw ValidationException::withMessages([
+                    $errorKey => 'Systémový režim neplátce DPH nemůže použít plátce DPH.',
                 ]);
             }
             $rates[$uuid] = $resolved;
@@ -77,25 +81,6 @@ class InvoiceVatResolver
 
     private function resolveNonPayerRate(CarbonImmutable $taxDate, bool $lockForUpdate): VatRate
     {
-        $assignment = VatRateDefault::query()
-            ->where('context', VatRateDefaultContext::Sales->value);
-        if ($lockForUpdate) {
-            $assignment->lockForUpdate();
-        }
-        $default = $assignment->first();
-
-        if ($default !== null) {
-            $query = $this->nonPayerRateQuery($taxDate)->whereKey($default->vat_rate_id);
-            if ($lockForUpdate) {
-                $query->lockForUpdate();
-            }
-            $rate = $query->first();
-
-            if ($rate !== null) {
-                return $rate;
-            }
-        }
-
         $query = $this->nonPayerRateQuery($taxDate)->orderBy('id')->limit(2);
         if ($lockForUpdate) {
             $query->lockForUpdate();
@@ -107,24 +92,19 @@ class InvoiceVatResolver
         }
         if ($candidates->isEmpty()) {
             throw ValidationException::withMessages([
-                'items' => 'Pro neplátce není k zadanému DUZP dostupný daňový režim mimo předmět DPH nebo osvobozené plnění.',
+                'items' => 'Pro neplátce DPH není k zadanému DUZP dostupný systémový režim Neplátce DPH.',
             ]);
         }
 
         throw ValidationException::withMessages([
-            'items' => 'Pro neplátce je k zadanému DUZP dostupných více daňových režimů. Nastavte jednoznačný výchozí režim pro prodej.',
+            'items' => 'Pro neplátce DPH je k zadanému DUZP dostupných více systémových režimů Neplátce DPH.',
         ]);
     }
 
     /** @return Builder<VatRate> */
     private function nonPayerRateQuery(CarbonImmutable $taxDate): Builder
     {
-        $types = array_values(array_map(
-            static fn (VatTaxType $type): string => $type->value,
-            array_filter(VatTaxType::cases(), static fn (VatTaxType $type): bool => $type->allowedAsNonPayerDefault()),
-        ));
-
-        return $this->validRateQuery($taxDate)->whereIn('tax_type', $types);
+        return $this->validRateQuery($taxDate)->where('tax_type', VatTaxType::NonPayer->value);
     }
 
     /** @return Builder<VatRate> */

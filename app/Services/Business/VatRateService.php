@@ -81,7 +81,11 @@ class VatRateService
 
     public function findForEdit(string $uuid): VatRate
     {
-        return VatRate::query()->with('defaultAssignment')->where('uuid', $uuid)->whereNull('archived_at')->firstOrFail();
+        return VatRate::query()->with('defaultAssignment')
+            ->where('uuid', $uuid)
+            ->where('tax_type', '!=', VatTaxType::NonPayer->value)
+            ->whereNull('archived_at')
+            ->firstOrFail();
     }
 
     /** @param array<string, mixed> $attributes */
@@ -174,6 +178,7 @@ class VatRateService
 
         return DB::connection($connection)->transaction(function () use ($uuid): VatRate {
             $rate = $this->lockedRate($uuid, true);
+            $this->assertUserManaged($rate);
             $wasActive = (bool) $rate->is_active;
             $rate->forceFill(['is_active' => false, 'archived_at' => now()])->save();
             $this->auditWriter->write(
@@ -196,6 +201,7 @@ class VatRateService
 
         return DB::connection($connection)->transaction(function () use ($uuid, $context): VatRate {
             $rate = $this->lockedRate($uuid);
+            $this->assertUserManaged($rate);
 
             if (! $rate->is_active || $rate->isArchived()) {
                 throw ValidationException::withMessages(['rate' => 'Výchozí může být pouze aktivní a nearchivovaná sazba.']);
@@ -274,7 +280,11 @@ class VatRateService
 
         $rate = VatRate::query()->whereKey($assignment->vat_rate_id)->first();
 
-        if ($rate === null || (! $this->isVatPayer() && ! $rate->tax_type->allowedAsNonPayerDefault())) {
+        if (
+            $rate === null
+            || $rate->isSystemManaged()
+            || (! $this->isVatPayer() && ! $rate->tax_type->allowedAsNonPayerDefault())
+        ) {
             throw VatRateUnavailable::missingDefault();
         }
 
@@ -305,6 +315,7 @@ class VatRateService
 
         return DB::connection($connection)->transaction(function () use ($uuid, $active): VatRate {
             $rate = $this->lockedRate($uuid);
+            $this->assertUserManaged($rate);
 
             if ($rate->isArchived()) {
                 throw ValidationException::withMessages(['rate' => 'Archivovanou sazbu nelze aktivovat ani deaktivovat.']);
@@ -361,6 +372,12 @@ class VatRateService
     {
         $attributes['code'] = mb_strtoupper(trim((string) $attributes['code']));
         $type = VatTaxType::from((string) $attributes['tax_type']);
+
+        if ($type->isSystemManaged()) {
+            throw ValidationException::withMessages([
+                'tax_type' => 'Systémový režim Neplátce DPH nelze spravovat ručně.',
+            ]);
+        }
 
         if (
             isset($attributes['valid_to'])
@@ -423,6 +440,15 @@ class VatRateService
             ->when($editableOnly, fn ($query) => $query->whereNull('archived_at'))
             ->lockForUpdate()
             ->firstOrFail();
+    }
+
+    private function assertUserManaged(VatRate $rate): void
+    {
+        if ($rate->isSystemManaged()) {
+            throw ValidationException::withMessages([
+                'rate' => 'Systémový režim Neplátce DPH nelze měnit.',
+            ]);
+        }
     }
 
     /** @template T @param callable(): T $callback @return T */

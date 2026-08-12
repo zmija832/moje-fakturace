@@ -176,6 +176,27 @@ class InvoiceIssuerTest extends TestCase
         }
     }
 
+    public function test_non_payer_snapshot_is_recalculated_and_issued_with_zero_vat(): void
+    {
+        $this->activate(BusinessConnection::Business1);
+        [$client, $account, $ordinaryRate] = $this->sources();
+        CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)
+            ->update(['is_vat_payer' => false, 'vat_id' => null]);
+        $this->sequence(default: true);
+        $invoice = $this->draft($client, $account, $ordinaryRate);
+
+        $snapshot = $invoice->currentRevision->vatSnapshots->sole();
+        $this->assertSame('non_payer', $snapshot->tax_type->value);
+        $this->assertNull($snapshot->percentage);
+        $this->assertSame('0.0000', $invoice->currentRevision->vat_total);
+
+        $issued = app(InvoiceIssuer::class)->issue($invoice->uuid, 1, (string) Str::uuid());
+
+        $this->assertSame('issued', $issued->status->value);
+        $this->assertSame('non_payer', $issued->issuedRevision->vatSnapshots->sole()->tax_type->value);
+        $this->assertSame('0.0000', $issued->issuedRevision->vat_total);
+    }
+
     public function test_readiness_and_audit_failure_leave_draft_numbering_untouched(): void
     {
         $this->activate(BusinessConnection::Business1);
@@ -412,7 +433,7 @@ class InvoiceIssuerTest extends TestCase
             'default_currency' => 'CZK',
             'document_locale' => 'cs',
             'timezone' => 'Europe/Prague',
-            'is_vat_payer' => false,
+            'is_vat_payer' => true,
             'default_due_days' => 14,
             'default_payment_method' => 'bank_transfer',
         ])->save();

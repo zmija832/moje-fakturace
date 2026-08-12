@@ -10,6 +10,7 @@ enum VatTaxType: string
     case Exempt = 'exempt';
     case ReverseCharge = 'reverse_charge';
     case OutOfScope = 'out_of_scope';
+    case NonPayer = 'non_payer';
 
     public function label(): string
     {
@@ -20,6 +21,7 @@ enum VatTaxType: string
             self::Exempt => 'Osvobozené plnění',
             self::ReverseCharge => 'Přenesená daňová povinnost',
             self::OutOfScope => 'Mimo předmět DPH',
+            self::NonPayer => 'Neplátce DPH',
         };
     }
 
@@ -33,12 +35,26 @@ enum VatTaxType: string
         return in_array($this, [self::Exempt, self::OutOfScope], true);
     }
 
+    public function isSystemManaged(): bool
+    {
+        return $this === self::NonPayer;
+    }
+
     /** @return array<string, string> */
     public static function options(): array
     {
         return array_column(array_map(
             fn (self $type): array => [$type->value, $type->label()],
             self::cases(),
+        ), 1, 0);
+    }
+
+    /** @return array<string, string> */
+    public static function userManageableOptions(): array
+    {
+        return array_column(array_map(
+            fn (self $type): array => [$type->value, $type->label()],
+            array_filter(self::cases(), fn (self $type): bool => ! $type->isSystemManaged()),
         ), 1, 0);
     }
 }

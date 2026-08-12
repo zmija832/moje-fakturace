@@ -321,10 +321,13 @@ legislativní sazby automaticky a nemění plátcovství uložené v
 `company_settings`.
 
 Podporované režimy jsou základní, snížená a nulová sazba, osvobozené plnění,
-přenesená daňová povinnost a plnění mimo předmět DPH. Procento je
+přenesená daňová povinnost, plnění mimo předmět DPH a systémový režim
+`non_payer`. Ten vyjadřuje, že dodavatel není plátcem DPH; není nulovou sazbou,
+osvobozením ani plněním mimo předmět DPH. Procento je
 `DECIMAL(7,4)` reprezentované v PHP řetězcem. Základní, snížený a nulový režim
 procento vyžadují; nulová sazba je přesně `0.0000`. Osvobozené, reverse-charge
-a out-of-scope plnění ukládají `NULL`, čímž se odlišují od nulové sazby.
+a out-of-scope plnění i systémový režim `non_payer` ukládají `NULL`, čímž
+se odlišují od nulové sazby.
 
 Platnost `valid_from` až `valid_to` je včetně obou dnů. `valid_to` může být
 prázdné. Neaktivní nebo archivovaná sazba se pro nový doklad nevybere. Dvě
@@ -333,10 +336,12 @@ interval; služba používá transakci, řádkové zámky a MySQL advisory lock,
 chrání i souběžné vytvoření prvního řádku. Navazující období proto začíná až
 den po konci předchozího období.
 
-Kontext `sales` má nejvýše jednu výchozí sazbu. U neplátce může být výchozí
-pouze `out_of_scope` nebo `exempt`; samotná evidence ostatních sazeb zůstává
-dostupná pro budoucí přípravu. Deaktivace nebo jednosměrná archivace odstraní
-výchozí vazbu ve stejné transakci. Fyzické mazání není podporováno.
+Kontext `sales` má nejvýše jednu výchozí sazbu. Systémový režim `non_payer`
+není běžným sales defaultem a uživatel jej nemůže měnit, deaktivovat ani
+archivovat. U neplátce jej pro běžnou fakturu doplňuje serverový resolver bez
+vstupu z browseru; ostatní režimy ani sales default nepoužívá jako fallback.
+Deaktivace nebo jednosměrná archivace běžné sazby odstraní výchozí vazbu ve
+stejné transakci. Fyzické mazání není podporováno.
 
 Sazba v databázi je pouze aktuální konfigurační údaj. Budoucí faktura musí
 vybrat sazbu podle data zdanitelného plnění a uložit vlastní neměnný snapshot
@@ -381,7 +386,7 @@ včetně přesného rezidua na 0,0001, a teprve potom se pro každou sazbu poč�
 Výpočet položky je `quantity × unit_price`, položková sleva, podíl celkové slevy,
 základ po slevách, DPH a součet s DPH. U každé položky se obě složky slevy
 ukládají samostatně. DPH se počítá a half-up zaokrouhluje po položkách na čtyři
-místa. `zero`, `exempt`, `reverse_charge` a `out_of_scope` mají DPH nula, ale
+místa. `zero`, `exempt`, `reverse_charge`, `out_of_scope` a `non_payer` mají DPH nula, ale
 zůstávají oddělenými režimy. Serverové `invoice_vat_summaries` seskupují pouze
 stejný typ a procento. Konečný `grand_total` se half-up zaokrouhlí na dvě místa;
 u hotovostní úhrady v CZK na celé koruny. Rozdíl se uloží v

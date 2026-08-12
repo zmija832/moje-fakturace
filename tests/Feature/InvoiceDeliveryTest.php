@@ -57,6 +57,13 @@ class InvoiceDeliveryTest extends TestCase
         [$invoice, $client, $account, $rate] = $this->createIssuedInvoice();
         $this->actingAs($admin);
         $before = app(InvoiceDocumentViewModelFactory::class)->make($invoice)->toArray();
+        $print = view('business.invoices.print', ['document' => $before, 'archival' => true])->render();
+        $this->assertStringContainsString('Neplátce DPH', $print);
+        $this->assertStringContainsString('Jednotková cena', $print);
+        $this->assertStringContainsString('Souhrn položek', $print);
+        $this->assertStringNotContainsString('Nulová sazba', $print);
+        $this->assertStringNotContainsString('Osvobozené plnění', $print);
+        $this->assertStringNotContainsString('Mimo předmět DPH', $print);
         $correlation = (string) Str::uuid();
         $first = app(InvoicePdfGenerator::class)->generate($invoice->uuid, $correlation);
         $repeated = app(InvoicePdfGenerator::class)->generate($invoice->uuid, $correlation);

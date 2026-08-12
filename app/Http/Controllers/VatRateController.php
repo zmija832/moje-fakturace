@@ -109,6 +109,6 @@ class VatRateController extends Controller
     /** @return array<string, mixed> */
     private function formData(VatRateService $service, VatRate $rate): array
     {
-        return ['rate' => $rate, 'taxTypes' => VatTaxType::options(), 'isVatPayer' => $service->isVatPayer()];
+        return ['rate' => $rate, 'taxTypes' => VatTaxType::userManageableOptions(), 'isVatPayer' => $service->isVatPayer()];
     }
 }

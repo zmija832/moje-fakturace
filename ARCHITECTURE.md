@@ -1019,7 +1019,7 @@ Jednotková cena je v první verzi vždy bez DPH.
 
 DPH se počítá z každého základu položky po slevě a half-up zaokrouhluje na čtyři
 místa. `standard` a `reduced` používají snapshot procenta; `zero`, `exempt`,
-`reverse_charge` a `out_of_scope` vracejí nulovou DPH a nesmějí se významově
+`reverse_charge`, `out_of_scope` a `non_payer` vracejí nulovou DPH a nesmějí se významově
 slučovat. `grand_total` se half-up zaokrouhlí na dvě místa. Toto je zvolené
 aplikační pravidlo, nikoliv tvrzení o univerzální právní správnosti, a před
 produkčním účetním použitím musí být ověřeno proti požadovanému postupu.
@@ -1253,10 +1253,12 @@ a normalizovaného kódu, takže je chráněn i souběh v okamžiku, kdy ještě
 řádek neexistuje.
 
 `vat_rate_defaults.context` je primární klíč a v této etapě přijímá pouze
-`sales`. Neaktivní nebo archivovaná sazba nemůže být výchozí. Pokud je subjekt
-neplátce, může být výchozí pouze `out_of_scope` nebo `exempt`; evidence jiných
-sazeb je dovolena jako budoucí příprava a plátcovství se tím nemění. Deaktivace
-a jednosměrná archivace odstraní default ve stejné transakci.
+`sales`. Neaktivní nebo archivovaná sazba nemůže být výchozí. `non_payer` je
+tenant-local systémový režim s `percentage = NULL`, nikoliv běžný sales default.
+Pro fakturu neplátce jej serverový resolver vybírá výhradně podle typu, aktivity
+a platnosti k DUZP; `standard` s 0 %, `zero`, `exempt`, `out_of_scope` ani sales
+default nejsou fallback. Plátce tento režim použít nesmí. Deaktivace a
+jednosměrná archivace běžné sazby odstraní default ve stejné transakci.
 
 Výběr pro doklad musí vždy dostat explicitní datum zdanitelného plnění.
 Konfigurační sazba není historickým záznamem faktury. Každá draftová revize

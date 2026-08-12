@@ -48,6 +48,7 @@ class InvoiceCalculatorTest extends TestCase
     {
         return array_map(static fn (VatTaxType $type): array => [$type], [
             VatTaxType::Zero, VatTaxType::Exempt, VatTaxType::ReverseCharge, VatTaxType::OutOfScope,
+            VatTaxType::NonPayer,
         ]);
     }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
@@ -33,6 +34,8 @@ class BusinessMigrationCommandTest extends TestCase
     private const ISSUANCE_MIGRATION = '2026_08_02_000000_add_invoice_issuance_workflow';
 
     private const DELIVERY_MIGRATION = '2026_08_03_000000_add_invoice_documents_and_deliveries';
+
+    private const NON_PAYER_MIGRATION = '2026_08_05_000000_add_non_payer_vat_rate';
 
     protected function setUp(): void
     {
@@ -300,6 +303,14 @@ class BusinessMigrationCommandTest extends TestCase
         }
 
         foreach (['business_1', 'business_2'] as $connection) {
+            $systemRates = DB::connection($connection)->table('vat_rates')
+                ->where('tax_type', 'non_payer')
+                ->get();
+            $this->assertCount(1, $systemRates);
+            $this->assertTrue(Str::isUuid($systemRates->first()->uuid));
+            $this->assertNull($systemRates->first()->percentage);
+            $this->assertSame('1000-01-01', $systemRates->first()->valid_from);
+
             $foreign = DB::connection($connection)->selectOne(
                 "SELECT COUNT(*) AS aggregate, MIN(REFERENCED_TABLE_SCHEMA) AS referenced_schema
                  FROM information_schema.KEY_COLUMN_USAGE
@@ -308,6 +319,71 @@ class BusinessMigrationCommandTest extends TestCase
             );
             $this->assertSame(1, (int) $foreign->aggregate);
             $this->assertSame(DB::connection($connection)->getDatabaseName(), $foreign->referenced_schema);
+        }
+    }
+
+    public function test_non_payer_migration_is_tenant_local_idempotent_and_preserves_standard_zero(): void
+    {
+        $this->resetBusinessConnection('business_1');
+        $this->runMigrationsInNewBatch('business_1', array_slice(self::PART_ONE_MIGRATIONS, 0, 6));
+        $database = DB::connection('business_1');
+        $legacyUuid = (string) Str::uuid();
+        $now = now();
+        $database->table('vat_rates')->insert([
+            'uuid' => $legacyUuid,
+            'name' => 'Neplátce',
+            'code' => 'LEGACY-NON-PAYER',
+            'tax_type' => 'standard',
+            'percentage' => '0.0000',
+            'valid_from' => '2020-01-01',
+            'valid_to' => null,
+            'is_active' => true,
+            'sort_order' => 0,
+            'archived_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $this->runMigrationsInNewBatch('business_1', [self::NON_PAYER_MIGRATION]);
+
+        $system = $database->table('vat_rates')->where('tax_type', 'non_payer')->sole();
+        $this->assertTrue(Str::isUuid($system->uuid));
+        $this->assertSame('NON_PAYER', $system->code);
+        $this->assertSame('1000-01-01', $system->valid_from);
+        $this->assertNull($system->percentage);
+        $this->assertSame(1, (int) $system->is_active);
+        $this->assertNull($system->archived_at);
+        $this->assertSame(0, $database->table('vat_rate_defaults')->count());
+
+        $legacy = $database->table('vat_rates')->where('uuid', $legacyUuid)->sole();
+        $this->assertSame('standard', $legacy->tax_type);
+        $this->assertSame('0.0000', $legacy->percentage);
+
+        $this->assertSame(0, Artisan::call('migrate', [
+            '--database' => 'business_1',
+            '--path' => [database_path('migrations/business/'.self::NON_PAYER_MIGRATION.'.php')],
+            '--realpath' => true,
+            '--force' => true,
+        ]));
+        $this->assertSame(1, $database->table('vat_rates')->where('tax_type', 'non_payer')->count());
+        $this->assertFalse(Schema::connection('central')->hasTable('vat_rates'));
+
+        try {
+            $database->table('vat_rates')->insert([
+                'uuid' => (string) Str::uuid(),
+                'name' => 'Neplatný NonPayer',
+                'code' => 'INVALID-NON-PAYER',
+                'tax_type' => 'non_payer',
+                'percentage' => '0.0000',
+                'valid_from' => '2026-01-01',
+                'is_active' => true,
+                'sort_order' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $this->fail('Databáze měla odmítnout procento systémového režimu NonPayer.');
+        } catch (QueryException) {
+            $this->assertSame(1, $database->table('vat_rates')->where('tax_type', 'non_payer')->count());
         }
     }
 

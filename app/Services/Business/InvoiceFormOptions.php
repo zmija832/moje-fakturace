@@ -8,6 +8,7 @@ use App\Enums\ClientType;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\DocumentType;
 use App\Enums\InvoiceDiscountType;
+use App\Enums\VatTaxType;
 use App\Models\Business\BankAccount;
 use App\Models\Business\BankAccountDefault;
 use App\Models\Business\Client;
@@ -36,6 +37,7 @@ class InvoiceFormOptions
         $accounts = BankAccount::query()->with('defaultAssignment')->whereNull('archived_at')
             ->where('is_active', true)->orderBy('currency')->orderBy('sort_order')->orderBy('name')->get();
         $rates = VatRate::query()->whereNull('archived_at')->where('is_active', true)
+            ->where('tax_type', '!=', VatTaxType::NonPayer->value)
             ->whereDate('valid_from', '<=', $date)->where(fn ($query) => $query
             ->whereNull('valid_to')->orWhereDate('valid_to', '>=', $date))
             ->orderBy('sort_order')->orderBy('name')->get();
@@ -43,6 +45,10 @@ class InvoiceFormOptions
             ->where('document_type', DocumentType::IssuedInvoice->value)->whereNull('archived_at')
             ->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get();
         $company = CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)->first();
+        $defaultVatRate = VatRateDefault::query()->with('rate')
+            ->where('context', 'sales')
+            ->first()
+            ?->rate;
 
         return [
             'clients' => $clients->take(200)->values(),
@@ -57,7 +63,9 @@ class InvoiceFormOptions
                 ->where('document_type', DocumentType::IssuedInvoice->value)->first()?->sequence?->uuid,
             'defaultBankAccounts' => BankAccountDefault::query()->with('account')->get()
                 ->mapWithKeys(fn (BankAccountDefault $default): array => [$default->currency => $default->account?->uuid]),
-            'defaultVatRateUuid' => VatRateDefault::query()->with('rate')->where('context', 'sales')->first()?->rate?->uuid,
+            'defaultVatRateUuid' => $defaultVatRate !== null && ! $defaultVatRate->isSystemManaged()
+                ? $defaultVatRate->uuid
+                : null,
             'companySettings' => $company,
             'isVatPayer' => (bool) $company?->is_vat_payer,
             'clientTypes' => ClientType::options(),

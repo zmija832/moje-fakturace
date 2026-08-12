@@ -164,6 +164,7 @@ class InvoicesHttpTest extends TestCase
         [$client, $account, $rate] = $this->sources();
         CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)
             ->update(['is_vat_payer' => false, 'vat_id' => null]);
+        $nonPayerRate = VatRate::query()->where('tax_type', 'non_payer')->sole();
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
@@ -174,15 +175,16 @@ class InvoicesHttpTest extends TestCase
 
         $payload = $this->payloadWithoutVat($client, $account, $rate);
         $preview = $this->postJson(route('invoices.preview'), $payload)->assertOk();
-        $preview->assertJsonPath('summaries.0.tax_type', 'out_of_scope')
+        $preview->assertJsonPath('summaries.0.tax_type', 'non_payer')
             ->assertJsonPath('summaries.0.vat_amount', '0.0000')
             ->assertJsonPath('totals.grand_total', '100.0000');
 
         $this->post(route('invoices.store'), $payload)->assertSessionHasNoErrors();
         $invoice = Invoice::query()->firstOrFail();
         $firstRevision = $invoice->currentRevision;
-        $this->assertSame($rate->uuid, $firstRevision->vatSnapshots->sole()->source_vat_rate_uuid);
-        $this->assertSame('out_of_scope', $firstRevision->vatSnapshots->sole()->tax_type->value);
+        $this->assertSame($nonPayerRate->uuid, $firstRevision->vatSnapshots->sole()->source_vat_rate_uuid);
+        $this->assertSame('non_payer', $firstRevision->vatSnapshots->sole()->tax_type->value);
+        $this->assertNull($firstRevision->vatSnapshots->sole()->percentage);
         $this->assertSame('0.0000', $firstRevision->vat_total);
 
         $edit = $this->get(route('invoices.edit', $invoice->uuid))->assertOk();
@@ -199,8 +201,9 @@ class InvoicesHttpTest extends TestCase
         $invoice->refresh();
         $this->assertSame(2, $invoice->version);
         $this->assertSame(2, $invoice->revisions()->count());
-        $this->assertSame($rate->uuid, $invoice->currentRevision->vatSnapshots->sole()->source_vat_rate_uuid);
-        $this->assertSame($rate->uuid, $firstRevision->vatSnapshots->sole()->fresh()->source_vat_rate_uuid);
+        $this->assertSame($nonPayerRate->uuid, $invoice->currentRevision->vatSnapshots->sole()->source_vat_rate_uuid);
+        $this->assertSame($nonPayerRate->uuid, $firstRevision->vatSnapshots->sole()->fresh()->source_vat_rate_uuid);
+        $this->assertSame('non_payer', $invoice->currentRevision->vatSnapshots->sole()->tax_type->value);
 
         $forged = $payload;
         $forged['items'][0]['vat_rate_uuid'] = $rate->uuid;
@@ -215,13 +218,15 @@ class InvoicesHttpTest extends TestCase
         [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
         app(ActiveBusinessContext::class)->set($business);
         $this->sources();
+        $systemRateUuid = VatRate::query()->where('tax_type', 'non_payer')->value('uuid');
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
-        $this->get(route('invoices.create'))->assertOk()
+        $response = $this->get(route('invoices.create'))->assertOk()
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
             ->assertSee('id="ns-vat"', false)
             ->assertSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
+        $this->assertStringNotContainsString($systemRateUuid, $response->getContent());
     }
 
     public function test_create_form_maps_validation_errors_to_static_and_dynamic_fields(): void

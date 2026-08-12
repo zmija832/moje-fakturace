@@ -47,10 +47,10 @@ class InvoiceDocumentViewModelTest extends TestCase
             'subtotal_before_discount' => '100.0000',
             'discount_total' => '10.0000',
             'tax_base_total' => '90.0000',
-            'vat_total' => '18.9000',
-            'total_before_rounding' => '108.9000',
-            'rounding_adjustment' => '0.1000',
-            'grand_total' => '109.0000',
+            'vat_total' => '0.0000',
+            'total_before_rounding' => '90.0000',
+            'rounding_adjustment' => '0.0000',
+            'grand_total' => '90.0000',
             'note' => 'Neměnná poznámka',
         ]);
         $supplier = new InvoiceSupplierSnapshot;
@@ -77,7 +77,7 @@ class InvoiceDocumentViewModelTest extends TestCase
             'country_code' => 'CZ',
         ]);
         $vat = new InvoiceVatSnapshot;
-        $vat->forceFill(['tax_type' => VatTaxType::Standard->value, 'percentage' => '21.0000']);
+        $vat->forceFill(['tax_type' => VatTaxType::NonPayer->value, 'percentage' => null]);
         $item = new InvoiceItem;
         $item->forceFill([
             'position' => 1,
@@ -88,17 +88,17 @@ class InvoiceDocumentViewModelTest extends TestCase
             'line_discount_amount' => '10.0000',
             'invoice_discount_amount' => '0.0000',
             'line_net_amount' => '90.0000',
-            'vat_amount' => '18.9000',
-            'line_total_amount' => '108.9000',
+            'vat_amount' => '0.0000',
+            'line_total_amount' => '90.0000',
         ]);
         $item->setRelation('vatSnapshot', $vat);
         $summary = new InvoiceVatSummary;
         $summary->forceFill([
-            'tax_type' => VatTaxType::Standard->value,
-            'percentage' => '21.0000',
+            'tax_type' => VatTaxType::NonPayer->value,
+            'percentage' => null,
             'tax_base' => '90.0000',
-            'vat_amount' => '18.9000',
-            'total_amount' => '108.9000',
+            'vat_amount' => '0.0000',
+            'total_amount' => '90.0000',
         ]);
         $revision->setRelations([
             'supplierSnapshot' => $supplier,
@@ -113,7 +113,9 @@ class InvoiceDocumentViewModelTest extends TestCase
 
         $this->assertSame('Žluťoučký dodavatel s.r.o.', $document['supplier']['name']);
         $this->assertSame('90,00', $document['totals']['tax_base_total']);
-        $this->assertSame('109,00', $document['totals']['grand_total']);
+        $this->assertSame('90,00', $document['totals']['grand_total']);
+        $this->assertSame('Neplátce DPH', $document['items'][0]['tax_label']);
+        $this->assertSame('Neplátce DPH', $document['vat_summaries'][0]['tax_label']);
         $this->assertFalse($document['qr']['available']);
         $this->assertArrayNotHasKey('internal_secret', $document['supplier']);
         $this->assertStringNotContainsString('nesmí uniknout', json_encode($document, JSON_THROW_ON_ERROR));

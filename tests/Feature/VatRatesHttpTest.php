@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Enums\BusinessConnection;
 use App\Models\Business;
+use App\Models\Business\VatRate;
 use App\Models\User;
 use App\Services\Business\VatRateService;
 use Illuminate\Support\Facades\DB;
@@ -58,11 +59,11 @@ class VatRatesHttpTest extends TestCase
             'percentage' => '12,5',
         ]))->assertSessionHasNoErrors();
 
-        $row = DB::connection('business_1')->table('vat_rates')->first();
+        $row = DB::connection('business_1')->table('vat_rates')->where('code', 'REDUCED_12')->first();
         $this->assertSame('Snížená sazba', $row->name);
         $this->assertSame('REDUCED_12', $row->code);
         $this->assertSame('12.5000', $row->percentage);
-        $this->assertSame(0, DB::connection('business_2')->table('vat_rates')->count());
+        $this->assertSame(1, DB::connection('business_2')->table('vat_rates')->count());
         $this->assertSame('central', DB::getDefaultConnection());
         $this->assertSame($admin->email, DB::connection('business_1')->table('audit_logs')
             ->where('event', 'vat_rate.created')->value('actor_email'));
@@ -108,6 +109,38 @@ class VatRatesHttpTest extends TestCase
             $this->assertContains('business.context', $middleware);
             $this->assertContains('business.required', $middleware);
         }
+    }
+
+    public function test_system_non_payer_is_read_only_and_cannot_be_submitted_by_admin(): void
+    {
+        [$admin, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        $system = VatRate::query()->where('tax_type', 'non_payer')->sole();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $this->get(route('vat-rates.show', $system->uuid))
+            ->assertOk()
+            ->assertSee('Neplátce DPH')
+            ->assertDontSee(route('vat-rates.edit', $system->uuid), false)
+            ->assertDontSee(route('vat-rates.deactivate', $system->uuid), false)
+            ->assertDontSee(route('vat-rates.archive', $system->uuid), false);
+        $this->get(route('vat-rates.edit', $system->uuid))->assertNotFound();
+
+        $this->post(route('vat-rates.store'), $this->payload([
+            'tax_type' => 'non_payer',
+            'percentage' => null,
+        ]))->assertSessionHasErrors('tax_type');
+        $this->put(route('vat-rates.update', $system->uuid), $this->payload())->assertNotFound();
+        $this->patch(route('vat-rates.set-default', $system->uuid))->assertSessionHasErrors('rate');
+        $this->patch(route('vat-rates.deactivate', $system->uuid))->assertSessionHasErrors('rate');
+        $this->patch(route('vat-rates.archive', $system->uuid))->assertSessionHasErrors('rate');
+
+        $system = DB::connection('business_1')->table('vat_rates')->where('uuid', $system->uuid)->sole();
+        $this->assertSame('non_payer', $system->tax_type);
+        $this->assertSame(1, (int) $system->is_active);
+        $this->assertNull($system->archived_at);
+        $this->assertSame(0, DB::connection('business_1')->table('vat_rate_defaults')->count());
     }
 
     /** @return array{User, Business} */

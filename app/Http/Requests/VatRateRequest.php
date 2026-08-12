@@ -19,7 +19,11 @@ abstract class VatRateRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:32', 'regex:/^[A-Z0-9][A-Z0-9_-]*$/'],
-            'tax_type' => ['required', Rule::enum(VatTaxType::class)],
+            'tax_type' => [
+                'required',
+                Rule::enum(VatTaxType::class),
+                Rule::notIn([VatTaxType::NonPayer->value]),
+            ],
             'percentage' => ['nullable', 'string', 'max:16'],
             'valid_from' => ['required', 'date_format:Y-m-d'],
             'valid_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:valid_from'],

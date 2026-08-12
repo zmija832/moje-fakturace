@@ -151,7 +151,7 @@ final class InvoiceCalculator
                 InvoiceDecimal::multiply($lineNet, $vatPercentage ?? throw new InvalidArgumentException('Sazba DPH nemá procentní hodnotu.'), 8),
                 '100',
             ),
-            VatTaxType::Zero, VatTaxType::Exempt, VatTaxType::ReverseCharge, VatTaxType::OutOfScope => '0.0000',
+            VatTaxType::Zero, VatTaxType::Exempt, VatTaxType::ReverseCharge, VatTaxType::OutOfScope, VatTaxType::NonPayer => '0.0000',
         };
         $lineTotal = InvoiceDecimal::add($lineNet, $vatAmount);
 

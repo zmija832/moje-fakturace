@@ -1,4 +1,5 @@
 @can('updateAny', App\Models\Business\VatRate::class)
+    @unless ($rate->isSystemManaged())
     @unless ($rate->isArchived())
         <div class="flex flex-wrap gap-2">
             <a class="button-secondary" href="{{ route('vat-rates.edit', $rate->uuid) }}">Upravit</a>
@@ -12,5 +13,6 @@
             @endif
             <form method="POST" action="{{ route('vat-rates.archive', $rate->uuid) }}" onsubmit="return confirm('Opravdu sazbu jednosměrně archivovat?')">@csrf @method('PATCH')<button class="button-secondary text-red-700">Archivovat</button></form>
         </div>
+    @endunless
     @endunless
 @endcan

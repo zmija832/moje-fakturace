@@ -75,8 +75,8 @@ class VatRateServiceTest extends TestCase
 
         $this->assertNotSame($fakeUuid, $first->uuid);
         $this->assertSame('21.0000', $first->percentage);
-        $this->assertSame(1, DB::connection('business_1')->table('vat_rates')->count());
-        $this->assertSame(1, DB::connection('business_2')->table('vat_rates')->count());
+        $this->assertSame(2, DB::connection('business_1')->table('vat_rates')->count());
+        $this->assertSame(2, DB::connection('business_2')->table('vat_rates')->count());
         $this->assertFalse(Schema::connection('central')->hasTable('vat_rates'));
         $this->assertSame('central', DB::getDefaultConnection());
         $this->assertSame($first->uuid, $second->uuid);
@@ -110,6 +110,48 @@ class VatRateServiceTest extends TestCase
             'tax_type' => 'exempt', 'percentage' => '21.0000', 'valid_from' => '2026-01-01',
             'is_active' => true, 'sort_order' => 0, 'created_at' => now(), 'updated_at' => now(),
         ]);
+    }
+
+    public function test_system_non_payer_cannot_be_managed_or_used_as_sales_default(): void
+    {
+        $this->activate(BusinessConnection::Business1);
+        $system = VatRate::query()->where('tax_type', 'non_payer')->sole();
+        $ordinary = $this->service()->create($this->attributes());
+
+        foreach ([
+            fn () => $this->service()->create($this->attributes([
+                'code' => 'FORGED-NON-PAYER',
+                'tax_type' => 'non_payer',
+                'percentage' => null,
+            ])),
+            fn () => $this->service()->update($ordinary->uuid, $this->attributes([
+                'tax_type' => 'non_payer',
+                'percentage' => null,
+            ])),
+            fn () => $this->service()->deactivate($system->uuid),
+            fn () => $this->service()->archive($system->uuid),
+            fn () => $this->service()->setDefault($system->uuid),
+        ] as $operation) {
+            try {
+                $operation();
+                $this->fail('Systémový režim NonPayer neměl být možné spravovat.');
+            } catch (ValidationException) {
+                $this->assertTrue(true);
+            }
+        }
+
+        try {
+            $this->service()->update($system->uuid, $this->attributes());
+            $this->fail('Systémový režim NonPayer neměl být možné změnit na běžnou sazbu.');
+        } catch (ModelNotFoundException) {
+            $this->assertTrue(true);
+        }
+
+        $system->refresh();
+        $this->assertTrue($system->is_active);
+        $this->assertFalse($system->isArchived());
+        $this->assertSame('non_payer', $system->tax_type->value);
+        $this->assertNull($system->defaultAssignment);
     }
 
     public function test_inclusive_intervals_allow_adjacent_periods_and_reject_overlaps(): void
@@ -284,7 +326,7 @@ class VatRateServiceTest extends TestCase
             $this->service()->create($this->attributes());
             $this->fail('Chybějící auditní tabulka měla způsobit rollback.');
         } catch (QueryException) {
-            $this->assertSame(0, DB::connection('business_1')->table('vat_rates')->count());
+            $this->assertSame(1, DB::connection('business_1')->table('vat_rates')->count());
         }
     }
 
