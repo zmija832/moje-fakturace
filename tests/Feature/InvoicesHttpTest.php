@@ -103,6 +103,9 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('previewLineTotal(index+1)', false)
             ->assertSee('Přesunout položku ${index+1}', false)
             ->assertSee('draggable="true"', false)
+            ->assertSee('invoice-items-table--vat', false)
+            ->assertSee('class="invoice-items-header"', false)
+            ->assertSee('class="invoice-item-row"', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
         $before = $this->counts();
@@ -175,7 +178,8 @@ class InvoicesHttpTest extends TestCase
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
         $create = $this->get(route('invoices.create'))->assertOk();
-        $create->assertDontSee('name="items[0][vat_rate_uuid]"', false)
+        $create->assertSee('invoice-items-table--non-vat', false)
+            ->assertDontSee('name="items[0][vat_rate_uuid]"', false)
             ->assertDontSee('id="ns-vat"', false)
             ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
 

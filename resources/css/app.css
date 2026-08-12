@@ -54,19 +54,43 @@
         @apply mt-1 text-sm text-red-700;
     }
 
-    @media (min-width: 80rem) {
-        .invoice-editor-row {
+    .invoice-item-row {
+        @apply grid grid-cols-2 gap-3 py-3;
+    }
+
+    .invoice-items-header {
+        display: none;
+    }
+
+    @media (min-width: 64rem) {
+        .invoice-items-table--non-vat {
+            --invoice-items-columns: 36px 76px 80px minmax(260px, 1fr) 140px 150px 150px 44px;
+            --invoice-items-min-width: 992px;
+        }
+
+        .invoice-items-table--vat {
+            --invoice-items-columns: 36px 76px 80px minmax(260px, 1fr) 140px 150px 132px 150px 44px;
+            --invoice-items-min-width: 1132px;
+        }
+
+        .invoice-items-header,
+        .invoice-item-row {
             align-items: start;
+            column-gap: 8px;
             display: grid;
-            gap: 0.5rem;
+            grid-template-columns: var(--invoice-items-columns);
+            min-width: var(--invoice-items-min-width);
+            padding-left: 4px;
+            padding-right: 4px;
         }
 
-        .invoice-editor-row--non-vat {
-            grid-template-columns: 2rem 4.5rem 4.5rem minmax(14rem, 1fr) 7.5rem 11rem 9rem 2.5rem;
+        .invoice-items-header {
+            @apply border-b border-slate-200 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500;
         }
 
-        .invoice-editor-row--vat {
-            grid-template-columns: 2rem 4.5rem 4.5rem minmax(12rem, 1fr) 7.5rem 10rem 8rem 9rem 2.5rem;
+        .invoice-item-row {
+            padding-bottom: 8px;
+            padding-top: 8px;
         }
     }
 }
