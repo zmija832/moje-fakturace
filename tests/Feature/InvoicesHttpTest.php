@@ -99,9 +99,10 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
             ->assertSee('Načíst z ARES')
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
-            ->assertSee('Cena položky')
+            ->assertSee('Celkem')
             ->assertSee('previewLineTotal(index+1)', false)
-            ->assertSee('Posunout položku ${index+1} nahoru', false)
+            ->assertSee('Přesunout položku ${index+1}', false)
+            ->assertSee('draggable="true"', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
         $before = $this->counts();

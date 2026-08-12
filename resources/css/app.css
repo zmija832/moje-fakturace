@@ -55,18 +55,18 @@
     }
 
     @media (min-width: 80rem) {
-        .invoice-item-grid {
+        .invoice-editor-row {
             align-items: start;
             display: grid;
             gap: 0.5rem;
         }
 
-        .invoice-item-grid--non-vat {
-            grid-template-columns: minmax(12rem, 2fr) 5rem 4.5rem 7rem 6.5rem 6.5rem 8rem 7.5rem;
+        .invoice-editor-row--non-vat {
+            grid-template-columns: 2rem 4.5rem 4.5rem minmax(14rem, 1fr) 7.5rem 11rem 9rem 2.5rem;
         }
 
-        .invoice-item-grid--vat {
-            grid-template-columns: minmax(12rem, 2fr) 5rem 4.5rem 7rem 6.5rem 6.5rem 8rem 8rem 7.5rem;
+        .invoice-editor-row--vat {
+            grid-template-columns: 2rem 4.5rem 4.5rem minmax(12rem, 1fr) 7.5rem 10rem 8rem 9rem 2.5rem;
         }
     }
 }

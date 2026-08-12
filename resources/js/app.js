@@ -11,6 +11,8 @@ Alpine.data('invoiceEditor', (config) => ({
     previewController: null,
     previewRequestId: 0,
     lastPreviewSignature: null,
+    nextEditorKey: 0,
+    draggedItemIndex: null,
     errors: config.errors ?? {},
     quickClientOpen: false,
     quickClientType: 'company',
@@ -22,6 +24,10 @@ Alpine.data('invoiceEditor', (config) => ({
     aresMessage: '',
     aresWarning: '',
     init() {
+        this.items.forEach((item) => {
+            item._editorKey = this.editorItemKey();
+        });
+
         if (Object.keys(this.errors).length === 0) {
             this.$nextTick(() => {
                 if (this.$refs.form?.checkValidity()) this.queuePreview(0);
@@ -44,6 +50,7 @@ Alpine.data('invoiceEditor', (config) => ({
     },
     addItem() {
         this.items.push({
+            _editorKey: this.editorItemKey(),
             description: '', quantity: '1', unit: 'ks', unit_price: '0',
             discount_type: 'none', discount_value: '0',
             ...(config.isVatPayer ? { vat_rate_uuid: config.defaultVatRateUuid ?? '' } : {}),
@@ -53,14 +60,95 @@ Alpine.data('invoiceEditor', (config) => ({
     removeItem(index) {
         if (this.items.length > 1) {
             this.items.splice(index, 1);
+            this.removeItemErrors(index);
+            this.removePreviewItem(index);
             this.queuePreview();
         }
     },
-    move(index, offset) {
-        const target = index + offset;
-        if (target < 0 || target >= this.items.length) return;
-        [this.items[index], this.items[target]] = [this.items[target], this.items[index]];
+    editorItemKey() {
+        this.nextEditorKey += 1;
+
+        return `invoice-item-${this.nextEditorKey}`;
+    },
+    startItemDrag(event, index) {
+        this.draggedItemIndex = index;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(index));
+    },
+    endItemDrag() {
+        this.draggedItemIndex = null;
+    },
+    dropItem(target) {
+        const source = this.draggedItemIndex;
+        if (Number.isInteger(source)) this.reorderItem(source, target);
+        this.endItemDrag();
+    },
+    moveItemByOffset(index, offset) {
+        this.reorderItem(index, index + offset);
+    },
+    reorderItem(source, target) {
+        if (source === target || source < 0 || target < 0 || source >= this.items.length || target >= this.items.length) return;
+
+        const [item] = this.items.splice(source, 1);
+        this.items.splice(target, 0, item);
+        this.moveItemErrors(source, target);
+        this.reorderPreviewItems(source, target);
         this.queuePreview();
+    },
+    moveItemErrors(source, target) {
+        const remapped = {};
+        for (const [key, messages] of Object.entries(this.errors)) {
+            const match = key.match(/^items\.(\d+)\.(.+)$/);
+            if (!match) {
+                remapped[key] = messages;
+                continue;
+            }
+
+            const index = Number(match[1]);
+            let nextIndex = index;
+            if (index === source) nextIndex = target;
+            else if (source < target && index > source && index <= target) nextIndex = index - 1;
+            else if (source > target && index >= target && index < source) nextIndex = index + 1;
+            remapped[`items.${nextIndex}.${match[2]}`] = messages;
+        }
+        this.errors = remapped;
+    },
+    removeItemErrors(removedIndex) {
+        const remapped = {};
+        for (const [key, messages] of Object.entries(this.errors)) {
+            const match = key.match(/^items\.(\d+)\.(.+)$/);
+            if (!match) {
+                remapped[key] = messages;
+                continue;
+            }
+
+            const index = Number(match[1]);
+            if (index === removedIndex) continue;
+            remapped[`items.${index > removedIndex ? index - 1 : index}.${match[2]}`] = messages;
+        }
+        this.errors = remapped;
+    },
+    reorderPreviewItems(source, target) {
+        if (!Array.isArray(this.preview?.items)) return;
+
+        const previewItems = [...this.preview.items].sort((left, right) => Number(left.position) - Number(right.position));
+        const [item] = previewItems.splice(source, 1);
+        if (!item) return;
+        previewItems.splice(target, 0, item);
+        this.preview = {
+            ...this.preview,
+            items: previewItems.map((previewItem, index) => ({ ...previewItem, position: index + 1 })),
+        };
+    },
+    removePreviewItem(index) {
+        if (!Array.isArray(this.preview?.items)) return;
+
+        this.preview = {
+            ...this.preview,
+            items: this.preview.items
+                .filter((previewItem) => Number(previewItem.position) !== index + 1)
+                .map((previewItem, previewIndex) => ({ ...previewItem, position: previewIndex + 1 })),
+        };
     },
     fieldError(index, field) {
         return this.errors[`items.${index}.${field}`]?.[0] ?? '';
@@ -227,6 +315,7 @@ Alpine.data('invoiceEditor', (config) => ({
     },
     queuePreview(delay = 400) {
         window.clearTimeout(this.previewTimer);
+        this.loading = true;
         this.previewTimer = window.setTimeout(() => this.refreshPreview(), delay);
     },
     previewLineTotal(position) {
@@ -242,7 +331,11 @@ Alpine.data('invoiceEditor', (config) => ({
         body.delete('version');
         body.delete('correlation_uuid');
         const signature = JSON.stringify(Array.from(body.entries(), ([key, value]) => [key, String(value)]));
-        if (!force && signature === this.lastPreviewSignature) return;
+        if (!force && signature === this.lastPreviewSignature) {
+            this.loading = false;
+
+            return;
+        }
 
         this.lastPreviewSignature = signature;
         this.previewController?.abort();
