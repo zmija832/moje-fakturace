@@ -44,7 +44,7 @@
 @endif
 @if($clientsTruncated)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Zobrazeno je prvních 200 klientů. Upřesněte adresář před vytvořením faktury.</div>@endif
 @if($isVatPayer && !$defaultVatRateUuid)<div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.</div>@endif
-<form id="invoice-form" x-ref="form" method="POST" action="{{ $action }}" class="space-y-6" @input.debounce.600ms="refreshPreview">
+<form id="invoice-form" x-ref="form" method="POST" action="{{ $action }}" class="space-y-6" @input="queuePreview" @change="queuePreview">
     @csrf
     @if($method !== 'POST') @method($method) @endif
     @if($revision)<input type="hidden" name="version" value="{{ $invoice->version }}"><input type="hidden" name="correlation_uuid" value="{{ $correlationUuid }}">@endif

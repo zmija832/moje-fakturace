@@ -7,6 +7,10 @@ Alpine.data('invoiceEditor', (config) => ({
     preview: null,
     previewError: '',
     loading: false,
+    previewTimer: null,
+    previewController: null,
+    previewRequestId: 0,
+    lastPreviewSignature: null,
     errors: config.errors ?? {},
     quickClientOpen: false,
     quickClientType: 'company',
@@ -18,7 +22,13 @@ Alpine.data('invoiceEditor', (config) => ({
     aresMessage: '',
     aresWarning: '',
     init() {
-        if (Object.keys(this.errors).length === 0) return;
+        if (Object.keys(this.errors).length === 0) {
+            this.$nextTick(() => {
+                if (this.$refs.form?.checkValidity()) this.queuePreview(0);
+            });
+
+            return;
+        }
 
         this.$nextTick(() => requestAnimationFrame(() => {
             const firstInvalid = this.$refs.form?.querySelector('[aria-invalid="true"]');
@@ -28,20 +38,29 @@ Alpine.data('invoiceEditor', (config) => ({
             firstInvalid.focus({ preventScroll: true });
         }));
     },
+    destroy() {
+        window.clearTimeout(this.previewTimer);
+        this.previewController?.abort();
+    },
     addItem() {
         this.items.push({
             description: '', quantity: '1', unit: 'ks', unit_price: '0',
             discount_type: 'none', discount_value: '0',
             ...(config.isVatPayer ? { vat_rate_uuid: config.defaultVatRateUuid ?? '' } : {}),
         });
+        this.queuePreview();
     },
     removeItem(index) {
-        if (this.items.length > 1) this.items.splice(index, 1);
+        if (this.items.length > 1) {
+            this.items.splice(index, 1);
+            this.queuePreview();
+        }
     },
     move(index, offset) {
         const target = index + offset;
         if (target < 0 || target >= this.items.length) return;
         [this.items[index], this.items[target]] = [this.items[target], this.items[index]];
+        this.queuePreview();
     },
     fieldError(index, field) {
         return this.errors[`items.${index}.${field}`]?.[0] ?? '';
@@ -204,28 +223,86 @@ Alpine.data('invoiceEditor', (config) => ({
             date.setUTCDate(date.getUTCDate() + Number(option.dataset.dueDays));
             due.value = date.toISOString().slice(0, 10);
         }
+        this.queuePreview();
     },
-    async refreshPreview() {
+    queuePreview(delay = 400) {
+        window.clearTimeout(this.previewTimer);
+        this.previewTimer = window.setTimeout(() => this.refreshPreview(), delay);
+    },
+    previewLineTotal(position) {
+        const item = this.preview?.items?.find((previewItem) => Number(previewItem.position) === Number(position));
+
+        return item?.line_total_amount;
+    },
+    async refreshPreview(force = false) {
+        if (!this.$refs.form) return;
+
+        window.clearTimeout(this.previewTimer);
+        const body = new FormData(this.$refs.form);
+        body.delete('version');
+        body.delete('correlation_uuid');
+        const signature = JSON.stringify(Array.from(body.entries(), ([key, value]) => [key, String(value)]));
+        if (!force && signature === this.lastPreviewSignature) return;
+
+        this.lastPreviewSignature = signature;
+        this.previewController?.abort();
+        const controller = new AbortController();
+        const requestId = ++this.previewRequestId;
+        this.previewController = controller;
         this.loading = true;
         this.previewError = '';
         try {
-            const body = new FormData(this.$refs.form);
-            body.delete('version');
-            body.delete('correlation_uuid');
             const response = await fetch(config.previewUrl, {
                 method: 'POST',
                 headers: { Accept: 'application/json', 'X-CSRF-TOKEN': config.csrf },
                 body,
+                signal: controller.signal,
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(Object.values(data.errors ?? {}).flat()[0] ?? 'Náhled nyní nelze vypočítat.');
+
+            if (response.redirected || (response.status >= 300 && response.status < 400)) {
+                throw new Error('Relace vypršela nebo je nutné se znovu přihlásit. Obnovte stránku.');
+            }
+
+            const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+            const isJson = contentType.includes('application/json') || contentType.includes('+json');
+            if (!isJson) {
+                if (!response.ok) throw new Error(this.previewHttpError(response.status, {}));
+
+                throw new Error(response.status >= 500
+                    ? 'Server nyní nemůže náhled vypočítat. Zkuste to prosím znovu.'
+                    : 'Server vrátil neočekávanou odpověď. Obnovte stránku a zkuste to znovu.');
+            }
+
+            let data;
+            try {
+                data = await response.json();
+            } catch {
+                throw new Error('Server vrátil neplatnou odpověď. Zkuste to prosím znovu.');
+            }
+
+            if (!response.ok) throw new Error(this.previewHttpError(response.status, data));
+            if (requestId !== this.previewRequestId) return;
             this.preview = data;
         } catch (error) {
-            this.preview = null;
-            this.previewError = error.message;
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            if (requestId !== this.previewRequestId) return;
+
+            this.previewError = error instanceof Error
+                ? error.message
+                : 'Náhled nyní nelze vypočítat.';
         } finally {
-            this.loading = false;
+            if (requestId === this.previewRequestId) this.loading = false;
         }
+    },
+    previewHttpError(status, data) {
+        if (status === 401 || status === 403) return 'Pro výpočet náhledu nemáte oprávnění nebo vypršela relace.';
+        if (status === 419) return 'Relace vypršela. Obnovte stránku a zkuste to znovu.';
+        if (status === 422) return Object.values(data?.errors ?? {}).flat()[0]
+            ?? 'Náhled nelze vypočítat, dokud neopravíte zadané hodnoty.';
+        if (status === 429) return 'Náhled se přepočítává příliš často. Chvíli počkejte a zkuste to znovu.';
+        if (status >= 500) return 'Server nyní nemůže náhled vypočítat. Zkuste to prosím znovu.';
+
+        return 'Náhled nyní nelze vypočítat.';
     },
     money(value) {
         return value === null || value === undefined ? '—' : String(value).replace('.', ',');

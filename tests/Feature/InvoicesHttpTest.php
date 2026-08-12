@@ -99,6 +99,9 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
             ->assertSee('Načíst z ARES')
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertSee('Cena položky')
+            ->assertSee('previewLineTotal(index+1)', false)
+            ->assertSee('Posunout položku ${index+1} nahoru', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
         $before = $this->counts();
@@ -111,6 +114,8 @@ class InvoicesHttpTest extends TestCase
         $response->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status', 'Návrh faktury byl vytvořen.');
         $this->assertSame(1, $invoice->currentRevision->revision_number);
         $this->assertSame('100.0000', $invoice->currentRevision->grand_total);
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()
+            ->assertSee('Sazba DPH')->assertSee($rate->name);
         $this->get(route('invoices.edit', $invoice->uuid))->assertOk()
             ->assertDontSee('aria-label="Vytvořit nového klienta"', false)
             ->assertDontSee('Načíst z ARES')
@@ -186,6 +191,12 @@ class InvoicesHttpTest extends TestCase
         $this->assertSame('non_payer', $firstRevision->vatSnapshots->sole()->tax_type->value);
         $this->assertNull($firstRevision->vatSnapshots->sole()->percentage);
         $this->assertSame('0.0000', $firstRevision->vat_total);
+
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()
+            ->assertSee('Neplátce DPH')
+            ->assertSee('Výsledná částka')
+            ->assertDontSee('Po slevě')
+            ->assertDontSee('Sazba DPH');
 
         $edit = $this->get(route('invoices.edit', $invoice->uuid))->assertOk();
         $edit->assertDontSee('name="items[0][vat_rate_uuid]"', false)

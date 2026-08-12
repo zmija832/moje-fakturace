@@ -53,4 +53,20 @@
     .field-error {
         @apply mt-1 text-sm text-red-700;
     }
+
+    @media (min-width: 80rem) {
+        .invoice-item-grid {
+            align-items: start;
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .invoice-item-grid--non-vat {
+            grid-template-columns: minmax(12rem, 2fr) 5rem 4.5rem 7rem 6.5rem 6.5rem 8rem 7.5rem;
+        }
+
+        .invoice-item-grid--vat {
+            grid-template-columns: minmax(12rem, 2fr) 5rem 4.5rem 7rem 6.5rem 6.5rem 8rem 8rem 7.5rem;
+        }
+    }
 }
