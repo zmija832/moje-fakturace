@@ -101,6 +101,7 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
             ->assertSee('Celkem')
             ->assertSee('previewLineTotal(index+1)', false)
+            ->assertSee('lineMoney(previewLineTotal(index+1))', false)
             ->assertSee('Přesunout položku ${index+1}', false)
             ->assertSee('draggable="true"', false)
             ->assertSee('invoice-items-table--vat', false)

@@ -81,9 +81,9 @@
                         <p class="field-error" :id="`item-${index}-vat-error`" x-show="fieldError(index,'vat_rate_uuid')" x-text="fieldError(index,'vat_rate_uuid')"></p>
                     </div>
                 @endif
-                <div class="flex min-h-10 flex-col justify-center text-right">
+                <div class="flex min-h-10 flex-col justify-center whitespace-nowrap pl-2 text-right">
                     <span class="text-xs font-medium text-slate-500 lg:sr-only">Celkem</span>
-                    <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${money(previewLineTotal(index+1))}${previewLineTotal(index+1) == null ? '' : ` ${currency}`}`">—</output>
+                    <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${lineMoney(previewLineTotal(index+1))}${previewLineTotal(index+1) == null ? '' : ` ${currency}`}`">—</output>
                     <span class="text-xs text-slate-400" x-show="loading">aktualizuji…</span>
                 </div>
                 <div class="flex items-start justify-end">

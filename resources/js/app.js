@@ -400,6 +400,14 @@ Alpine.data('invoiceEditor', (config) => ({
     money(value) {
         return value === null || value === undefined ? '—' : String(value).replace('.', ',');
     },
+    lineMoney(value) {
+        if (value === null || value === undefined) return '—';
+
+        const [integer, fraction = ''] = String(value).split('.');
+        const displayedFraction = fraction.padEnd(2, '0').replace(/0+$/, '').padEnd(2, '0');
+
+        return `${integer},${displayedFraction}`;
+    },
 }));
 
 window.Alpine = Alpine;

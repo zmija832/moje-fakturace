@@ -64,19 +64,19 @@
 
     @media (min-width: 64rem) {
         .invoice-items-table--non-vat {
-            --invoice-items-columns: 36px 76px 80px minmax(260px, 1fr) 140px 150px 150px 44px;
-            --invoice-items-min-width: 992px;
+            --invoice-items-columns: 32px 68px 72px minmax(200px, 1fr) 120px 120px 150px 40px;
+            --invoice-items-min-width: 830px;
         }
 
         .invoice-items-table--vat {
-            --invoice-items-columns: 36px 76px 80px minmax(260px, 1fr) 140px 150px 132px 150px 44px;
-            --invoice-items-min-width: 1132px;
+            --invoice-items-columns: 32px 68px 72px minmax(176px, 1fr) 112px 112px 112px 150px 40px;
+            --invoice-items-min-width: 906px;
         }
 
         .invoice-items-header,
         .invoice-item-row {
             align-items: start;
-            column-gap: 8px;
+            column-gap: 4px;
             display: grid;
             grid-template-columns: var(--invoice-items-columns);
             min-width: var(--invoice-items-min-width);
@@ -91,6 +91,22 @@
         .invoice-item-row {
             padding-bottom: 8px;
             padding-top: 8px;
+        }
+
+        .invoice-items-header > :nth-last-child(2),
+        .invoice-item-row > :nth-last-child(2) {
+            @apply bg-white;
+            position: sticky;
+            right: 44px;
+            z-index: 1;
+        }
+
+        .invoice-items-header > :last-child,
+        .invoice-item-row > :last-child {
+            @apply bg-white;
+            position: sticky;
+            right: 0;
+            z-index: 1;
         }
     }
 }
