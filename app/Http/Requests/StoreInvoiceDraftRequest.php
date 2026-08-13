@@ -90,7 +90,8 @@ class StoreInvoiceDraftRequest extends FormRequest
     {
         return [function (Validator $validator): void {
             if (
-                $this->input('payment_method') === DefaultPaymentMethod::BankTransfer->value
+                $this->requiresBankAccountForTransfer()
+                && $this->input('payment_method') === DefaultPaymentMethod::BankTransfer->value
                 && ! $this->filled('bank_account_uuid')
             ) {
                 $validator->errors()->add('bank_account_uuid', 'Pro bankovní převod vyberte bankovní účet.');
@@ -205,5 +206,10 @@ class StoreInvoiceDraftRequest extends FormRequest
     private function isInvoiceVatPayer(): bool
     {
         return $this->invoiceVatPayer ??= app(InvoiceVatResolver::class)->isVatPayer();
+    }
+
+    protected function requiresBankAccountForTransfer(): bool
+    {
+        return true;
     }
 }

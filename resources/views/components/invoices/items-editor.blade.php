@@ -94,8 +94,13 @@
         </div>
     </div>
 
-    <div class="mt-4 border-t border-slate-200 pt-4">
-        <button class="button-secondary" type="button" @click="addItem">Přidat položku</button>
+    <div class="mt-4 flex flex-col gap-4 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <button class="button-secondary self-start" type="button" @click="addItem">Přidat položku</button>
+        <div class="text-right" aria-live="polite">
+            <span class="text-sm font-semibold text-slate-600">Celkem faktura</span>
+            <output class="ml-3 whitespace-nowrap text-xl font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${lineMoney(previewGrandTotal())}${previewGrandTotal() == null ? '' : ` ${currency}`}`">—</output>
+            <span class="ml-2 text-xs text-slate-400" x-show="loading">aktualizuji…</span>
+        </div>
     </div>
     <x-invoices.noscript-item :vat-rates="$vatRates" :discount-types="$discountTypes" :is-vat-payer="$isVatPayer" />
 </section>

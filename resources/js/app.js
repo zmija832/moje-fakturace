@@ -323,6 +323,9 @@ Alpine.data('invoiceEditor', (config) => ({
 
         return item?.line_total_amount;
     },
+    previewGrandTotal() {
+        return this.preview?.totals?.grand_total;
+    },
     async refreshPreview(force = false) {
         if (!this.$refs.form) return;
 

@@ -102,6 +102,8 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('Celkem')
             ->assertSee('previewLineTotal(index+1)', false)
             ->assertSee('lineMoney(previewLineTotal(index+1))', false)
+            ->assertSee('Celkem faktura')
+            ->assertSee('previewGrandTotal()', false)
             ->assertSee('Přesunout položku ${index+1}', false)
             ->assertSee('draggable="true"', false)
             ->assertSee('invoice-items-table--vat', false)
@@ -137,6 +139,72 @@ class InvoicesHttpTest extends TestCase
         $stale = $this->payload($client, $account, $rate, ['note' => 'Přepsat', 'version' => 1, 'correlation_uuid' => (string) Str::uuid()]);
         $this->put(route('invoices.update', $invoice->uuid), $stale)->assertSessionHas('error');
         $this->assertSame('Nová bezpečná poznámka', $invoice->fresh()->currentRevision->note);
+    }
+
+    public function test_preview_calculates_without_customer_but_store_remains_strict(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $previewPayload = [
+            'currency' => 'CZK',
+            'taxable_supply_on' => '2026-08-02',
+            'payment_method' => 'bank_transfer',
+            'invoice_discount_type' => 'percentage',
+            'invoice_discount_value' => '10',
+            'items' => [
+                [
+                    'position' => 1, 'description' => '', 'quantity' => '1', 'unit_price' => '505',
+                    'discount_type' => 'none', 'discount_value' => '0', 'vat_rate_uuid' => $rate->uuid,
+                ],
+                [
+                    'position' => 2, 'description' => '', 'quantity' => '2', 'unit_price' => '50',
+                    'discount_type' => 'none', 'discount_value' => '0', 'vat_rate_uuid' => $rate->uuid,
+                ],
+            ],
+        ];
+
+        $singleItemPayload = $previewPayload;
+        $singleItemPayload['invoice_discount_type'] = 'none';
+        $singleItemPayload['invoice_discount_value'] = '0';
+        $singleItemPayload['items'] = [$previewPayload['items'][0]];
+        $this->postJson(route('invoices.preview'), $singleItemPayload)
+            ->assertOk()
+            ->assertJsonPath('items.0.line_total_amount', '505.0000')
+            ->assertJsonPath('totals.grand_total', '505.0000');
+
+        $this->postJson(route('invoices.preview'), $previewPayload)
+            ->assertOk()
+            ->assertJsonPath('items.0.position', 1)
+            ->assertJsonPath('items.0.line_total_amount', '454.5000')
+            ->assertJsonPath('items.1.position', 2)
+            ->assertJsonPath('items.1.line_total_amount', '90.0000')
+            ->assertJsonPath('totals.grand_total', '544.5000');
+
+        $storePayload = $this->payload($client, $account, $rate);
+        unset($storePayload['customer_uuid']);
+        $this->postJson(route('invoices.store'), $storePayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('customer_uuid');
+
+        app(ActiveBusinessContext::class)->set($business);
+        CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)
+            ->update(['is_vat_payer' => false, 'vat_id' => null]);
+        app(ActiveBusinessContext::class)->clear();
+        foreach ($previewPayload['items'] as &$item) {
+            unset($item['vat_rate_uuid']);
+        }
+        unset($item);
+
+        $this->postJson(route('invoices.preview'), $previewPayload)
+            ->assertOk()
+            ->assertJsonPath('summaries.0.tax_type', 'non_payer')
+            ->assertJsonPath('items.0.line_total_amount', '454.5000')
+            ->assertJsonPath('items.1.line_total_amount', '90.0000')
+            ->assertJsonPath('totals.grand_total', '544.5000');
     }
 
     public function test_quick_created_client_can_be_used_immediately_for_invoice_snapshot(): void

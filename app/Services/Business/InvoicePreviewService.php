@@ -5,8 +5,6 @@ namespace App\Services\Business;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Invoices\InvoiceCalculator;
 use App\Enums\DefaultPaymentMethod;
-use App\Models\Business\BankAccount;
-use App\Models\Business\Client;
 use App\Models\Business\CompanySetting;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
@@ -27,17 +25,7 @@ class InvoicePreviewService
         if ($supplier === null) {
             throw ValidationException::withMessages(['supplier' => 'Před vytvořením faktury dokončete nastavení fakturačního subjektu.']);
         }
-        Client::query()->where('uuid', $attributes['customer_uuid'])->whereNull('archived_at')
-            ->where('is_active', true)->firstOrFail();
         $currency = (string) $attributes['currency'];
-        $accountUuid = $attributes['bank_account_uuid'] ?? null;
-        if (is_string($accountUuid) && $accountUuid !== '') {
-            $account = BankAccount::query()->where('uuid', $accountUuid)->whereNull('archived_at')
-                ->where('is_active', true)->firstOrFail();
-            if ($account->currency !== $currency) {
-                throw ValidationException::withMessages(['bank_account_uuid' => 'Měna účtu musí odpovídat měně faktury.']);
-            }
-        }
 
         $date = CarbonImmutable::createFromFormat('!Y-m-d', (string) $attributes['taxable_supply_on']);
         $resolved = $this->vatResolver->resolve($attributes['items'], $date, (bool) $supplier->is_vat_payer);
