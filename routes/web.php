@@ -148,6 +148,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.update');
         Route::post('/faktury/{uuid}/vystavit', [InvoiceController::class, 'issue'])
             ->whereUuid('uuid')->name('invoices.issue');
+        Route::post('/faktury/{uuid}/duplikovat', [InvoiceController::class, 'duplicate'])
+            ->whereUuid('uuid')->name('invoices.duplicate');
         Route::post('/faktury/{uuid}/platby', [InvoicePaymentController::class, 'store'])
             ->whereUuid('uuid')->name('invoices.payments.store');
         Route::post('/faktury/{uuid}/platby/{paymentUuid}/storno', [InvoicePaymentController::class, 'reverse'])

@@ -98,6 +98,12 @@ class InvoicePaymentService
         }
 
         $before = $this->summary($invoice);
+        if (InvoiceDecimal::compare($before->remainingTotal, '0') <= 0
+            || InvoiceDecimal::compare($values['amount'], $before->remainingTotal) > 0) {
+            throw ValidationException::withMessages([
+                'amount' => 'Částka úhrady nesmí překročit zbývající částku faktury.',
+            ]);
+        }
         $payment = new InvoicePayment;
         $payment->forceFill([
             'invoice_id' => $invoice->id,

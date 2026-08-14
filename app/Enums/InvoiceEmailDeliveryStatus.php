@@ -12,7 +12,7 @@ enum InvoiceEmailDeliveryStatus: string
     {
         return match ($this) {
             self::Pending => 'Čeká na odeslání',
-            self::Sent => 'Odesláno',
+            self::Sent => 'Přijato poštovním serverem',
             self::Failed => 'Odeslání selhalo',
         };
     }

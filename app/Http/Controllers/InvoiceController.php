@@ -22,6 +22,7 @@ use App\Models\Business\Invoice;
 use App\Services\Business\BusinessAuditService;
 use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
+use App\Services\Business\InvoiceDuplicator;
 use App\Services\Business\InvoiceFormOptions;
 use App\Services\Business\InvoiceIssueAvailability;
 use App\Services\Business\InvoiceIssuer;
@@ -32,6 +33,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class InvoiceController extends Controller
@@ -135,6 +137,23 @@ class InvoiceController extends Controller
             'correlationUuid' => (string) Str::uuid(),
             ...$options->forDate($revision->taxable_supply_on->format('Y-m-d')),
         ]);
+    }
+
+    public function duplicate(string $uuid, InvoiceReader $reader, InvoiceDuplicator $duplicator): RedirectResponse
+    {
+        $source = $reader->find($uuid);
+        Gate::authorize('view', $source);
+        Gate::authorize('create', Invoice::class);
+
+        try {
+            $draft = $duplicator->duplicate($source);
+        } catch (ValidationException) {
+            return redirect()->route('invoices.show', $source->uuid)
+                ->with('error', 'Fakturu nelze bezpečně duplikovat. Ověřte dostupnost odběratele, bankovního účtu a sazeb DPH.');
+        }
+
+        return redirect()->route('invoices.edit', $draft->uuid)
+            ->with('status', 'Byl vytvořen nový koncept podle původní faktury. Před uložením zkontrolujte data a částky.');
     }
 
     public function update(

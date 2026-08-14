@@ -6,6 +6,7 @@ use App\Domain\Invoices\Exceptions\InvoiceNotIssuedForDelivery;
 use App\Domain\Invoices\InvoiceDecimal;
 use App\Domain\Invoices\InvoiceDocumentViewModel;
 use App\Enums\InvoiceStatus;
+use App\Enums\VatTaxType;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceRevision;
 
@@ -21,6 +22,8 @@ class InvoiceDocumentViewModelFactory
         $revision = $invoice->issuedRevision;
         $revision->loadMissing(['supplierSnapshot', 'customerSnapshot', 'bankAccountSnapshot', 'items.vatSnapshot', 'vatSummaries']);
         $qr = $this->qrPayments->create($invoice, $revision);
+        $isNonPayer = $revision->items->isNotEmpty()
+            && $revision->items->every(fn ($item): bool => $item->vatSnapshot->tax_type === VatTaxType::NonPayer);
 
         return new InvoiceDocumentViewModel([
             'template_version' => 'invoice-v1',
@@ -33,6 +36,7 @@ class InvoiceDocumentViewModelFactory
             'variable_symbol' => $revision->variable_symbol,
             'payment_method' => $revision->payment_method->label(),
             'currency' => $revision->currency,
+            'is_non_payer' => $isNonPayer,
             'supplier' => $this->supplier($revision),
             'customer' => $this->customer($revision),
             'bank_account' => $this->bankAccount($revision),
@@ -62,6 +66,8 @@ class InvoiceDocumentViewModelFactory
                 'total_before_rounding' => $this->money($revision->total_before_rounding),
                 'rounding_adjustment' => $this->money($revision->rounding_adjustment),
                 'grand_total' => $this->money($revision->grand_total),
+                'has_discount' => InvoiceDecimal::compare($revision->discount_total, '0') !== 0,
+                'has_rounding' => InvoiceDecimal::compare($revision->rounding_adjustment, '0') !== 0,
             ],
             'intro' => $revision->supplierSnapshot->invoice_intro,
             'outro' => $revision->supplierSnapshot->invoice_outro,

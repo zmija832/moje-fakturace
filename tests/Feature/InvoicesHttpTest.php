@@ -232,8 +232,9 @@ class InvoicesHttpTest extends TestCase
 
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
             ->assertSee($invoice->document_number)
-            ->assertSee('Odeslat klientovi')->assertSee('Zaznamenat úhradu')->assertSee('Další akce')
+            ->assertSee('Odeslat klientovi')->assertSee('Zaznamenat úhradu')->assertSee('Duplikovat fakturu')
             ->assertSee('Tiskový náhled')->assertSee('Vygenerovat PDF')->assertSee('Detail odběratele')
+            ->assertSee('aria-label="Akce faktury"', false)->assertDontSee('Další akce')
             ->assertDontSee('Upravit návrh');
     }
 
@@ -435,7 +436,8 @@ class InvoicesHttpTest extends TestCase
 
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
             ->assertSee('Vystavením se aktuální revize uzamkne')
-            ->assertSee('Potvrdit vystavení')->assertSee('Upravit návrh')->assertSee('Další akce');
+            ->assertSee('Vystavit fakturu')->assertSee('Upravit návrh')->assertSee('Auditní historie')
+            ->assertDontSee('<details', false);
         $correlation = (string) Str::uuid();
         $payload = ['expected_version' => 1, 'correlation_uuid' => $correlation, 'document_sequence_uuid' => $sequence->uuid];
         $this->post(route('invoices.issue', $invoice->uuid), $payload)->assertSessionHas('status');
@@ -462,7 +464,7 @@ class InvoicesHttpTest extends TestCase
 
     public function test_routes_options_policy_and_html_security(): void
     {
-        foreach (['invoices.index', 'invoices.create', 'invoices.store', 'invoices.preview', 'invoices.show', 'invoices.edit', 'invoices.update', 'invoices.issue'] as $name) {
+        foreach (['invoices.index', 'invoices.create', 'invoices.store', 'invoices.preview', 'invoices.show', 'invoices.edit', 'invoices.update', 'invoices.issue', 'invoices.duplicate'] as $name) {
             $route = app('router')->getRoutes()->getByName($name);
             $middleware = $route->gatherMiddleware();
             $this->assertContains('web', $middleware);
@@ -489,6 +491,37 @@ class InvoicesHttpTest extends TestCase
             ->assertDontSee($wrongSequence->name)->assertDontSee($inactiveSequence->name);
         $html->assertDontSee('business_id')->assertDontSee('business_1')->assertDontSee('allocation_id')
             ->assertDontSee('name="grand_total"', false)->assertDontSee('name="vat_summaries"', false);
+    }
+
+    public function test_issued_invoice_can_be_duplicated_as_independent_draft_with_new_dates(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources('Odběratel duplikace');
+        $this->sequence(default: true);
+        $sourceDraft = app(InvoiceDraftService::class)->create($this->payload($client, $account, $rate, [
+            'note' => 'Přenesená poznámka',
+        ]));
+        $source = app(InvoiceIssuer::class)->issue($sourceDraft->uuid, 1, (string) Str::uuid());
+        $sourceRevisionId = $source->issued_revision_id;
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $response = $this->post(route('invoices.duplicate', $source->uuid));
+        $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
+
+        $response->assertRedirect(route('invoices.edit', $duplicate->uuid))->assertSessionHas('status');
+        $this->assertSame('draft', $duplicate->status->value);
+        $this->assertNull($duplicate->document_number);
+        $this->assertNotSame($source->uuid, $duplicate->uuid);
+        $this->assertNotSame($sourceRevisionId, $duplicate->current_revision_id);
+        $this->assertSame(today()->format('Y-m-d'), $duplicate->issued_on->format('Y-m-d'));
+        $this->assertSame(today()->addDays(14)->format('Y-m-d'), $duplicate->due_on->format('Y-m-d'));
+        $this->assertSame('Bezpečná služba', $duplicate->currentRevision->items->sole()->description);
+        $this->assertSame('Přenesená poznámka', $duplicate->currentRevision->note);
+        $this->assertSame('issued', $source->fresh()->status->value);
+        $this->assertSame($sourceRevisionId, $source->fresh()->issued_revision_id);
+        $this->assertSame(1, DB::connection('business_1')->table('document_number_allocations')->count());
     }
 
     /** @return array{User,Business} */

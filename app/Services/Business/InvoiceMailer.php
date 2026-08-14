@@ -17,6 +17,7 @@ use App\Mail\InvoiceIssuedMail;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceEmailDelivery;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -115,6 +116,7 @@ class InvoiceMailer
         }
 
         try {
+            $this->assertDeliveringTransportConfigured();
             $sentMessage = Mail::to($delivery->recipient_email, $delivery->recipient_name)
                 ->send(new InvoiceIssuedMail($recipientName, $subject, $bodyText, $bodyHtml, $document));
 
@@ -139,7 +141,13 @@ class InvoiceMailer
 
                 return $locked;
             }, 3);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            Log::warning('Poštovní transport nepotvrdil odeslání faktury.', [
+                'invoice_uuid' => $invoice->uuid,
+                'delivery_uuid' => $delivery->uuid,
+                'mailer' => (string) config('mail.default'),
+                'exception_class' => $exception::class,
+            ]);
             DB::connection($connection)->transaction(function () use ($delivery): void {
                 $locked = InvoiceEmailDelivery::query()->whereKey($delivery->id)->lockForUpdate()->firstOrFail();
                 if ($locked->status !== InvoiceEmailDeliveryStatus::Pending) {
@@ -165,6 +173,44 @@ class InvoiceMailer
             }, 3);
             throw InvoiceEmailSendFailed::create();
         }
+    }
+
+    private function assertDeliveringTransportConfigured(): void
+    {
+        if (! app()->environment('production')) {
+            return;
+        }
+
+        $mailer = (string) config('mail.default');
+        if ($mailer === '' || $this->containsNonDeliveringTransport($mailer)) {
+            throw new \RuntimeException('Production mail transport is not configured for delivery.');
+        }
+    }
+
+    /** @param array<string, bool> $visited */
+    private function containsNonDeliveringTransport(string $mailer, array $visited = []): bool
+    {
+        if (isset($visited[$mailer])) {
+            return true;
+        }
+        $visited[$mailer] = true;
+        $configuration = config('mail.mailers.'.$mailer);
+        if (! is_array($configuration)) {
+            return true;
+        }
+        $transport = (string) ($configuration['transport'] ?? '');
+        if (in_array($transport, ['log', 'array'], true)) {
+            return true;
+        }
+        if (in_array($transport, ['failover', 'roundrobin'], true)) {
+            $mailers = $configuration['mailers'] ?? [];
+
+            return ! is_array($mailers) || $mailers === []
+                || collect($mailers)->contains(fn (mixed $nested): bool => ! is_string($nested)
+                    || $this->containsNonDeliveringTransport($nested, $visited));
+        }
+
+        return $transport === '';
     }
 
     private function bodies(array $model, string $recipientName, string $message): array

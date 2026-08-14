@@ -37,7 +37,7 @@ class InvoicePaymentServiceTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_multiple_payments_are_exact_idempotent_audited_and_emit_immutable_events(): void
+    public function test_multiple_payments_are_exact_idempotent_reject_overpayment_and_emit_immutable_events(): void
     {
         Event::fake([InvoicePaymentChanged::class]);
         [$admin, $business] = $this->deliveryMembership();
@@ -49,23 +49,27 @@ class InvoicePaymentServiceTest extends TestCase
         $first = $service->record($invoice->uuid, $correlation, $this->payload('40.1234'));
         $repeated = $service->record($invoice->uuid, $correlation, $this->payload('99'));
         $second = $service->record($invoice->uuid, (string) Str::uuid(), $this->payload('59.8766'));
-        $third = $service->record($invoice->uuid, (string) Str::uuid(), $this->payload('0.0001'));
+        try {
+            $service->record($invoice->uuid, (string) Str::uuid(), $this->payload('0.0001'));
+            $this->fail('Ruční úhrada nesmí vytvořit přeplatek.');
+        } catch (ValidationException) {
+        }
 
         $this->assertSame($first->id, $repeated->id);
         $this->assertNotSame($first->id, $second->id);
-        $this->assertSame(3, InvoicePayment::query()->count());
+        $this->assertSame(2, InvoicePayment::query()->count());
         $summary = app(InvoicePaymentReader::class)->summary($invoice->fresh());
-        $this->assertSame('100.0001', $summary->paidTotal);
-        $this->assertSame('-0.0001', $summary->remainingTotal);
-        $this->assertSame('overpaid', $summary->status->value);
-        $this->assertSame('0.0001', $summary->overpaymentTotal);
-        $this->assertSame(3, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.payment_recorded')->count());
+        $this->assertSame('100.0000', $summary->paidTotal);
+        $this->assertSame('0.0000', $summary->remainingTotal);
+        $this->assertSame('paid', $summary->status->value);
+        $this->assertSame('0.0000', $summary->overpaymentTotal);
+        $this->assertSame(2, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.payment_recorded')->count());
         $audit = DB::connection('business_1')->table('audit_logs')->where('auditable_uuid', $first->uuid)->first();
         $auditValues = json_decode((string) $audit->new_values, true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame('••••3456', $auditValues['reference_masked']);
         $this->assertStringNotContainsString('Citlivá celá poznámka', (string) $audit->new_values);
-        Event::assertDispatched(InvoicePaymentChanged::class, 3);
-        Event::assertDispatched(InvoicePaymentChanged::class, fn (InvoicePaymentChanged $event): bool => in_array('admin.invoice.overpaid', $event->snapshot->notificationIntents, true));
+        Event::assertDispatched(InvoicePaymentChanged::class, 2);
+        Event::assertNotDispatched(InvoicePaymentChanged::class, fn (InvoicePaymentChanged $event): bool => in_array('admin.invoice.overpaid', $event->snapshot->notificationIntents, true));
     }
 
     public function test_partial_and_full_reversals_never_rewrite_original_or_exceed_it(): void

@@ -1,13 +1,12 @@
 <x-layouts.app :title="$invoice->document_number ?? 'Koncept faktury'">
     @php
         $isDraft = $invoice->status === \App\Enums\InvoiceStatus::Draft;
-        $displayStatus = $isDraft ? 'Koncept' : ($paymentSummary?->isOverdue ? 'Po splatnosti' : $paymentSummary?->status->label());
     @endphp
 
     <section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-3"><p class="text-sm font-medium text-blue-700">Faktury</p><span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{{ $displayStatus }}</span></div>
+                <div class="flex flex-wrap items-center gap-3"><p class="text-sm font-medium text-blue-700">Faktury</p><x-invoices.status-badge :invoice="$invoice" :payment-summary="$paymentSummary" /></div>
                 <h1 class="mt-2 text-2xl font-bold">{{ $invoice->document_number ?? 'Koncept faktury' }}</h1>
                 <p class="mt-2 text-slate-700">{{ $revision->customerSnapshot->display_name }}</p>
                 <div class="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">

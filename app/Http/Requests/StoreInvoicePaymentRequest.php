@@ -45,4 +45,15 @@ class StoreInvoicePaymentRequest extends FormRequest
             'note' => $this->filled('note') ? trim((string) $this->input('note')) : null,
         ]);
     }
+
+    public function messages(): array
+    {
+        return [
+            'amount.required' => 'Zadejte částku úhrady.',
+            'amount.regex' => 'Částka úhrady musí být kladné desetinné číslo s nejvýše čtyřmi desetinnými místy.',
+            'paid_on.required' => 'Zadejte datum úhrady.',
+            'paid_on.date_format' => 'Datum úhrady nemá platný formát.',
+            'payment_method.required' => 'Vyberte způsob úhrady.',
+        ];
+    }
 }

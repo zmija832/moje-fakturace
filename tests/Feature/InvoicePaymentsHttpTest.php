@@ -42,18 +42,20 @@ class InvoicePaymentsHttpTest extends TestCase
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
 
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
-            ->assertSee('Platby')->assertSee('Přidat platbu')->assertSee('po splatnosti')
-            ->assertSee('Odeslat klientovi')->assertSee('Zaznamenat úhradu')->assertSee('Další akce')
+            ->assertSee('Platby')->assertSee('Zaznamenat úhradu')->assertSee('Po splatnosti')
+            ->assertSee('Odeslat klientovi')->assertSee('Tiskový náhled')->assertSee('Duplikovat fakturu')
+            ->assertSee('bg-amber-100', false)->assertSee('bg-red-100', false)
             ->assertDontSee('business_1')->assertDontSee('invoice_id');
         $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('40'))
             ->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status', 'Platba byla bezpečně zaevidována.');
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
-            ->assertSee('40,00')->assertSee('60,00')->assertSee('Částečně uhrazená')->assertSee('po splatnosti');
+            ->assertSee('40,00')->assertSee('60,00')->assertSee('Částečně uhrazená')->assertSee('Po splatnosti')
+            ->assertSee('bg-blue-100', false);
         $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('60'))
             ->assertSessionHas('status');
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
-            ->assertSee('Uhrazená')->assertSee('100,00')->assertDontSee('po splatnosti')
-            ->assertDontSee('Zaznamenat úhradu');
+            ->assertSee('Uhrazená')->assertSee('100,00')->assertDontSee('Po splatnosti')
+            ->assertSee('bg-emerald-100', false)->assertDontSee('Zaznamenat úhradu');
         $this->get(route('invoices.index', ['payment_status' => 'paid']))->assertOk()->assertSee($invoice->document_number);
         $this->get(route('invoices.index', ['overdue' => 1]))->assertOk()->assertDontSee($invoice->document_number);
         $this->get(route('dashboard'))->assertOk()->assertSee('Úhrady v CZK')->assertSee('Zbývá uhradit');
@@ -67,7 +69,7 @@ class InvoicePaymentsHttpTest extends TestCase
         [$draft] = $this->createIssuedInvoice(false);
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
-        $this->get(route('invoices.show', $draft->uuid))->assertOk()->assertDontSee('Přidat platbu')->assertDontSee('Neměnná historie přijatých plateb');
+        $this->get(route('invoices.show', $draft->uuid))->assertOk()->assertDontSee('Zaznamenat úhradu')->assertDontSee('Neměnná historie přijatých plateb');
         app(ActiveBusinessContext::class)->set($business);
         $invoice = app(InvoiceIssuer::class)->issue($draft->uuid, 1, (string) Str::uuid());
         $payment = app(InvoicePaymentService::class)->record(
@@ -77,7 +79,7 @@ class InvoicePaymentsHttpTest extends TestCase
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business));
 
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('Platby')->assertSee('25,00')
-            ->assertDontSee('Přidat platbu')->assertDontSee('Stornovat');
+            ->assertDontSee('Zaznamenat úhradu')->assertDontSee('Stornovat');
         $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('10'))->assertForbidden();
         $this->post(route('invoices.payments.reverse', [$invoice->uuid, $payment->uuid]), $this->reversalPayload('10'))->assertForbidden();
         $this->assertSame(1, DB::connection('business_1')->table('invoice_payments')->count());
@@ -94,6 +96,14 @@ class InvoicePaymentsHttpTest extends TestCase
             'connection' => 'business_2', 'business_id' => 2, 'paid_total' => '100', 'remaining_total' => '0',
             'payment_status' => 'paid', 'external_id' => 'BANK-1', 'reverses_payment_id' => 1,
         ])->assertSessionHasErrors(['connection', 'business_id', 'paid_total', 'remaining_total', 'payment_status', 'external_id', 'reverses_payment_id']);
+        $this->assertSame(0, DB::connection('business_1')->table('invoice_payments')->count());
+
+        $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('101'))
+            ->assertSessionHasErrors('amount');
+        $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('0'))
+            ->assertSessionHasErrors('amount');
+        $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('-1'))
+            ->assertSessionHasErrors('amount');
         $this->assertSame(0, DB::connection('business_1')->table('invoice_payments')->count());
 
         $businessTwo = Business::query()->create([

@@ -57,13 +57,20 @@ class InvoiceDeliveryTest extends TestCase
         [$invoice, $client, $account, $rate] = $this->createIssuedInvoice();
         $this->actingAs($admin);
         $before = app(InvoiceDocumentViewModelFactory::class)->make($invoice)->toArray();
+        $this->assertTrue($before['is_non_payer']);
         $print = view('business.invoices.print', ['document' => $before, 'archival' => true])->render();
         $this->assertStringContainsString('Neplátce DPH', $print);
         $this->assertStringContainsString('Jednotková cena', $print);
-        $this->assertStringContainsString('Souhrn položek', $print);
+        $this->assertSame(1, substr_count($print, 'Neplátce DPH'));
+        $this->assertStringNotContainsString('Souhrn DPH', $print);
         $this->assertStringNotContainsString('Nulová sazba', $print);
         $this->assertStringNotContainsString('Osvobozené plnění', $print);
         $this->assertStringNotContainsString('Mimo předmět DPH', $print);
+        $payerDocument = $before;
+        $payerDocument['is_non_payer'] = false;
+        $payerPrint = view('business.invoices.print', ['document' => $payerDocument, 'archival' => true])->render();
+        $this->assertStringContainsString('Souhrn DPH', $payerPrint);
+        $this->assertStringContainsString('Základ daně', $payerPrint);
         $correlation = (string) Str::uuid();
         $first = app(InvoicePdfGenerator::class)->generate($invoice->uuid, $correlation);
         $repeated = app(InvoicePdfGenerator::class)->generate($invoice->uuid, $correlation);
@@ -180,6 +187,35 @@ class InvoiceDeliveryTest extends TestCase
             Storage::disk('invoice_documents')->assertExists($existing->storage_path);
             $this->assertSame([], Storage::disk('invoice_documents')->files('tmp'));
         }
+    }
+
+    public function test_production_log_transport_fails_closed_without_false_success_flash(): void
+    {
+        if (! class_exists(Dompdf::class) || ! class_exists(Writer::class)) {
+            $this->markTestSkipped('PDF/QR knihovny nejsou nainstalované ve vendor.');
+        }
+        Mail::fake();
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        $this->actingAs($admin);
+        $originalEnvironment = app()->environment();
+        config(['mail.default' => 'log']);
+        app()->instance('env', 'production');
+
+        try {
+            app(InvoiceMailer::class)->send($invoice->uuid, (string) Str::uuid(), [
+                'recipient_email' => 'snapshot@example.test',
+            ]);
+            $this->fail('Log transport nesmí v produkci vytvořit falešně úspěšné doručení.');
+        } catch (InvoiceEmailSendFailed) {
+            $this->assertTrue(true);
+        } finally {
+            app()->instance('env', $originalEnvironment);
+        }
+
+        $this->assertSame('failed', InvoiceEmailDelivery::query()->sole()->status->value);
+        Mail::assertNothingSent();
     }
 
     public function test_mail_uses_snapshot_attaches_pdf_and_is_idempotent(): void
@@ -307,7 +343,7 @@ class InvoiceDeliveryTest extends TestCase
             'send_correlation_uuid' => (string) Str::uuid(),
             'recipient_email' => 'snapshot@example.test',
         ])->assertRedirect(route('invoices.show', $invoice->uuid));
-        $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('snapshot@example.test')->assertSee('Odesláno')->assertDontSee('storage_path')->assertDontSee('MAIL_PASSWORD');
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('snapshot@example.test')->assertSee('Přijato poštovním serverem')->assertDontSee('storage_path')->assertDontSee('MAIL_PASSWORD');
 
         [$viewer] = $this->deliveryMembership('viewer', BusinessConnection::Business1, $business);
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business));
@@ -357,6 +393,7 @@ class InvoiceDeliveryTest extends TestCase
         $this->get(route('invoices.print', $firstInvoice->uuid))->assertNotFound();
         $this->get(route('invoices.pdf.download', $firstInvoice->uuid))->assertNotFound();
         $this->get(route('invoices.email.form', $firstInvoice->uuid))->assertNotFound();
+        $this->post(route('invoices.duplicate', $firstInvoice->uuid))->assertNotFound();
         $this->assertNotSame($firstAdmin->id, $secondAdmin->id);
     }
 

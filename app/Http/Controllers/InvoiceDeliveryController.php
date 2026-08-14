@@ -95,6 +95,8 @@ class InvoiceDeliveryController extends Controller
         }
 
         return redirect()->route('invoices.show', $invoice->uuid)
-            ->with('status', $delivery->status->value === 'sent' ? 'Faktura byla odeslána e-mailem.' : 'Požadavek již byl zaznamenán; e-mail nebyl odeslán podruhé.');
+            ->with('status', $delivery->status->value === 'sent'
+                ? 'Poštovní server přijal e-mail s fakturou k odeslání.'
+                : 'Požadavek již byl zaznamenán; e-mail nebyl odeslán podruhé.');
     }
 }

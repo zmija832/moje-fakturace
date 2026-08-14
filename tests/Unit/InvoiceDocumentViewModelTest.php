@@ -116,6 +116,8 @@ class InvoiceDocumentViewModelTest extends TestCase
         $this->assertSame('90,00', $document['totals']['grand_total']);
         $this->assertSame('Neplátce DPH', $document['items'][0]['tax_label']);
         $this->assertSame('Neplátce DPH', $document['vat_summaries'][0]['tax_label']);
+        $this->assertTrue($document['is_non_payer']);
+        $this->assertTrue($document['totals']['has_discount']);
         $this->assertFalse($document['qr']['available']);
         $this->assertArrayNotHasKey('internal_secret', $document['supplier']);
         $this->assertStringNotContainsString('nesmí uniknout', json_encode($document, JSON_THROW_ON_ERROR));
