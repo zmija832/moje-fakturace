@@ -1,4 +1,4 @@
-@props(['action','method','submitLabel','clients','clientsTruncated'=>false,'bankAccounts','vatRates','currencies','paymentMethods','discountTypes','defaultBankAccounts','defaultVatRateUuid'=>null,'isVatPayer'=>false,'defaults'=>[],'invoice'=>null,'revision'=>null,'correlationUuid'=>null,'allowInlineClientCreation'=>false,'clientTypes'=>[],'countries'=>[]])
+@props(['action','method','submitLabel','clients','clientsTruncated'=>false,'bankAccounts','vatRates','currencies','paymentMethods','discountTypes','defaultBankAccounts','defaultVatRateUuid'=>null,'isVatPayer'=>false,'defaults'=>[],'invoice'=>null,'revision'=>null,'correlationUuid'=>null,'allowInlineClientCreation'=>false,'clientTypes'=>[],'countries'=>[],'showCreateActions'=>false])
 @php
     $values = $revision ? ['customer_uuid'=>$revision->customerSnapshot->source_client_uuid,'bank_account_uuid'=>$revision->bankAccountSnapshot?->source_bank_account_uuid,'currency'=>$revision->currency,'issued_on'=>$revision->issued_on->format('Y-m-d'),'taxable_supply_on'=>$revision->taxable_supply_on->format('Y-m-d'),'due_on'=>$revision->due_on->format('Y-m-d'),'payment_method'=>$revision->payment_method->value,'variable_symbol'=>$revision->variable_symbol,'note'=>$revision->note,'invoice_discount_type'=>$revision->invoice_discount_type->value,'invoice_discount_value'=>$revision->invoice_discount_value] : $defaults;
     $storedItems = $revision?->items->map(fn($item)=>['description'=>$item->description,'quantity'=>$item->quantity,'unit'=>$item->unit,'unit_price'=>$item->unit_price,'discount_type'=>$item->discount_type->value,'discount_value'=>$item->discount_value,...$isVatPayer ? ['vat_rate_uuid'=>$item->vatSnapshot->source_vat_rate_uuid] : []])->all();
@@ -78,8 +78,16 @@
     </div></section>
     <x-invoices.header-fields :values="$values" :discount-types="$discountTypes" />
     <x-invoices.items-editor :vat-rates="$vatRates" :discount-types="$discountTypes" :is-vat-payer="$isVatPayer" />
-    <x-invoices.preview-panel />
-    <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><a class="button-secondary" href="{{ $invoice ? route('invoices.show',$invoice->uuid) : route('invoices.index') }}">Zrušit</a><button class="button-primary" type="submit">{{ $submitLabel }}</button></div>
+    <x-invoices.preview-panel :is-vat-payer="$isVatPayer" />
+    <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <a class="button-secondary" href="{{ $invoice ? route('invoices.show',$invoice->uuid) : route('invoices.index') }}">Zrušit</a>
+        @if($showCreateActions)
+            <button class="button-secondary" type="submit" name="submission_action" value="draft">Uložit jako koncept</button>
+            <button class="button-primary" type="submit" name="submission_action" value="issue">Vytvořit fakturu</button>
+        @else
+            <button class="button-primary" type="submit">{{ $submitLabel }}</button>
+        @endif
+    </div>
 </form>
 @if($canCreateClientInline)
     <x-clients.quick-create-modal :client-types="$clientTypes" :countries="$countries" />

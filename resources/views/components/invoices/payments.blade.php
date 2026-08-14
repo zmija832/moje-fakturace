@@ -1,6 +1,6 @@
 @props(['invoice', 'summary', 'paymentMethods', 'correlationUuid'])
 @php $canManage = auth()->user()->can('recordPayment', $invoice); @endphp
-<section class="card mt-6" aria-labelledby="invoice-payments-heading">
+<section id="invoice-payments" class="card mt-6" aria-labelledby="invoice-payments-heading">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div><h2 id="invoice-payments-heading" class="text-lg font-bold">Platby</h2><p class="mt-1 text-sm text-slate-600">Neměnná historie přijatých plateb a jejich storen.</p></div>
         <span class="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800">{{ $summary->status->label() }}</span>

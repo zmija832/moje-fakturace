@@ -23,6 +23,7 @@ use App\Services\Business\BusinessAuditService;
 use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceFormOptions;
+use App\Services\Business\InvoiceIssueAvailability;
 use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePreviewService;
@@ -57,12 +58,37 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function store(StoreInvoiceDraftRequest $request, InvoiceDraftService $service): RedirectResponse
-    {
-        $invoice = $service->create($request->validated());
+    public function store(
+        StoreInvoiceDraftRequest $request,
+        InvoiceDraftService $service,
+        InvoiceIssuer $issuer,
+        InvoiceIssueAvailability $availability,
+    ): RedirectResponse {
+        $attributes = $request->safe()->except(['submission_action']);
+        $invoice = $service->create($attributes);
+
+        if ($request->validated('submission_action') === 'issue') {
+            Gate::authorize('issue', $invoice);
+
+            try {
+                $issued = $issuer->issue($invoice->uuid, $invoice->version, (string) Str::uuid());
+
+                return redirect()->route('invoices.show', $issued->uuid)
+                    ->with('status', 'Faktura byla vytvořena a vystavena pod číslem '.$issued->document_number.'.');
+            } catch (InvoiceNotReadyForIssue $exception) {
+                return redirect()->route('invoices.show', $invoice->uuid)
+                    ->with('error', 'Faktura byla uložena jako koncept, ale nebyla vystavena: '.$availability->readinessReason($exception->reason));
+            } catch (InvoiceIssueSequenceUnavailable) {
+                return redirect()->route('invoices.show', $invoice->uuid)
+                    ->with('error', 'Faktura byla uložena jako koncept, ale nebyla vystavena: není nastavena dostupná výchozí číselná řada pro vydané faktury.');
+            } catch (InvoiceIssueVersionConflict|InvoiceIssueIdempotencyConflict) {
+                return redirect()->route('invoices.show', $invoice->uuid)
+                    ->with('error', 'Faktura byla uložena jako koncept, ale vystavení se nepodařilo bezpečně dokončit. Zkuste ji vystavit z detailu konceptu.');
+            }
+        }
 
         return redirect()->route('invoices.show', $invoice->uuid)
-            ->with('status', 'Návrh faktury byl vytvořen.');
+            ->with('status', 'Koncept faktury byl uložen.');
     }
 
     public function show(
@@ -71,6 +97,7 @@ class InvoiceController extends Controller
         InvoiceFormOptions $options,
         BusinessAuditService $audit,
         InvoicePaymentReader $paymentReader,
+        InvoiceIssueAvailability $availability,
     ): View {
         Gate::authorize('view', Invoice::class);
         $invoice = $reader->find($uuid);
@@ -78,6 +105,9 @@ class InvoiceController extends Controller
         $issueOptions = $invoice->status === InvoiceStatus::Draft
             ? $options->forDate($revision->issued_on->format('Y-m-d')) : [];
         $paymentSummary = $invoice->status === InvoiceStatus::Issued ? $paymentReader->summary($invoice) : null;
+        $issueAvailability = $invoice->status === InvoiceStatus::Draft && auth()->user()?->can('issue', $invoice)
+            ? $availability->for($invoice)
+            : ['can_issue' => false, 'reason' => null];
 
         return view('business.invoices.show', [
             'invoice' => $invoice,
@@ -88,6 +118,7 @@ class InvoiceController extends Controller
             'paymentCorrelationUuid' => (string) Str::uuid(),
             'paymentSummary' => $paymentSummary,
             'paymentMethods' => DefaultPaymentMethod::options(),
+            'issueAvailability' => $issueAvailability,
             ...$issueOptions,
         ]);
     }
@@ -146,6 +177,7 @@ class InvoiceController extends Controller
         string $uuid,
         InvoiceReader $reader,
         InvoiceIssuer $issuer,
+        InvoiceIssueAvailability $availability,
     ): RedirectResponse {
         $invoice = $reader->find($uuid);
         Gate::authorize('issue', $invoice);
@@ -157,10 +189,10 @@ class InvoiceController extends Controller
                 (string) $request->validated('correlation_uuid'),
                 $request->validated('document_sequence_uuid'),
             );
-        } catch (InvoiceNotReadyForIssue) {
-            return back()->with('error', 'Fakturu nelze vystavit, protože není kompletní. Zkontrolujte její údaje.');
+        } catch (InvoiceNotReadyForIssue $exception) {
+            return back()->with('error', 'Fakturu nelze vystavit: '.$availability->readinessReason($exception->reason));
         } catch (InvoiceIssueSequenceUnavailable) {
-            return back()->with('error', 'Vybraná číselná řada není dostupná.');
+            return back()->with('error', 'Fakturu nelze vystavit: vybraná nebo výchozí číselná řada není dostupná.');
         } catch (InvoiceIssueVersionConflict) {
             return back()->with('error', 'Návrh mezitím změnil jiný uživatel. Načtěte aktuální verzi.');
         } catch (InvoiceIssueIdempotencyConflict) {

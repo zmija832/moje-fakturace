@@ -95,7 +95,8 @@ class InvoicesHttpTest extends TestCase
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
         $this->get(route('invoices.create'))->assertOk()->assertSee('Nová faktura')
-            ->assertSee('name="_token"', false)->assertSee('Finální částky vždy znovu vypočítá server')
+            ->assertSee('name="_token"', false)->assertSee('Rozpis výpočtu')
+            ->assertSee('Uložit jako koncept')->assertSee('Vytvořit fakturu')
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
             ->assertSee('Načíst z ARES')
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
@@ -118,7 +119,7 @@ class InvoicesHttpTest extends TestCase
 
         $response = $this->post(route('invoices.store'), $this->payload($client, $account, $rate));
         $invoice = Invoice::query()->firstOrFail();
-        $response->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status', 'Návrh faktury byl vytvořen.');
+        $response->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status', 'Koncept faktury byl uložen.');
         $this->assertSame(1, $invoice->currentRevision->revision_number);
         $this->assertSame('100.0000', $invoice->currentRevision->grand_total);
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
@@ -188,7 +189,8 @@ class InvoicesHttpTest extends TestCase
         unset($storePayload['customer_uuid']);
         $this->postJson(route('invoices.store'), $storePayload)
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('customer_uuid');
+            ->assertJsonValidationErrors('customer_uuid')
+            ->assertJsonPath('errors.customer_uuid.0', 'Vyberte odběratele.');
 
         app(ActiveBusinessContext::class)->set($business);
         CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)
@@ -205,6 +207,61 @@ class InvoicesHttpTest extends TestCase
             ->assertJsonPath('items.0.line_total_amount', '454.5000')
             ->assertJsonPath('items.1.line_total_amount', '90.0000')
             ->assertJsonPath('totals.grand_total', '544.5000');
+    }
+
+    public function test_create_can_issue_immediately_through_existing_issuance_workflow(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources();
+        $this->sequence(default: true);
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $response = $this->post(route('invoices.store'), $this->payload($client, $account, $rate, [
+            'submission_action' => 'issue',
+        ]));
+
+        $invoice = Invoice::query()->firstOrFail();
+        $response->assertRedirect(route('invoices.show', $invoice->uuid))
+            ->assertSessionHas('status', fn (string $message): bool => str_contains($message, 'vytvořena a vystavena'));
+        $this->assertSame('issued', $invoice->status->value);
+        $this->assertNotNull($invoice->document_number);
+        $this->assertSame(1, $invoice->revisions()->count());
+        $this->assertSame(1, DB::connection('business_1')->table('document_number_allocations')->count());
+
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()
+            ->assertSee($invoice->document_number)
+            ->assertSee('Odeslat klientovi')->assertSee('Zaznamenat úhradu')->assertSee('Další akce')
+            ->assertSee('Tiskový náhled')->assertSee('Vygenerovat PDF')->assertSee('Detail odběratele')
+            ->assertDontSee('Upravit návrh');
+    }
+
+    public function test_failed_immediate_issue_preserves_draft_and_explains_missing_sequence(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $response = $this->post(route('invoices.store'), $this->payload($client, $account, $rate, [
+            'submission_action' => 'issue',
+        ]));
+
+        $invoice = Invoice::query()->firstOrFail();
+        $response->assertRedirect(route('invoices.show', $invoice->uuid))
+            ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'uložena jako koncept')
+                && str_contains($message, 'číselná řada'));
+        $this->assertSame('draft', $invoice->status->value);
+        $this->assertNull($invoice->document_number);
+        $this->assertSame(1, $invoice->revisions()->count());
+        $this->assertSame(0, DB::connection('business_1')->table('document_number_allocations')->count());
+
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()
+            ->assertSee('Upravit návrh')->assertSee('Vystavit fakturu')
+            ->assertSee('Není nastavena aktivní číselná řada pro vydané faktury.')
+            ->assertSee('Nastavit číselnou řadu');
     }
 
     public function test_quick_created_client_can_be_used_immediately_for_invoice_snapshot(): void
@@ -376,8 +433,9 @@ class InvoicesHttpTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
-        $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('Pokračovat k nevratnému vystavení')
-            ->assertSee('další číslo přibližně')->assertSee('Upravit návrh');
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()
+            ->assertSee('Vystavením se aktuální revize uzamkne')
+            ->assertSee('Potvrdit vystavení')->assertSee('Upravit návrh')->assertSee('Další akce');
         $correlation = (string) Str::uuid();
         $payload = ['expected_version' => 1, 'correlation_uuid' => $correlation, 'document_sequence_uuid' => $sequence->uuid];
         $this->post(route('invoices.issue', $invoice->uuid), $payload)->assertSessionHas('status');

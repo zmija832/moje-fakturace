@@ -44,6 +44,11 @@ class InvoiceFormOptions
         $sequences = DocumentSequence::query()->with('defaultAssignment')
             ->where('document_type', DocumentType::IssuedInvoice->value)->whereNull('archived_at')
             ->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get();
+        $defaultSequenceUuid = DocumentSequenceDefault::query()->with('sequence')
+            ->where('document_type', DocumentType::IssuedInvoice->value)->first()?->sequence?->uuid;
+        if (! $sequences->contains('uuid', $defaultSequenceUuid)) {
+            $defaultSequenceUuid = null;
+        }
         $company = CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)->first();
         $defaultVatRate = VatRateDefault::query()->with('rate')
             ->where('context', 'sales')
@@ -59,8 +64,7 @@ class InvoiceFormOptions
             'sequencePreviews' => $sequences->mapWithKeys(fn (DocumentSequence $sequence): array => [
                 $sequence->uuid => $this->sequenceService->previewModel($sequence, $date),
             ]),
-            'defaultSequenceUuid' => DocumentSequenceDefault::query()->with('sequence')
-                ->where('document_type', DocumentType::IssuedInvoice->value)->first()?->sequence?->uuid,
+            'defaultSequenceUuid' => $defaultSequenceUuid,
             'defaultBankAccounts' => BankAccountDefault::query()->with('account')->get()
                 ->mapWithKeys(fn (BankAccountDefault $default): array => [$default->currency => $default->account?->uuid]),
             'defaultVatRateUuid' => $defaultVatRate !== null && ! $defaultVatRate->isSystemManaged()

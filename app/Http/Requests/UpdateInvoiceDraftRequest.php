@@ -18,6 +18,7 @@ class UpdateInvoiceDraftRequest extends StoreInvoiceDraftRequest
         $rules['version'] = ['required', 'integer', 'min:1'];
         $rules['correlation_uuid'] = ['required', 'uuid'];
         $rules['items.*.position'] = ['required', 'integer', 'min:1', 'max:65535', 'distinct'];
+        $rules['submission_action'] = ['prohibited'];
 
         return $rules;
     }

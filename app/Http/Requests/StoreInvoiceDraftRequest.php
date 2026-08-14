@@ -51,6 +51,7 @@ class StoreInvoiceDraftRequest extends FormRequest
                 Rule::prohibitedIf(fn (): bool => ! $this->isInvoiceVatPayer()),
                 'uuid',
             ],
+            'submission_action' => ['nullable', Rule::in(['draft', 'issue'])],
             'id' => ['prohibited'],
             'uuid' => ['prohibited'],
             'status' => ['prohibited'],
@@ -201,6 +202,16 @@ class StoreInvoiceDraftRequest extends FormRequest
         }
 
         parent::failedValidation($validator);
+    }
+
+    public function messages(): array
+    {
+        return [
+            'customer_uuid.required' => 'Vyberte odběratele.',
+            'customer_uuid.uuid' => 'Vybraný odběratel není platný.',
+            'items.*.vat_rate_uuid.required' => 'Vyberte sazbu DPH.',
+            'items.*.vat_rate_uuid.uuid' => 'Vybraná sazba DPH není platná.',
+        ];
     }
 
     private function isInvoiceVatPayer(): bool
