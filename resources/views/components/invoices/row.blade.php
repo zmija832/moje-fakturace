@@ -11,5 +11,5 @@
     <td class="px-4 py-4 text-right font-semibold">{{ \App\Domain\Invoices\InvoiceDecimal::format($revision->grand_total) }} {{ $invoice->currency }}</td>
     <td class="px-4 py-4 text-right">@if($paymentSummary)<span class="font-semibold">{{ \App\Domain\Invoices\InvoiceDecimal::format($paymentSummary->paidTotal) }} {{ $invoice->currency }}</span><span class="block text-xs text-slate-500">zbývá {{ \App\Domain\Invoices\InvoiceDecimal::format($paymentSummary->remainingTotal) }}</span>@else<span class="text-slate-400">—</span>@endif</td>
     <td class="px-4 py-4"><x-invoices.status-badge :invoice="$invoice" :payment-summary="$paymentSummary" /></td>
-    <td class="px-4 py-4 text-right"><a class="button-secondary" href="{{ route('invoices.show',$invoice->uuid) }}">Detail</a> @can('update',$invoice)<a class="button-primary" href="{{ route('invoices.edit',$invoice->uuid) }}">Upravit</a>@endcan</td>
+    <td class="px-4 py-4 text-right"><x-invoices.list-actions :invoice="$invoice" /></td>
 </tr>

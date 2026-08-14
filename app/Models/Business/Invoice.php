@@ -112,6 +112,7 @@ class Invoice extends BusinessModel
             'payment_method' => DefaultPaymentMethod::class,
             'version' => 'integer',
             'issued_at' => 'immutable_datetime',
+            'archived_at' => 'immutable_datetime',
         ];
     }
 }

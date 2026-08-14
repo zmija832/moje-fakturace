@@ -83,7 +83,7 @@ class BusinessAuditSanitizer
             ],
             BusinessAuditableType::Invoice => [
                 'document_type', 'status', 'currency', 'issued_on', 'taxable_supply_on',
-                'due_on', 'payment_method', 'variable_symbol', 'note',
+                'due_on', 'payment_method', 'variable_symbol', 'note', 'archived_at',
             ],
             BusinessAuditableType::InvoiceDocument,
             BusinessAuditableType::InvoiceEmailDelivery,
@@ -143,6 +143,7 @@ class BusinessAuditSanitizer
             'allocation_correlation_uuid' => $allocation->correlation_uuid,
             'issued_revision_uuid' => $revision->uuid,
             'version' => $invoice->version,
+            'archived_at' => $this->scalar($invoice->archived_at),
             'issued_on' => $this->scalar($revision->issued_on),
             'taxable_supply_on' => $this->scalar($revision->taxable_supply_on),
             'due_on' => $this->scalar($revision->due_on),
@@ -271,6 +272,7 @@ class BusinessAuditSanitizer
             'document_type' => $this->scalar($invoice->document_type),
             'status' => $this->scalar($invoice->status),
             'version' => $invoice->version,
+            'archived_at' => $this->scalar($invoice->archived_at),
             ...($revision === null ? [] : $this->invoiceRevision($revision)),
         ]);
     }

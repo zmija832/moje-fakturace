@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoicePublicLink;
 use App\Services\Business\InvoiceDocumentViewModelFactory;
+use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePdfGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -14,7 +15,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PublicInvoiceController extends Controller
 {
-    public function show(Request $request, InvoiceDocumentViewModelFactory $viewModels): View
+    public function show(Request $request, InvoiceDocumentViewModelFactory $viewModels, InvoicePaymentReader $payments): View
     {
         $link = $this->link($request);
         $invoice = $link->invoice;
@@ -27,6 +28,7 @@ class PublicInvoiceController extends Controller
             'document' => $viewModels->make($invoice)->toArray(),
             'hasPdf' => $hasPdf,
             'pdfUrl' => $hasPdf ? route('public-invoices.pdf', ['token' => $request->route('token')]) : null,
+            'paymentSummary' => $payments->summary($invoice),
         ]);
     }
 

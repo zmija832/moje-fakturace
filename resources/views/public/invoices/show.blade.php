@@ -18,6 +18,7 @@
                     @if($document['is_non_payer'])<span class="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold">Neplátce DPH</span>@endif
                 </div>
                 <div class="sm:text-right">
+                    <div class="mb-2"><span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold">{{ $paymentSummary->status->label() }}</span></div>
                     <p class="text-sm text-slate-500">Celkem k fakturaci</p>
                     <p class="text-3xl font-bold tabular-nums">{{ $document['totals']['grand_total'] }} {{ $document['currency'] }}</p>
                     @if($hasPdf)<a class="button-primary mt-4" href="{{ $pdfUrl }}">Stáhnout PDF</a>@endif
@@ -52,6 +53,15 @@
             @unless($document['is_non_payer'])
                 <section class="border-t border-slate-200 p-6"><h2 class="font-bold">Souhrn DPH</h2><div class="mt-3 space-y-2 text-sm">@foreach($document['vat_summaries'] as $summary)<div class="flex flex-wrap justify-between gap-3"><span>{{ $summary['tax_label'] }}</span><span>Základ {{ $summary['tax_base'] }} · DPH {{ $summary['vat_amount'] }} · Celkem {{ $summary['total'] }} {{ $document['currency'] }}</span></div>@endforeach</div></section>
             @endunless
+
+            @if($document['qr']['available'])
+                <section class="border-t border-slate-200 p-6">
+                    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div><h2 class="font-bold">QR Platba</h2><p class="mt-1 text-sm text-slate-600">Naskenujte v bankovní aplikaci.</p></div>
+                        <img class="h-40 w-40" src="{{ $document['qr']['svg_data_uri'] }}" alt="QR kód pro zaplacení faktury">
+                    </div>
+                </section>
+            @endif
 
             <footer class="grid gap-6 border-t border-slate-200 bg-slate-50 p-6 md:grid-cols-2">
                 <div class="text-sm">@if($document['bank_account'])<p><strong>Bankovní účet:</strong> {{ $document['bank_account']['domestic'] }}</p>@if($document['bank_account']['iban'])<p>IBAN {{ $document['bank_account']['iban'] }}</p>@endif @endif @if($document['note'])<p class="mt-3 whitespace-pre-line">{{ $document['note'] }}</p>@endif</div>

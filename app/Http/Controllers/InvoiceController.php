@@ -20,6 +20,7 @@ use App\Http\Requests\StoreInvoiceDraftRequest;
 use App\Http\Requests\UpdateInvoiceDraftRequest;
 use App\Models\Business\Invoice;
 use App\Services\Business\BusinessAuditService;
+use App\Services\Business\InvoiceArchiveService;
 use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceDuplicator;
@@ -29,6 +30,7 @@ use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePreviewService;
 use App\Services\Business\InvoicePublicLinkService;
+use App\Services\Business\InvoiceQrPaymentService;
 use App\Services\Business\InvoiceReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -102,6 +104,7 @@ class InvoiceController extends Controller
         InvoicePaymentReader $paymentReader,
         InvoiceIssueAvailability $availability,
         InvoicePublicLinkService $publicLinks,
+        InvoiceQrPaymentService $qrPayments,
     ): View {
         Gate::authorize('view', Invoice::class);
         $invoice = $reader->find($uuid);
@@ -128,6 +131,7 @@ class InvoiceController extends Controller
             'issueAvailability' => $issueAvailability,
             'publicLink' => $publicLink,
             'publicLinkUrl' => $publicLink ? $publicLinks->url($publicLink) : null,
+            'qrPayment' => $invoice->status === InvoiceStatus::Issued ? $qrPayments->create($invoice, $revision) : null,
             ...$issueOptions,
         ]);
     }
@@ -161,6 +165,24 @@ class InvoiceController extends Controller
 
         return redirect()->route('invoices.edit', $draft->uuid)
             ->with('status', 'Byl vytvořen nový koncept podle původní faktury. Před uložením zkontrolujte data a částky.');
+    }
+
+    public function archive(
+        string $uuid,
+        InvoiceReader $reader,
+        InvoiceArchiveService $archive,
+    ): RedirectResponse {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('archive', $invoice);
+
+        try {
+            $archive->archiveDraft($invoice->uuid);
+        } catch (ValidationException) {
+            return back()->with('error', 'Archivovat lze pouze aktivní koncept faktury.');
+        }
+
+        return redirect()->route('invoices.index')
+            ->with('status', 'Koncept byl archivován. Revize a auditní historie zůstaly zachované.');
     }
 
     public function update(

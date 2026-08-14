@@ -162,6 +162,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.issue');
         Route::post('/faktury/{uuid}/duplikovat', [InvoiceController::class, 'duplicate'])
             ->whereUuid('uuid')->name('invoices.duplicate');
+        Route::patch('/faktury/{uuid}/archivovat', [InvoiceController::class, 'archive'])
+            ->whereUuid('uuid')->name('invoices.archive');
         Route::post('/faktury/{uuid}/webfaktura', [InvoicePublicLinkController::class, 'store'])
             ->whereUuid('uuid')->name('invoices.public-link.store');
         Route::post('/faktury/{uuid}/webfaktura/obnovit', [InvoicePublicLinkController::class, 'regenerate'])

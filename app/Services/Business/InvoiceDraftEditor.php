@@ -42,7 +42,7 @@ class InvoiceDraftEditor
         return DB::connection($connection)->transaction(function () use ($invoiceUuid, $expectedVersion, $correlationUuid, $attributes): InvoiceRevision {
             $invoice = Invoice::query()->where('uuid', $invoiceUuid)->lockForUpdate()->firstOrFail();
 
-            if ($invoice->status !== InvoiceStatus::Draft) {
+            if ($invoice->status !== InvoiceStatus::Draft || $invoice->archived_at !== null) {
                 throw InvoiceNotDraft::forEdit();
             }
 

@@ -1,7 +1,10 @@
 @props(['invoice', 'paymentSummary' => null])
 
 @php
-    if ($invoice->status === \App\Enums\InvoiceStatus::Draft) {
+    if ($invoice->archived_at !== null) {
+        $label = 'Archivovaný koncept';
+        $classes = 'bg-slate-200 text-slate-700 ring-slate-300';
+    } elseif ($invoice->status === \App\Enums\InvoiceStatus::Draft) {
         $label = 'Koncept';
         $classes = 'bg-slate-100 text-slate-700 ring-slate-200';
     } else {

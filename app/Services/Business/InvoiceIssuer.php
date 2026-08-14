@@ -69,7 +69,7 @@ class InvoiceIssuer
         if ($invoice->status === InvoiceStatus::Issued && $invoice->issue_correlation_uuid === $correlationUuid) {
             return $this->loadIssued($invoice);
         }
-        if ($invoice->status !== InvoiceStatus::Draft) {
+        if ($invoice->status !== InvoiceStatus::Draft || $invoice->archived_at !== null) {
             throw InvoiceNotDraft::forIssue();
         }
 

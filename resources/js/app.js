@@ -330,9 +330,7 @@ Alpine.data('invoiceEditor', (config) => ({
         if (!this.$refs.form) return;
 
         window.clearTimeout(this.previewTimer);
-        const body = new FormData(this.$refs.form);
-        body.delete('version');
-        body.delete('correlation_uuid');
+        const body = this.previewFormData();
         const signature = JSON.stringify(Array.from(body.entries(), ([key, value]) => [key, String(value)]));
         if (!force && signature === this.lastPreviewSignature) {
             this.loading = false;
@@ -389,6 +387,29 @@ Alpine.data('invoiceEditor', (config) => ({
         } finally {
             if (requestId === this.previewRequestId) this.loading = false;
         }
+    },
+    previewFormData() {
+        const body = new FormData(this.$refs.form);
+        body.delete('version');
+        body.delete('correlation_uuid');
+        for (const key of [...body.keys()]) {
+            if (key.startsWith('items[')) body.delete(key);
+        }
+        this.items.forEach((item, index) => {
+            const prefix = `items[${index}]`;
+            body.append(`${prefix}[position]`, String(index + 1));
+            body.append(`${prefix}[description]`, String(item.description ?? ''));
+            body.append(`${prefix}[quantity]`, String(item.quantity ?? ''));
+            body.append(`${prefix}[unit]`, String(item.unit ?? ''));
+            body.append(`${prefix}[unit_price]`, String(item.unit_price ?? ''));
+            body.append(`${prefix}[discount_type]`, String(item.discount_type ?? 'none'));
+            body.append(`${prefix}[discount_value]`, String(item.discount_value ?? '0'));
+            if (config.isVatPayer) {
+                body.append(`${prefix}[vat_rate_uuid]`, String(item.vat_rate_uuid ?? ''));
+            }
+        });
+
+        return body;
     },
     previewHttpError(status, data) {
         if (status === 401 || status === 403) return 'Pro výpočet náhledu nemáte oprávnění nebo vypršela relace.';

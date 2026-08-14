@@ -31,13 +31,20 @@ class InvoicePolicy extends BusinessPolicy
     public function update(User $user, ?Invoice $invoice = null): bool
     {
         return $this->canManage($user)
-            && ($invoice === null || $invoice->status === InvoiceStatus::Draft);
+            && ($invoice === null || ($invoice->status === InvoiceStatus::Draft && $invoice->archived_at === null));
     }
 
     public function issue(User $user, ?Invoice $invoice = null): bool
     {
         return $this->canManage($user)
-            && ($invoice === null || $invoice->status === InvoiceStatus::Draft);
+            && ($invoice === null || ($invoice->status === InvoiceStatus::Draft && $invoice->archived_at === null));
+    }
+
+    public function archive(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user)
+            && $invoice->status === InvoiceStatus::Draft
+            && $invoice->archived_at === null;
     }
 
     public function print(User $user, Invoice $invoice): bool

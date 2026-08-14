@@ -46,6 +46,13 @@
             @endif
         @endcan
 
+        @can('archive', $invoice)
+            <form method="POST" action="{{ route('invoices.archive', $invoice->uuid) }}" onsubmit="return confirm('Koncept se skryje z běžného seznamu. Revize a audit zůstanou zachované. Pokračovat?')">
+                @csrf
+                @method('PATCH')
+                <button class="button-secondary text-red-700" type="submit">Archivovat koncept</button>
+            </form>
+        @endcan
         <a class="button-secondary" href="#invoice-audit-history">Auditní historie</a>
     @else
         @can('sendEmail', $invoice)

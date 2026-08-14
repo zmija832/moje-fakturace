@@ -38,12 +38,18 @@ class InvoiceReader
             'currentRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
             'issuedRevision:id,invoice_id,revision_number,grand_total',
             'issuedRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
+            'documents:id,invoice_id,storage_path,storage_disk,original_filename',
         ])->select('invoices.*')->selectRaw(
             "(SELECT COALESCE(SUM(CASE WHEN invoice_payments.payment_type = 'payment' THEN invoice_payments.amount ELSE -invoice_payments.amount END), 0) FROM invoice_payments WHERE invoice_payments.invoice_id = invoices.id) AS payment_paid_total",
         );
 
-        if (in_array($filters['status'] ?? null, [InvoiceStatus::Draft->value, InvoiceStatus::Issued->value], true)) {
-            $query->where('status', $filters['status']);
+        if (($filters['status'] ?? null) === 'archived') {
+            $query->whereNotNull('archived_at');
+        } else {
+            $query->whereNull('archived_at');
+            if (in_array($filters['status'] ?? null, [InvoiceStatus::Draft->value, InvoiceStatus::Issued->value], true)) {
+                $query->where('status', $filters['status']);
+            }
         }
         if (in_array($filters['currency'] ?? null, ['CZK', 'EUR'], true)) {
             $query->where('currency', $filters['currency']);

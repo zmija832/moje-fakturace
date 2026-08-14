@@ -37,6 +37,7 @@ enum BusinessAuditEvent: string
     case InvoiceDraftUpdated = 'invoice.draft_updated';
     case InvoiceDraftRevisionCreated = 'invoice.draft_revision_created';
     case InvoiceDraftUpdateConflict = 'invoice.draft_update_conflict';
+    case InvoiceDraftArchived = 'invoice.draft_archived';
     case InvoiceIssued = 'invoice.issued';
     case InvoiceIssueConflict = 'invoice.issue_conflict';
     case InvoicePdfGenerated = 'invoice.pdf_generated';
@@ -88,6 +89,7 @@ enum BusinessAuditEvent: string
             self::InvoiceDraftUpdated => 'Upraven návrh faktury',
             self::InvoiceDraftRevisionCreated => 'Vytvořena revize návrhu faktury',
             self::InvoiceDraftUpdateConflict => 'Konflikt při úpravě návrhu faktury',
+            self::InvoiceDraftArchived => 'Archivován koncept faktury',
             self::InvoiceIssued => 'Vystavena faktura',
             self::InvoiceIssueConflict => 'Konflikt při vystavení faktury',
             self::InvoicePdfGenerated => 'Vygenerováno PDF faktury',

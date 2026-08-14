@@ -52,6 +52,34 @@ class InvoicePaymentMigrationTest extends TestCase
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
+    public function test_payment_guard_comparisons_are_safe_across_database_collations(): void
+    {
+        $this->refreshBusinessTestDatabases();
+
+        foreach (BusinessConnection::cases() as $businessConnection) {
+            $connection = $businessConnection->connectionName();
+            $trigger = DB::connection($connection)->selectOne(
+                "SELECT action_statement FROM information_schema.triggers WHERE trigger_schema = DATABASE() AND trigger_name = 'invoice_payments_insert_guard'",
+            );
+            $this->assertNotNull($trigger);
+            $this->assertStringContainsString('BINARY invoice_status <> BINARY', $trigger->action_statement);
+            $this->assertStringContainsString('BINARY invoice_currency <> BINARY NEW.currency', $trigger->action_statement);
+            $this->assertStringContainsString('BINARY original_currency <> BINARY NEW.currency', $trigger->action_statement);
+        }
+
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        $this->actingAs($admin);
+        $payment = app(InvoicePaymentService::class)->record($invoice->uuid, (string) Str::uuid(), [
+            'amount' => '10.0000', 'currency' => 'CZK', 'paid_on' => '2026-08-14',
+            'payment_method' => 'bank_transfer',
+        ]);
+
+        $this->assertSame('10.0000', $payment->amount);
+        $this->assertSame(1, InvoicePayment::query()->count());
+    }
+
     public function test_database_and_model_reject_update_delete_duplicate_and_draft_payment(): void
     {
         $this->refreshBusinessTestDatabases();

@@ -464,7 +464,7 @@ class InvoicesHttpTest extends TestCase
 
     public function test_routes_options_policy_and_html_security(): void
     {
-        foreach (['invoices.index', 'invoices.create', 'invoices.store', 'invoices.preview', 'invoices.show', 'invoices.edit', 'invoices.update', 'invoices.issue', 'invoices.duplicate'] as $name) {
+        foreach (['invoices.index', 'invoices.create', 'invoices.store', 'invoices.preview', 'invoices.show', 'invoices.edit', 'invoices.update', 'invoices.issue', 'invoices.duplicate', 'invoices.archive'] as $name) {
             $route = app('router')->getRoutes()->getByName($name);
             $middleware = $route->gatherMiddleware();
             $this->assertContains('web', $middleware);
@@ -535,6 +535,8 @@ class InvoicesHttpTest extends TestCase
         $javascript = file_get_contents(resource_path('js/app.js'));
         $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0))', $javascript);
         $this->assertStringNotContainsString('this.$refs.form?.checkValidity()', $javascript);
+        $this->assertStringContainsString('const body = this.previewFormData()', $javascript);
+        $this->assertStringContainsString('this.items.forEach((item, index)', $javascript);
 
         $previewPayload = $this->payload($client, $account, $rate, [
             'issued_on' => $duplicate->issued_on->format('Y-m-d'),

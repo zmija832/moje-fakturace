@@ -143,7 +143,7 @@ abstract class TestCase extends BaseTestCase
 
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_14_000000_create_invoice_public_links_table')
+            ->where('migration', '2026_08_15_010000_add_invoice_archival')
             ->exists();
     }
 
