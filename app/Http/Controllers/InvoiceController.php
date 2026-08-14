@@ -28,6 +28,7 @@ use App\Services\Business\InvoiceIssueAvailability;
 use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePreviewService;
+use App\Services\Business\InvoicePublicLinkService;
 use App\Services\Business\InvoiceReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -100,6 +101,7 @@ class InvoiceController extends Controller
         BusinessAuditService $audit,
         InvoicePaymentReader $paymentReader,
         InvoiceIssueAvailability $availability,
+        InvoicePublicLinkService $publicLinks,
     ): View {
         Gate::authorize('view', Invoice::class);
         $invoice = $reader->find($uuid);
@@ -110,6 +112,9 @@ class InvoiceController extends Controller
         $issueAvailability = $invoice->status === InvoiceStatus::Draft && auth()->user()?->can('issue', $invoice)
             ? $availability->for($invoice)
             : ['can_issue' => false, 'reason' => null];
+        $publicLink = $invoice->status === InvoiceStatus::Issued && auth()->user()?->can('managePublicLink', $invoice)
+            ? $publicLinks->activeForInvoice($invoice)
+            : null;
 
         return view('business.invoices.show', [
             'invoice' => $invoice,
@@ -121,6 +126,8 @@ class InvoiceController extends Controller
             'paymentSummary' => $paymentSummary,
             'paymentMethods' => DefaultPaymentMethod::options(),
             'issueAvailability' => $issueAvailability,
+            'publicLink' => $publicLink,
+            'publicLinkUrl' => $publicLink ? $publicLinks->url($publicLink) : null,
             ...$issueOptions,
         ]);
     }

@@ -131,6 +131,7 @@ abstract class TestCase extends BaseTestCase
             'company_settings', 'bank_accounts', 'clients', 'document_sequences',
             'audit_logs', 'vat_rates', 'invoices', 'invoice_revisions',
             'invoice_documents', 'invoice_email_deliveries', 'invoice_payments',
+            'invoice_public_links',
         ];
         $existingTables = collect(Schema::connection($connection)->getTables())
             ->pluck('name')
@@ -142,7 +143,7 @@ abstract class TestCase extends BaseTestCase
 
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_05_000000_add_non_payer_vat_rate')
+            ->where('migration', '2026_08_14_000000_create_invoice_public_links_table')
             ->exists();
     }
 

@@ -12,6 +12,7 @@ use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoiceEmailDelivery;
 use App\Models\Business\InvoicePayment;
+use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\InvoiceRevision;
 use App\Models\Business\VatRate;
 use BackedEnum;
@@ -35,6 +36,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::InvoiceDocument => $this->invoiceDocument($this->expect($model, InvoiceDocument::class)),
             BusinessAuditableType::InvoiceEmailDelivery => $this->invoiceEmailDelivery($this->expect($model, InvoiceEmailDelivery::class)),
             BusinessAuditableType::InvoicePayment => $this->invoicePayment($this->expect($model, InvoicePayment::class)),
+            BusinessAuditableType::InvoicePublicLink => $this->invoicePublicLink($this->expect($model, InvoicePublicLink::class)),
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
@@ -86,6 +88,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::InvoiceDocument,
             BusinessAuditableType::InvoiceEmailDelivery,
             BusinessAuditableType::InvoicePayment => [],
+            BusinessAuditableType::InvoicePublicLink => [],
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => [],
@@ -322,6 +325,20 @@ class BusinessAuditSanitizer
             'source' => $this->scalar($payment->source),
             'correlation_uuid' => $payment->correlation_uuid,
             'reverses_payment_uuid' => $payment->originalPayment?->uuid,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function invoicePublicLink(InvoicePublicLink $link): array
+    {
+        $link->loadMissing('invoice');
+
+        return $this->withoutNulls([
+            'link_uuid' => $link->uuid,
+            'invoice_uuid' => $link->invoice?->uuid,
+            'active' => $link->revoked_at === null,
+            'created_at' => $this->scalar($link->created_at),
+            'revoked_at' => $this->scalar($link->revoked_at),
         ]);
     }
 

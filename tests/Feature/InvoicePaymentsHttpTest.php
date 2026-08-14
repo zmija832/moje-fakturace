@@ -4,12 +4,17 @@ namespace Tests\Feature;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Enums\BusinessConnection;
+use App\Events\InvoicePaymentChanged;
 use App\Models\Business;
+use App\Models\Business\InvoicePayment;
 use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
 use Tests\Concerns\InteractsWithBusinessDatabases;
 use Tests\TestCase;
@@ -124,6 +129,71 @@ class InvoicePaymentsHttpTest extends TestCase
             $this->assertContains('business.required', $route->gatherMiddleware());
         }
         $this->assertNull(app('router')->getRoutes()->getByName('invoices.payments.destroy'));
+    }
+
+    public function test_real_payment_form_payload_redirects_and_renders_after_partial_and_full_payment(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+
+        $html = $this->get(route('invoices.show', $invoice->uuid))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/id="invoice-payment-entry"[\s\S]+?name="correlation_uuid" value="([^"]+)"/', $html);
+        preg_match('/id="invoice-payment-entry"[\s\S]+?name="correlation_uuid" value="([^"]+)"/', $html, $matches);
+        $payload = [
+            'amount' => '40,00', 'currency' => 'CZK', 'paid_on' => '2026-08-14',
+            'payment_method' => 'bank_transfer', 'note' => 'Částečná úhrada', 'correlation_uuid' => $matches[1],
+        ];
+
+        $this->followingRedirects()->post(route('invoices.payments.store', $invoice->uuid), $payload)
+            ->assertOk()->assertSee('Částečně uhrazená')->assertSee('60,00');
+        $this->followingRedirects()->post(route('invoices.payments.store', $invoice->uuid), [
+            ...$payload, 'amount' => '60', 'correlation_uuid' => (string) Str::uuid(),
+        ])->assertOk()->assertSee('Uhrazená')->assertDontSee('Zaznamenat úhradu');
+        $this->assertSame(2, InvoicePayment::query()->count());
+    }
+
+    public function test_post_commit_notification_failure_does_not_turn_payment_into_http_500(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        Event::listen(InvoicePaymentChanged::class, fn (): never => throw new RuntimeException('Simulované selhání následné integrace'));
+
+        $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('25'))
+            ->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status');
+        $this->assertSame(1, InvoicePayment::query()->count());
+        $this->assertSame('25.0000', InvoicePayment::query()->sole()->amount);
+    }
+
+    public function test_http_500_during_redirect_render_does_not_duplicate_committed_payment_on_retry(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $payload = $this->paymentPayload('30');
+        $failRender = true;
+        View::composer('business.invoices.show', function () use (&$failRender): void {
+            if ($failRender) {
+                throw new RuntimeException('Simulovaná chyba následného renderu');
+            }
+        });
+
+        $this->withExceptionHandling();
+        $this->followingRedirects()->post(route('invoices.payments.store', $invoice->uuid), $payload)->assertServerError();
+        $this->assertSame(1, InvoicePayment::query()->count());
+        $this->assertSame('30.0000', InvoicePayment::query()->sole()->amount);
+
+        $failRender = false;
+        $this->followingRedirects()->post(route('invoices.payments.store', $invoice->uuid), $payload)
+            ->assertOk()->assertSee('Částečně uhrazená');
+        $this->assertSame(1, InvoicePayment::query()->count());
     }
 
     /** @return array<string, string> */

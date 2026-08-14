@@ -23,6 +23,7 @@ use App\Models\Business\InvoicePayment;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -52,7 +53,7 @@ class InvoicePaymentService
         }
 
         if ($event !== null) {
-            Event::dispatch(new InvoicePaymentChanged($event));
+            $this->dispatchEventSafely($event);
         }
 
         return $payment;
@@ -75,7 +76,7 @@ class InvoicePaymentService
         }
 
         if ($event !== null) {
-            Event::dispatch(new InvoicePaymentChanged($event));
+            $this->dispatchEventSafely($event);
         }
 
         return $reversal;
@@ -408,6 +409,21 @@ class InvoicePaymentService
             }, 3);
         } catch (Throwable) {
             // Konflikt nesmí změnit výsledek původní atomické platební operace.
+        }
+    }
+
+    private function dispatchEventSafely(InvoicePaymentEventSnapshot $snapshot): void
+    {
+        try {
+            Event::dispatch(new InvoicePaymentChanged($snapshot));
+        } catch (Throwable $exception) {
+            // Notifikační integrace běží až po potvrzení ledger transakce. Její selhání
+            // nesmí změnit úspěšný platební zápis na HTTP 500 a vyvolat opakování platby.
+            Log::error('Následné zpracování zaevidované platby selhalo.', [
+                'invoice_uuid' => $snapshot->invoiceUuid,
+                'payment_uuid' => $snapshot->paymentUuid,
+                'exception_class' => $exception::class,
+            ]);
         }
     }
 }

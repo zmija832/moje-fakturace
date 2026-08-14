@@ -29,9 +29,9 @@ Alpine.data('invoiceEditor', (config) => ({
         });
 
         if (Object.keys(this.errors).length === 0) {
-            this.$nextTick(() => {
-                if (this.$refs.form?.checkValidity()) this.queuePreview(0);
-            });
+            // Preview has its own deliberately narrower server-side contract. Fields such as
+            // customer or bank account must not suppress monetary preview initialization.
+            this.$nextTick(() => this.queuePreview(0));
 
             return;
         }

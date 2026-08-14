@@ -3,6 +3,7 @@
 use App\Http\Middleware\AssignBusinessRequestId;
 use App\Http\Middleware\RequireActiveBusiness;
 use App\Http\Middleware\ResolveActiveBusiness;
+use App\Http\Middleware\ResolvePublicInvoiceLink;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'business.request-id' => AssignBusinessRequestId::class,
             'business.context' => ResolveActiveBusiness::class,
             'business.required' => RequireActiveBusiness::class,
+            'public.invoice' => ResolvePublicInvoiceLink::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

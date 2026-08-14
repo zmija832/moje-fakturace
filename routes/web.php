@@ -15,10 +15,22 @@ use App\Http\Controllers\DocumentSequenceController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
 use App\Http\Controllers\InvoicePaymentController;
+use App\Http\Controllers\InvoicePublicLinkController;
+use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\VatRateController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard');
+
+Route::middleware(['throttle:60,1', 'public.invoice'])->group(function (): void {
+    Route::get('/f/{token}', [PublicInvoiceController::class, 'show'])
+        ->where('token', '[A-Za-z0-9_-]{43}')
+        ->name('public-invoices.show');
+    Route::get('/f/{token}/pdf', [PublicInvoiceController::class, 'pdf'])
+        ->where('token', '[A-Za-z0-9_-]{43}')
+        ->middleware('throttle:30,1')
+        ->name('public-invoices.pdf');
+});
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/prihlaseni', [AuthenticatedSessionController::class, 'create'])->name('login');
@@ -150,6 +162,12 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.issue');
         Route::post('/faktury/{uuid}/duplikovat', [InvoiceController::class, 'duplicate'])
             ->whereUuid('uuid')->name('invoices.duplicate');
+        Route::post('/faktury/{uuid}/webfaktura', [InvoicePublicLinkController::class, 'store'])
+            ->whereUuid('uuid')->name('invoices.public-link.store');
+        Route::post('/faktury/{uuid}/webfaktura/obnovit', [InvoicePublicLinkController::class, 'regenerate'])
+            ->whereUuid('uuid')->name('invoices.public-link.regenerate');
+        Route::delete('/faktury/{uuid}/webfaktura', [InvoicePublicLinkController::class, 'revoke'])
+            ->whereUuid('uuid')->name('invoices.public-link.revoke');
         Route::post('/faktury/{uuid}/platby', [InvoicePaymentController::class, 'store'])
             ->whereUuid('uuid')->name('invoices.payments.store');
         Route::post('/faktury/{uuid}/platby/{paymentUuid}/storno', [InvoicePaymentController::class, 'reverse'])

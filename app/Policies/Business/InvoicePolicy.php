@@ -76,4 +76,10 @@ class InvoicePolicy extends BusinessPolicy
     {
         return $this->recordPayment($user, $invoice);
     }
+
+    public function managePublicLink(User $user, ?Invoice $invoice = null): bool
+    {
+        return $this->canManage($user)
+            && ($invoice === null || $invoice->status === InvoiceStatus::Issued);
+    }
 }

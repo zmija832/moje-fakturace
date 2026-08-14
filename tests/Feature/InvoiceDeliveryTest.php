@@ -16,6 +16,7 @@ use App\Services\Business\BusinessAuditWriter;
 use App\Services\Business\InvoiceDocumentViewModelFactory;
 use App\Services\Business\InvoiceMailer;
 use App\Services\Business\InvoicePdfGenerator;
+use App\Services\Business\InvoicePublicLinkService;
 use BaconQrCode\Writer;
 use Dompdf\Dompdf;
 use Illuminate\Database\QueryException;
@@ -229,6 +230,8 @@ class InvoiceDeliveryTest extends TestCase
         [$invoice, $client] = $this->createIssuedInvoice();
         $this->actingAs($admin);
         $client->forceFill(['email' => 'live@example.test'])->save();
+        $publicLink = app(InvoicePublicLinkService::class)->create($invoice);
+        $publicUrl = app(InvoicePublicLinkService::class)->url($publicLink);
         $correlation = (string) Str::uuid();
         $delivery = app(InvoiceMailer::class)->send($invoice->uuid, $correlation, []);
         $repeated = app(InvoiceMailer::class)->send($invoice->uuid, $correlation, ['recipient_email' => 'other@example.test']);
@@ -239,13 +242,18 @@ class InvoiceDeliveryTest extends TestCase
         $this->assertSame(1, InvoiceEmailDelivery::query()->count());
         $this->assertStringContainsString($invoice->document_number, $delivery->subject);
         $this->assertStringContainsString('PDF faktury', $delivery->body_text);
-        Mail::assertSent(InvoiceIssuedMail::class, function (InvoiceIssuedMail $mail) use ($delivery): bool {
+        $this->assertStringNotContainsString($publicUrl, $delivery->body_text);
+        $this->assertStringNotContainsString($publicUrl, $delivery->body_html);
+        Mail::assertSent(InvoiceIssuedMail::class, function (InvoiceIssuedMail $mail) use ($delivery, $publicUrl): bool {
             $document = $delivery->document;
             $expected = Attachment::fromStorageDisk($document->storage_disk, $document->storage_path)
                 ->as($document->original_filename)
                 ->withMime($document->mime_type);
 
-            return $mail->hasAttachment($expected);
+            return $mail->hasAttachment($expected)
+                && str_contains($mail->bodyText, $publicUrl)
+                && str_contains($mail->bodyHtml, 'Zobrazit fakturu online')
+                && $mail->envelope()->replyTo[0]->address === 'dodavatel@example.test';
         });
         $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.email_sent')->count());
         $mailAudit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.email_sent')->first();

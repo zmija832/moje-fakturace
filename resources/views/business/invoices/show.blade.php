@@ -25,6 +25,9 @@
     @if($isDraft)<div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Koncept zatím nemá číslo dokladu.</strong> Před vystavením jej lze upravit; každá skutečná změna vytvoří novou revizi.</div>@else<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Vystavený doklad je neměnný.</strong> Jeho číslo, revizi, snapshoty ani částky nelze změnit.</div>@endif
     <x-invoices.detail :invoice="$invoice" :revision="$revision" />
     @if(!$isDraft)
+        @can('managePublicLink', $invoice)
+            <x-invoices.public-link :invoice="$invoice" :link="$publicLink" :url="$publicLinkUrl" />
+        @endcan
         <x-invoices.payments :invoice="$invoice" :summary="$paymentSummary" :payment-methods="$paymentMethods" :correlation-uuid="$paymentCorrelationUuid" />
         <x-invoices.delivery-history :invoice="$invoice" />
     @endif

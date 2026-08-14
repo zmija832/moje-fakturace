@@ -32,6 +32,7 @@ class InvoiceMailer
         private readonly InvoiceDocumentViewModelFactory $viewModels,
         private readonly BusinessAuditSanitizer $auditSanitizer,
         private readonly BusinessAuditWriter $auditWriter,
+        private readonly InvoicePublicLinkService $publicLinks,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -67,9 +68,11 @@ class InvoiceMailer
         $subject = trim((string) ($input['subject'] ?? ''));
         $subject = $subject !== '' ? $subject : 'Faktura '.$invoice->document_number.' od '.$model['supplier']['name'];
         $message = trim((string) ($input['message'] ?? ''));
-        [$bodyText, $bodyHtml] = $this->bodies($model, $recipientName, $message);
+        $publicUrl = $this->publicLinks->activeUrlForInvoice($invoice);
+        [$bodyText, $bodyHtml] = $this->bodies($model, $recipientName, $message, $publicUrl);
+        [$storedBodyText, $storedBodyHtml] = $this->bodies($model, $recipientName, $message, null);
 
-        [$delivery, $created] = DB::connection($connection)->transaction(function () use ($invoice, $document, $correlationUuid, $recipientEmail, $recipientName, $subject, $bodyText, $bodyHtml): array {
+        [$delivery, $created] = DB::connection($connection)->transaction(function () use ($invoice, $document, $correlationUuid, $recipientEmail, $recipientName, $subject, $storedBodyText, $storedBodyHtml): array {
             $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== InvoiceStatus::Issued) {
                 throw InvoiceNotIssuedForDelivery::create();
@@ -89,8 +92,8 @@ class InvoiceMailer
                 'recipient_email' => $recipientEmail,
                 'recipient_name' => $recipientName !== '' ? $recipientName : null,
                 'subject' => $subject,
-                'body_text' => $bodyText,
-                'body_html' => $bodyHtml,
+                'body_text' => $storedBodyText,
+                'body_html' => $storedBodyHtml,
                 'status' => InvoiceEmailDeliveryStatus::Pending->value,
                 'send_correlation_uuid' => $correlationUuid,
                 'attempted_at' => now(),
@@ -118,7 +121,14 @@ class InvoiceMailer
         try {
             $this->assertDeliveringTransportConfigured();
             $sentMessage = Mail::to($delivery->recipient_email, $delivery->recipient_name)
-                ->send(new InvoiceIssuedMail($recipientName, $subject, $bodyText, $bodyHtml, $document));
+                ->send(new InvoiceIssuedMail(
+                    $recipientName,
+                    $subject,
+                    $bodyText,
+                    $bodyHtml,
+                    $document,
+                    filter_var($model['supplier']['email'], FILTER_VALIDATE_EMAIL) ? $model['supplier']['email'] : null,
+                ));
 
             return DB::connection($connection)->transaction(function () use ($delivery, $sentMessage): InvoiceEmailDelivery {
                 $locked = InvoiceEmailDelivery::query()->whereKey($delivery->id)->lockForUpdate()->firstOrFail();
@@ -182,7 +192,9 @@ class InvoiceMailer
         }
 
         $mailer = (string) config('mail.default');
-        if ($mailer === '' || $this->containsNonDeliveringTransport($mailer)) {
+        $from = (string) config('mail.from.address');
+        if ($mailer === '' || $this->containsNonDeliveringTransport($mailer)
+            || filter_var($from, FILTER_VALIDATE_EMAIL) === false) {
             throw new \RuntimeException('Production mail transport is not configured for delivery.');
         }
     }
@@ -213,13 +225,17 @@ class InvoiceMailer
         return $transport === '';
     }
 
-    private function bodies(array $model, string $recipientName, string $message): array
+    private function bodies(array $model, string $recipientName, string $message, ?string $publicUrl): array
     {
         $greeting = $recipientName !== '' ? 'Dobrý den, '.$recipientName.',' : 'Dobrý den,';
         $lines = [$greeting, '', 'zasíláme fakturu '.$model['document_number'].' od '.$model['supplier']['name'].'.', 'Částka: '.$model['totals']['grand_total'].' '.$model['currency'], 'Splatnost: '.$model['due_on']];
         if ($message !== '') {
             $lines[] = '';
             $lines[] = $message;
+        }
+        if ($publicUrl !== null) {
+            $lines[] = '';
+            $lines[] = 'Webfaktura: '.$publicUrl;
         }
         $lines[] = '';
         $lines[] = 'PDF faktury je přiloženo k této zprávě.';
@@ -228,7 +244,17 @@ class InvoiceMailer
         $lines[] = $model['supplier']['name'];
         $text = implode("\n", $lines);
 
-        return [$text, '<div style="font-family:Arial,sans-serif;line-height:1.5">'.nl2br(e($text)).'</div>'];
+        $html = nl2br(e($text));
+        if ($publicUrl !== null) {
+            $safeUrl = e($publicUrl);
+            $html = str_replace(
+                'Webfaktura: '.$safeUrl,
+                'Webfaktura: <a href="'.$safeUrl.'">Zobrazit fakturu online</a>',
+                $html,
+            );
+        }
+
+        return [$text, '<div style="font-family:Arial,sans-serif;line-height:1.5">'.$html.'</div>'];
     }
 
     private function actor(): ?string

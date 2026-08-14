@@ -84,6 +84,10 @@
             </form>
         @endcan
 
+        @can('managePublicLink', $invoice)
+            <a class="button-secondary" href="#invoice-public-link">Webfaktura</a>
+        @endcan
+
         <a class="button-secondary" href="#invoice-delivery-history">Historie odeslání</a>
         @can('viewAny', \App\Models\Business\Client::class)
             <a class="button-secondary" href="{{ route('clients.show', $revision->customerSnapshot->source_client_uuid) }}">Detail odběratele</a>

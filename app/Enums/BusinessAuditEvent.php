@@ -48,6 +48,9 @@ enum BusinessAuditEvent: string
     case InvoicePaymentReversed = 'invoice.payment_reversed';
     case InvoicePaymentStatusChanged = 'invoice.payment_status_changed';
     case InvoicePaymentConflict = 'invoice.payment_conflict';
+    case InvoicePublicLinkCreated = 'invoice.public_link_created';
+    case InvoicePublicLinkRevoked = 'invoice.public_link_revoked';
+    case InvoicePublicLinkRegenerated = 'invoice.public_link_regenerated';
 
     public function label(): string
     {
@@ -96,6 +99,9 @@ enum BusinessAuditEvent: string
             self::InvoicePaymentReversed => 'Vytvořeno storno platby faktury',
             self::InvoicePaymentStatusChanged => 'Změněn odvozený stav úhrady',
             self::InvoicePaymentConflict => 'Konflikt platební operace',
+            self::InvoicePublicLinkCreated => 'Vytvořena Webfaktura',
+            self::InvoicePublicLinkRevoked => 'Zrušena Webfaktura',
+            self::InvoicePublicLinkRegenerated => 'Obnoven odkaz Webfaktury',
         };
     }
 

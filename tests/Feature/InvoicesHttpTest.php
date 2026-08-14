@@ -499,8 +499,13 @@ class InvoicesHttpTest extends TestCase
         app(ActiveBusinessContext::class)->set($business);
         [$client, $account, $rate] = $this->sources('Odběratel duplikace');
         $this->sequence(default: true);
+        $items = [
+            ['position' => 1, 'description' => 'První položka', 'quantity' => '2', 'unit' => 'ks', 'unit_price' => '125', 'discount_type' => 'percentage', 'discount_value' => '10', 'vat_rate_uuid' => $rate->uuid],
+            ['position' => 2, 'description' => 'Druhá položka', 'quantity' => '3', 'unit' => 'h', 'unit_price' => '80', 'discount_type' => 'fixed', 'discount_value' => '15', 'vat_rate_uuid' => $rate->uuid],
+        ];
         $sourceDraft = app(InvoiceDraftService::class)->create($this->payload($client, $account, $rate, [
-            'note' => 'Přenesená poznámka',
+            'note' => 'Přenesená poznámka', 'invoice_discount_type' => 'percentage',
+            'invoice_discount_value' => '5', 'items' => $items,
         ]));
         $source = app(InvoiceIssuer::class)->issue($sourceDraft->uuid, 1, (string) Str::uuid());
         $sourceRevisionId = $source->issued_revision_id;
@@ -517,11 +522,60 @@ class InvoicesHttpTest extends TestCase
         $this->assertNotSame($sourceRevisionId, $duplicate->current_revision_id);
         $this->assertSame(today()->format('Y-m-d'), $duplicate->issued_on->format('Y-m-d'));
         $this->assertSame(today()->addDays(14)->format('Y-m-d'), $duplicate->due_on->format('Y-m-d'));
-        $this->assertSame('Bezpečná služba', $duplicate->currentRevision->items->sole()->description);
+        $this->assertSame(['První položka', 'Druhá položka'], $duplicate->currentRevision->items->pluck('description')->all());
+        $this->assertSame('percentage', $duplicate->currentRevision->invoice_discount_type->value);
+        $this->assertSame('5.0000', $duplicate->currentRevision->invoice_discount_value);
         $this->assertSame('Přenesená poznámka', $duplicate->currentRevision->note);
         $this->assertSame('issued', $source->fresh()->status->value);
         $this->assertSame($sourceRevisionId, $source->fresh()->issued_revision_id);
         $this->assertSame(1, DB::connection('business_1')->table('document_number_allocations')->count());
+
+        $edit = $this->get(route('invoices.edit', $duplicate->uuid))->assertOk();
+        $edit->assertSee('První položka')->assertSee('Druhá položka');
+        $javascript = file_get_contents(resource_path('js/app.js'));
+        $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0))', $javascript);
+        $this->assertStringNotContainsString('this.$refs.form?.checkValidity()', $javascript);
+
+        $previewPayload = $this->payload($client, $account, $rate, [
+            'issued_on' => $duplicate->issued_on->format('Y-m-d'),
+            'taxable_supply_on' => $duplicate->taxable_supply_on->format('Y-m-d'),
+            'due_on' => $duplicate->due_on->format('Y-m-d'),
+            'variable_symbol' => null, 'invoice_discount_type' => 'percentage',
+            'invoice_discount_value' => '5', 'items' => $items,
+        ]);
+        $this->postJson(route('invoices.preview'), $previewPayload)->assertOk()
+            ->assertJsonCount(2, 'items')
+            ->assertJsonPath('items.0.position', 1)
+            ->assertJsonPath('items.1.position', 2)
+            ->assertJsonPath('totals.grand_total', $duplicate->currentRevision->grand_total);
+    }
+
+    public function test_non_payer_duplicate_uses_same_server_preview_without_vat_uuid(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources('Neplátcovský odběratel');
+        CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)
+            ->update(['is_vat_payer' => false, 'vat_id' => null]);
+        $draft = app(InvoiceDraftService::class)->create($this->payloadWithoutVat($client, $account, $rate));
+        $this->sequence(default: true);
+        $source = app(InvoiceIssuer::class)->issue($draft->uuid, 1, (string) Str::uuid());
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $this->post(route('invoices.duplicate', $source->uuid))->assertSessionHas('status');
+        $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
+        $this->get(route('invoices.edit', $duplicate->uuid))->assertOk()
+            ->assertDontSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertDontSee('Sazba DPH');
+        $payload = $this->payloadWithoutVat($client, $account, $rate);
+        $payload['issued_on'] = $duplicate->issued_on->format('Y-m-d');
+        $payload['taxable_supply_on'] = $duplicate->taxable_supply_on->format('Y-m-d');
+        $payload['due_on'] = $duplicate->due_on->format('Y-m-d');
+        $this->postJson(route('invoices.preview'), $payload)->assertOk()
+            ->assertJsonPath('summaries.0.tax_type', 'non_payer')
+            ->assertJsonPath('items.0.line_total_amount', $duplicate->currentRevision->items->sole()->line_total_amount)
+            ->assertJsonPath('totals.grand_total', $duplicate->currentRevision->grand_total);
     }
 
     /** @return array{User,Business} */

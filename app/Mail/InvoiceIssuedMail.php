@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Models\Business\InvoiceDocument;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -20,11 +21,15 @@ class InvoiceIssuedMail extends Mailable
         public readonly string $bodyText,
         public readonly string $bodyHtml,
         private readonly InvoiceDocument $document,
+        private readonly ?string $replyToAddress = null,
     ) {}
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: $this->mailSubject);
+        return new Envelope(
+            replyTo: $this->replyToAddress ? [new Address($this->replyToAddress)] : [],
+            subject: $this->mailSubject,
+        );
     }
 
     public function content(): Content

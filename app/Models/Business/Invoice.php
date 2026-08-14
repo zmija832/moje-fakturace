@@ -96,6 +96,11 @@ class Invoice extends BusinessModel
         return $this->hasMany(InvoicePayment::class)->oldest('paid_on')->oldest('id');
     }
 
+    public function publicLinks(): HasMany
+    {
+        return $this->hasMany(InvoicePublicLink::class)->latest('id');
+    }
+
     protected function casts(): array
     {
         return [
