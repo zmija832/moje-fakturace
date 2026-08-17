@@ -531,12 +531,13 @@ class InvoicesHttpTest extends TestCase
         $this->assertSame(1, DB::connection('business_1')->table('document_number_allocations')->count());
 
         $edit = $this->get(route('invoices.edit', $duplicate->uuid))->assertOk();
+        $edit->assertSee('name="_method" value="PUT"', false);
         $edit->assertSee('První položka')->assertSee('Druhá položka');
         $javascript = file_get_contents(resource_path('js/app.js'));
         $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0))', $javascript);
         $this->assertStringNotContainsString('this.$refs.form?.checkValidity()', $javascript);
         $this->assertStringContainsString('const body = this.previewFormData()', $javascript);
-        $this->assertStringContainsString('this.items.forEach((item, index)', $javascript);
+        $this->assertStringContainsString('buildInvoicePreviewFormData(this.$refs.form, this.items, config.isVatPayer)', $javascript);
 
         $previewPayload = $this->payload($client, $account, $rate, [
             'issued_on' => $duplicate->issued_on->format('Y-m-d'),
