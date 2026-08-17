@@ -8,25 +8,143 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private const DOCUMENT_REVISION_FOREIGN = 'invoice_documents_revision_invoice_foreign';
+
+    private const DOCUMENT_REVISION_INDEX = 'invoice_documents_revision_latest_index';
+
     public function up(): void
     {
         $connection = BusinessConnection::fromConfiguredValue(DB::getDefaultConnection())->connectionName();
 
+        $this->ensureDocumentRevisionColumn($connection);
+        $this->backfillDocumentRevisions($connection);
+        $this->ensureDocumentRevisionConstraints($connection);
+        $this->ensureIssuedRevisionOperationsTable($connection);
+        $this->replaceIssuedGuards($connection);
+    }
+
+    public function down(): void
+    {
+        $connection = BusinessConnection::fromConfiguredValue(DB::getDefaultConnection())->connectionName();
+        if (Schema::connection($connection)->hasTable('invoice_issued_revision_operations')
+            && DB::connection($connection)->table('invoice_issued_revision_operations')->exists()) {
+            throw new RuntimeException('Workflow admin úprav vystavených faktur nelze vrátit, pokud existují jeho operace.');
+        }
+
+        $this->createLegacyIssuedGuards($connection);
+        Schema::connection($connection)->dropIfExists('invoice_issued_revision_operations');
+
+        if (! Schema::connection($connection)->hasTable('invoice_documents')
+            || ! Schema::connection($connection)->hasColumn('invoice_documents', 'invoice_revision_id')) {
+            return;
+        }
+        if ($this->foreignKeyExists($connection, 'invoice_documents', self::DOCUMENT_REVISION_FOREIGN)) {
+            Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
+                $table->dropForeign(self::DOCUMENT_REVISION_FOREIGN);
+            });
+        }
+        if ($this->indexExists($connection, 'invoice_documents', self::DOCUMENT_REVISION_INDEX)) {
+            Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
+                $table->dropIndex(self::DOCUMENT_REVISION_INDEX);
+            });
+        }
+        Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
+            $table->dropColumn('invoice_revision_id');
+        });
+    }
+
+    private function ensureDocumentRevisionColumn(string $connection): void
+    {
+        if (Schema::connection($connection)->hasColumn('invoice_documents', 'invoice_revision_id')) {
+            return;
+        }
+
         Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
             $table->unsignedBigInteger('invoice_revision_id')->nullable()->after('invoice_id');
         });
-        DB::connection($connection)->statement(<<<'SQL'
+    }
+
+    private function backfillDocumentRevisions(string $connection): void
+    {
+        if (DB::connection($connection)->table('invoice_documents')->whereNull('invoice_revision_id')->doesntExist()) {
+            $this->assertDocumentRevisionLinks($connection);
+
+            return;
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $this->createDocumentBackfillGuard($connection, $token);
+
+        try {
+            DB::connection($connection)->statement('SET @invoice_document_revision_backfill_token = ?', [$token]);
+            DB::connection($connection)->statement(<<<'SQL'
 UPDATE invoice_documents d
 JOIN invoices i ON i.id = d.invoice_id
 SET d.invoice_revision_id = i.issued_revision_id
 WHERE d.invoice_revision_id IS NULL
 SQL);
-        Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
-            $table->unsignedBigInteger('invoice_revision_id')->nullable(false)->change();
-            $table->foreign(['invoice_revision_id', 'invoice_id'], 'invoice_documents_revision_invoice_foreign')
-                ->references(['id', 'invoice_id'])->on('invoice_revisions')->restrictOnUpdate()->restrictOnDelete();
-            $table->index(['invoice_id', 'invoice_revision_id', 'generated_at'], 'invoice_documents_revision_latest_index');
-        });
+        } finally {
+            try {
+                DB::connection($connection)->statement('SET @invoice_document_revision_backfill_token = NULL');
+            } finally {
+                $this->createImmutableDocumentGuard($connection);
+            }
+        }
+
+        $this->assertDocumentRevisionLinks($connection);
+    }
+
+    private function assertDocumentRevisionLinks(string $connection): void
+    {
+        $invalid = DB::connection($connection)->selectOne(<<<'SQL'
+SELECT COUNT(*) AS aggregate
+FROM invoice_documents d
+JOIN invoices i ON i.id = d.invoice_id
+WHERE d.invoice_revision_id IS NULL
+   OR i.issued_revision_id IS NULL
+   OR d.invoice_revision_id <> i.issued_revision_id
+SQL);
+        if ((int) $invalid->aggregate !== 0) {
+            throw new RuntimeException('PDF dokumenty nelze bezpečně navázat na aktuální issued revize.');
+        }
+    }
+
+    private function ensureDocumentRevisionConstraints(string $connection): void
+    {
+        $column = DB::connection($connection)->selectOne(<<<'SQL'
+SELECT IS_NULLABLE AS is_nullable
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'invoice_documents'
+  AND COLUMN_NAME = 'invoice_revision_id'
+SQL);
+        if ($column === null) {
+            throw new RuntimeException('Sloupec invoice_documents.invoice_revision_id nebyl vytvořen.');
+        }
+        if ($column->is_nullable === 'YES') {
+            Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
+                $table->unsignedBigInteger('invoice_revision_id')->nullable(false)->change();
+            });
+        }
+
+        if (! $this->foreignKeyExists($connection, 'invoice_documents', self::DOCUMENT_REVISION_FOREIGN)) {
+            Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
+                $table->foreign(['invoice_revision_id', 'invoice_id'], self::DOCUMENT_REVISION_FOREIGN)
+                    ->references(['id', 'invoice_id'])->on('invoice_revisions')->restrictOnUpdate()->restrictOnDelete();
+            });
+        }
+        if (! $this->indexExists($connection, 'invoice_documents', self::DOCUMENT_REVISION_INDEX)) {
+            Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
+                $table->index(['invoice_id', 'invoice_revision_id', 'generated_at'], self::DOCUMENT_REVISION_INDEX);
+            });
+        }
+    }
+
+    private function ensureIssuedRevisionOperationsTable(string $connection): void
+    {
+        if (Schema::connection($connection)->hasTable('invoice_issued_revision_operations')) {
+            return;
+        }
 
         Schema::connection($connection)->create('invoice_issued_revision_operations', function (Blueprint $table): void {
             $table->id();
@@ -39,37 +157,83 @@ SQL);
             $table->foreign(['invoice_revision_id', 'invoice_id'], 'invoice_issued_operations_revision_foreign')
                 ->references(['id', 'invoice_id'])->on('invoice_revisions')->restrictOnUpdate()->restrictOnDelete();
         });
-
-        $this->replaceIssuedGuards($connection);
     }
 
-    public function down(): void
+    private function createDocumentBackfillGuard(string $connection, string $token): void
     {
-        $connection = BusinessConnection::fromConfiguredValue(DB::getDefaultConnection())->connectionName();
-        if (Schema::connection($connection)->hasTable('invoice_issued_revision_operations')
-            && DB::connection($connection)->table('invoice_issued_revision_operations')->exists()) {
-            throw new RuntimeException('Workflow admin úprav vystavených faktur nelze vrátit, pokud existují jeho operace.');
-        }
+        DB::connection($connection)->unprepared(<<<SQL
+CREATE OR REPLACE TRIGGER `invoice_documents_immutable_update`
+BEFORE UPDATE ON `invoice_documents` FOR EACH ROW
+BEGIN
+    IF NOT (
+        BINARY COALESCE(@invoice_document_revision_backfill_token, '') = BINARY '{$token}'
+        AND OLD.`id` <=> NEW.`id`
+        AND OLD.`uuid` <=> NEW.`uuid`
+        AND OLD.`invoice_id` <=> NEW.`invoice_id`
+        AND OLD.`invoice_revision_id` IS NULL
+        AND NEW.`invoice_revision_id` IS NOT NULL
+        AND NEW.`invoice_revision_id` <=> (SELECT `issued_revision_id` FROM `invoices` WHERE `id` = NEW.`invoice_id`)
+        AND OLD.`document_type` <=> NEW.`document_type`
+        AND OLD.`storage_disk` <=> NEW.`storage_disk`
+        AND OLD.`storage_path` <=> NEW.`storage_path`
+        AND OLD.`original_filename` <=> NEW.`original_filename`
+        AND OLD.`mime_type` <=> NEW.`mime_type`
+        AND OLD.`size_bytes` <=> NEW.`size_bytes`
+        AND OLD.`sha256` <=> NEW.`sha256`
+        AND OLD.`template_version` <=> NEW.`template_version`
+        AND OLD.`generated_at` <=> NEW.`generated_at`
+        AND OLD.`generated_by_actor` <=> NEW.`generated_by_actor`
+        AND OLD.`generation_correlation_uuid` <=> NEW.`generation_correlation_uuid`
+        AND OLD.`created_at` <=> NEW.`created_at`
+        AND OLD.`updated_at` <=> NEW.`updated_at`
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice document is immutable';
+    END IF;
+END
+SQL);
+    }
 
-        DB::connection($connection)->unprepared('DROP TRIGGER IF EXISTS `invoices_issued_immutable_update`');
-        DB::connection($connection)->unprepared('DROP TRIGGER IF EXISTS `invoice_revisions_issued_invoice_insert_guard`');
-        $this->createLegacyIssuedGuards($connection);
+    private function createImmutableDocumentGuard(string $connection): void
+    {
+        DB::connection($connection)->unprepared(<<<'SQL'
+CREATE OR REPLACE TRIGGER `invoice_documents_immutable_update`
+BEFORE UPDATE ON `invoice_documents` FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice document is immutable'
+SQL);
+    }
 
-        Schema::connection($connection)->dropIfExists('invoice_issued_revision_operations');
-        Schema::connection($connection)->table('invoice_documents', function (Blueprint $table): void {
-            $table->dropForeign('invoice_documents_revision_invoice_foreign');
-            $table->dropIndex('invoice_documents_revision_latest_index');
-            $table->dropColumn('invoice_revision_id');
-        });
+    private function foreignKeyExists(string $connection, string $table, string $constraint): bool
+    {
+        $result = DB::connection($connection)->selectOne(<<<'SQL'
+SELECT COUNT(*) AS aggregate
+FROM information_schema.TABLE_CONSTRAINTS
+WHERE CONSTRAINT_SCHEMA = DATABASE()
+  AND TABLE_NAME = ?
+  AND CONSTRAINT_NAME = ?
+  AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+SQL, [$table, $constraint]);
+
+        return (int) $result->aggregate === 1;
+    }
+
+    private function indexExists(string $connection, string $table, string $index): bool
+    {
+        $result = DB::connection($connection)->selectOne(<<<'SQL'
+SELECT COUNT(*) AS aggregate
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = ?
+  AND INDEX_NAME = ?
+SQL, [$table, $index]);
+
+        return (int) $result->aggregate > 0;
     }
 
     private function replaceIssuedGuards(string $connection): void
     {
-        DB::connection($connection)->unprepared('DROP TRIGGER IF EXISTS `invoices_issued_immutable_update`');
-        DB::connection($connection)->unprepared('DROP TRIGGER IF EXISTS `invoice_revisions_issued_invoice_insert_guard`');
 
         DB::connection($connection)->unprepared(<<<'SQL'
-CREATE TRIGGER `invoice_revisions_issued_invoice_insert_guard`
+CREATE OR REPLACE TRIGGER `invoice_revisions_issued_invoice_insert_guard`
 BEFORE INSERT ON `invoice_revisions` FOR EACH ROW
 BEGIN
     IF EXISTS (SELECT 1 FROM `invoices` WHERE `id` = NEW.`invoice_id` AND `status` = 'issued')
@@ -83,7 +247,7 @@ END
 SQL);
 
         DB::connection($connection)->unprepared(<<<'SQL'
-CREATE TRIGGER `invoices_issued_immutable_update`
+CREATE OR REPLACE TRIGGER `invoices_issued_immutable_update`
 BEFORE UPDATE ON `invoices` FOR EACH ROW
 BEGIN
     IF OLD.`status` = 'issued' THEN
@@ -153,7 +317,7 @@ SQL);
     private function createLegacyIssuedGuards(string $connection): void
     {
         DB::connection($connection)->unprepared(<<<'SQL'
-CREATE TRIGGER `invoices_issued_immutable_update`
+CREATE OR REPLACE TRIGGER `invoices_issued_immutable_update`
 BEFORE UPDATE ON `invoices` FOR EACH ROW
 BEGIN
     IF OLD.`status` = 'issued' THEN
@@ -162,7 +326,7 @@ BEGIN
 END
 SQL);
         DB::connection($connection)->unprepared(<<<'SQL'
-CREATE TRIGGER `invoice_revisions_issued_invoice_insert_guard`
+CREATE OR REPLACE TRIGGER `invoice_revisions_issued_invoice_insert_guard`
 BEFORE INSERT ON `invoice_revisions` FOR EACH ROW
 BEGIN
     IF EXISTS (SELECT 1 FROM `invoices` WHERE `id` = NEW.`invoice_id` AND `status` = 'issued') THEN
