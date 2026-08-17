@@ -19,7 +19,7 @@ class PublicInvoiceController extends Controller
     {
         $link = $this->link($request);
         $invoice = $link->invoice;
-        $document = $invoice->documents->first();
+        $document = $invoice->currentPdfDocument();
         $hasPdf = $document instanceof InvoiceDocument
             && $document->storage_disk === InvoicePdfGenerator::DISK
             && Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path);
@@ -34,7 +34,7 @@ class PublicInvoiceController extends Controller
 
     public function pdf(Request $request): StreamedResponse
     {
-        $document = $this->link($request)->invoice->documents->first();
+        $document = $this->link($request)->invoice->currentPdfDocument();
         abort_unless($document instanceof InvoiceDocument
             && $document->storage_disk === InvoicePdfGenerator::DISK
             && Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path), 404);

@@ -21,12 +21,15 @@ class InvoiceIssuedMail extends Mailable
         public readonly string $bodyText,
         public readonly string $bodyHtml,
         private readonly InvoiceDocument $document,
+        private readonly string $senderName,
         private readonly ?string $replyToAddress = null,
+        private readonly bool $attachPdf = true,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
+            from: new Address((string) config('mail.from.address'), $this->senderName),
             replyTo: $this->replyToAddress ? [new Address($this->replyToAddress)] : [],
             subject: $this->mailSubject,
         );
@@ -39,6 +42,10 @@ class InvoiceIssuedMail extends Mailable
 
     public function attachments(): array
     {
+        if (! $this->attachPdf) {
+            return [];
+        }
+
         return [
             Attachment::fromStorageDisk($this->document->storage_disk, $this->document->storage_path)
                 ->as($this->document->original_filename)

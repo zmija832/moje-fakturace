@@ -11,6 +11,7 @@ use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoiceEmailDelivery;
+use App\Models\Business\InvoiceEmailSetting;
 use App\Models\Business\InvoicePayment;
 use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\InvoiceRevision;
@@ -27,6 +28,7 @@ class BusinessAuditSanitizer
     {
         return match ($type) {
             BusinessAuditableType::CompanySettings => $this->companySettings($this->expect($model, CompanySetting::class)),
+            BusinessAuditableType::InvoiceEmailSettings => $this->invoiceEmailSettings($this->expect($model, InvoiceEmailSetting::class)),
             BusinessAuditableType::BankAccount => $this->bankAccount($this->expect($model, BankAccount::class)),
             BusinessAuditableType::Client => $this->client($this->expect($model, Client::class)),
             BusinessAuditableType::DocumentSequence => $this->documentSequence($this->expect($model, DocumentSequence::class)),
@@ -53,6 +55,10 @@ class BusinessAuditSanitizer
                 'country_code', 'email', 'phone', 'website', 'default_currency',
                 'document_locale', 'timezone', 'is_vat_payer', 'vat_registered_on',
                 'default_due_days', 'default_payment_method', 'invoice_intro', 'invoice_outro',
+            ],
+            BusinessAuditableType::InvoiceEmailSettings => [
+                'sender_name', 'reply_to', 'subject_template', 'body_template', 'signature',
+                'attach_pdf', 'include_web_invoice',
             ],
             BusinessAuditableType::BankAccount => [
                 'name', 'domestic_prefix', 'domestic_account_number', 'bank_code', 'iban',
@@ -180,6 +186,20 @@ class BusinessAuditSanitizer
             'default_due_days' => $setting->default_due_days,
             'default_payment_method' => $this->scalar($setting->default_payment_method),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function invoiceEmailSettings(InvoiceEmailSetting $setting): array
+    {
+        return [
+            'sender_name' => $setting->sender_name,
+            'reply_to_configured' => filter_var($setting->reply_to, FILTER_VALIDATE_EMAIL) !== false,
+            'subject_template' => $setting->subject_template,
+            'body_template' => $setting->body_template,
+            'signature' => $setting->signature,
+            'attach_pdf' => (bool) $setting->attach_pdf,
+            'include_web_invoice' => (bool) $setting->include_web_invoice,
+        ];
     }
 
     /** @return array<string, mixed> */

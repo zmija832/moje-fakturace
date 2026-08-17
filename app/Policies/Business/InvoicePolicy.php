@@ -40,11 +40,21 @@ class InvoicePolicy extends BusinessPolicy
             && ($invoice === null || ($invoice->status === InvoiceStatus::Draft && $invoice->archived_at === null));
     }
 
-    public function archive(User $user, Invoice $invoice): bool
+    public function reviseIssued(User $user, Invoice $invoice): bool
     {
         return $this->canManage($user)
-            && $invoice->status === InvoiceStatus::Draft
+            && $invoice->status === InvoiceStatus::Issued
             && $invoice->archived_at === null;
+    }
+
+    public function archive(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user) && $invoice->archived_at === null;
+    }
+
+    public function restore(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user) && $invoice->archived_at !== null;
     }
 
     public function print(User $user, Invoice $invoice): bool
@@ -59,12 +69,16 @@ class InvoicePolicy extends BusinessPolicy
 
     public function generatePdf(User $user, Invoice $invoice): bool
     {
-        return $this->canManage($user) && $invoice->status === InvoiceStatus::Issued;
+        return $this->canManage($user)
+            && $invoice->status === InvoiceStatus::Issued
+            && $invoice->archived_at === null;
     }
 
     public function sendEmail(User $user, Invoice $invoice): bool
     {
-        return $this->canManage($user) && $invoice->status === InvoiceStatus::Issued;
+        return $this->canManage($user)
+            && $invoice->status === InvoiceStatus::Issued
+            && $invoice->archived_at === null;
     }
 
     public function viewPayments(User $user, ?Invoice $invoice = null): bool
@@ -76,7 +90,7 @@ class InvoicePolicy extends BusinessPolicy
     public function recordPayment(User $user, ?Invoice $invoice = null): bool
     {
         return $this->canManage($user)
-            && ($invoice === null || $invoice->status === InvoiceStatus::Issued);
+            && ($invoice === null || ($invoice->status === InvoiceStatus::Issued && $invoice->archived_at === null));
     }
 
     public function reversePayment(User $user, ?Invoice $invoice = null): bool
@@ -87,6 +101,6 @@ class InvoicePolicy extends BusinessPolicy
     public function managePublicLink(User $user, ?Invoice $invoice = null): bool
     {
         return $this->canManage($user)
-            && ($invoice === null || $invoice->status === InvoiceStatus::Issued);
+            && ($invoice === null || ($invoice->status === InvoiceStatus::Issued && $invoice->archived_at === null));
     }
 }

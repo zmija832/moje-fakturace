@@ -10,11 +10,12 @@
     @else
         <div class="mt-4 overflow-x-auto">
             <table class="w-full text-left text-sm">
-                <thead><tr><th class="p-2">Vygenerováno</th><th class="p-2">Soubor</th><th class="p-2">Velikost</th><th class="p-2">Šablona</th><th class="p-2"></th></tr></thead>
+                <thead><tr><th class="p-2">Vygenerováno</th><th class="p-2">Revize</th><th class="p-2">Soubor</th><th class="p-2">Velikost</th><th class="p-2">Šablona</th><th class="p-2"></th></tr></thead>
                 <tbody>
                     @foreach($invoice->documents as $document)
                         <tr class="border-t border-slate-200">
                             <td class="p-2">{{ $document->generated_at->format('j. n. Y H:i') }}</td>
+                            <td class="p-2">{{ $document->revision?->revision_number }}</td>
                             <td class="p-2">{{ $document->original_filename }}</td>
                             <td class="p-2">{{ intdiv($document->size_bytes + 1023, 1024) }} kB</td>
                             <td class="p-2">{{ $document->template_version }}</td>

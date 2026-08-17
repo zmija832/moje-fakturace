@@ -43,7 +43,7 @@ class InvoiceDeliveryMigrationTest extends TestCase
         $this->assertNotEmpty($foreignKeys);
         foreach ($foreignKeys as $foreignKey) {
             $this->assertSame(config('database.connections.business_1.database'), $foreignKey->referenced_table_schema);
-            $this->assertContains($foreignKey->referenced_table_name, ['invoices', 'invoice_documents']);
+            $this->assertContains($foreignKey->referenced_table_name, ['invoices', 'invoice_documents', 'invoice_revisions']);
         }
         foreach (BusinessConnection::cases() as $connection) {
             $connectionName = $connection->connectionName();
@@ -66,6 +66,7 @@ class InvoiceDeliveryMigrationTest extends TestCase
         $document = new InvoiceDocument;
         $document->forceFill([
             'invoice_id' => $invoice->id,
+            'invoice_revision_id' => $invoice->issued_revision_id,
             'document_type' => 'invoice_pdf',
             'storage_disk' => 'invoice_documents',
             'storage_path' => 'test/immutable.pdf',
@@ -81,6 +82,7 @@ class InvoiceDeliveryMigrationTest extends TestCase
             $duplicate = new InvoiceDocument;
             $duplicate->forceFill([
                 'invoice_id' => $invoice->id,
+                'invoice_revision_id' => $invoice->issued_revision_id,
                 'document_type' => 'invoice_pdf',
                 'storage_disk' => 'invoice_documents',
                 'storage_path' => 'test/duplicate.pdf',

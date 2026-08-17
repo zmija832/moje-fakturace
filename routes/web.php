@@ -14,6 +14,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
+use App\Http\Controllers\InvoiceEmailSettingController;
 use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\InvoicePublicLinkController;
 use App\Http\Controllers\PublicInvoiceController;
@@ -58,6 +59,11 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
     Route::put('/nastaveni/heslo', [PasswordController::class, 'update'])->name('password.update');
 
     Route::middleware('business.required')->group(function (): void {
+        Route::get('/nastaveni/emaily', [InvoiceEmailSettingController::class, 'edit'])
+            ->name('invoice-email-settings.edit');
+        Route::put('/nastaveni/emaily', [InvoiceEmailSettingController::class, 'update'])
+            ->name('invoice-email-settings.update');
+
         Route::get('/nastaveni/subjekt', [CompanySettingsController::class, 'edit'])
             ->name('company-settings.edit');
         Route::put('/nastaveni/subjekt', [CompanySettingsController::class, 'update'])
@@ -154,6 +160,14 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.email.form');
         Route::post('/faktury/{uuid}/odeslat', [InvoiceDeliveryController::class, 'send'])
             ->whereUuid('uuid')->name('invoices.email.send');
+        Route::get('/faktury/{uuid}/admin-uprava/varovani', [InvoiceController::class, 'issuedEditWarning'])
+            ->whereUuid('uuid')->name('invoices.issued-edit.warning');
+        Route::post('/faktury/{uuid}/admin-uprava/potvrdit', [InvoiceController::class, 'confirmIssuedEdit'])
+            ->whereUuid('uuid')->name('invoices.issued-edit.confirm');
+        Route::get('/faktury/{uuid}/admin-uprava', [InvoiceController::class, 'issuedEdit'])
+            ->whereUuid('uuid')->name('invoices.issued-edit');
+        Route::put('/faktury/{uuid}/admin-uprava', [InvoiceController::class, 'updateIssued'])
+            ->whereUuid('uuid')->name('invoices.issued-update');
         Route::get('/faktury/{uuid}/upravit', [InvoiceController::class, 'edit'])
             ->whereUuid('uuid')->name('invoices.edit');
         Route::put('/faktury/{uuid}', [InvoiceController::class, 'update'])
@@ -164,6 +178,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.duplicate');
         Route::patch('/faktury/{uuid}/archivovat', [InvoiceController::class, 'archive'])
             ->whereUuid('uuid')->name('invoices.archive');
+        Route::patch('/faktury/{uuid}/obnovit', [InvoiceController::class, 'restore'])
+            ->whereUuid('uuid')->name('invoices.restore');
         Route::post('/faktury/{uuid}/webfaktura', [InvoicePublicLinkController::class, 'store'])
             ->whereUuid('uuid')->name('invoices.public-link.store');
         Route::post('/faktury/{uuid}/webfaktura/obnovit', [InvoicePublicLinkController::class, 'regenerate'])

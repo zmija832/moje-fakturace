@@ -50,7 +50,7 @@ class InvoiceArchiveTest extends TestCase
 
         $detailUrl = route('invoices.show', $draft->uuid);
         $this->get(route('invoices.index'))->assertOk()->assertDontSee($detailUrl, false);
-        $this->get(route('invoices.index', ['status' => 'archived']))->assertOk()
+        $this->get(route('invoices.index', ['visibility' => 'archived']))->assertOk()
             ->assertSee($detailUrl, false)->assertSee($client->display_name)->assertSee('Archivovaný koncept');
         $this->get(route('invoices.show', $draft->uuid))->assertOk()
             ->assertSee('Archivovaný koncept')->assertDontSee('Upravit návrh')->assertDontSee('Vystavit fakturu');
@@ -58,7 +58,7 @@ class InvoiceArchiveTest extends TestCase
         $this->patch(route('invoices.archive', $draft->uuid))->assertForbidden();
     }
 
-    public function test_issued_viewer_and_other_tenant_cannot_archive(): void
+    public function test_issued_can_be_archived_and_restored_but_viewer_and_other_tenant_cannot_change_visibility(): void
     {
         [$admin, $business] = $this->deliveryMembership();
         app(ActiveBusinessContext::class)->set($business);
@@ -66,12 +66,25 @@ class InvoiceArchiveTest extends TestCase
         $issued = app(InvoiceIssuer::class)->issue($draft->uuid, 1, (string) Str::uuid());
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
-        $this->patch(route('invoices.archive', $issued->uuid))->assertForbidden();
+        $this->patch(route('invoices.archive', $issued->uuid))->assertRedirect(route('invoices.index'));
+        $this->assertNotNull(DB::connection('business_1')->table('invoices')->where('id', $issued->id)->value('archived_at'));
+        $this->get(route('invoices.index'))->assertOk()->assertDontSee(route('invoices.show', $issued->uuid), false);
+        $this->get(route('invoices.index', ['visibility' => 'archived']))->assertOk()
+            ->assertSee(route('invoices.show', $issued->uuid), false)->assertSee('Archivovaná');
+        $this->get(route('invoices.index', ['visibility' => 'all']))->assertOk()
+            ->assertSee(route('invoices.show', $issued->uuid), false);
+        $this->get(route('invoices.show', $issued->uuid))->assertOk()->assertSee('Obnovit')
+            ->assertDontSee('Upravit vystavenou')->assertDontSee('Odeslat klientovi')->assertDontSee('Zaznamenat úhradu');
+        $this->patch(route('invoices.restore', $issued->uuid))->assertRedirect(route('invoices.show', $issued->uuid));
         $this->assertNull(DB::connection('business_1')->table('invoices')->where('id', $issued->id)->value('archived_at'));
+        $this->assertSame('issued', DB::connection('business_1')->table('invoices')->where('id', $issued->id)->value('status'));
+        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.archived')->count());
+        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.restored')->count());
 
         [$viewer] = $this->deliveryMembership('viewer', BusinessConnection::Business1, $business);
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business));
         $this->patch(route('invoices.archive', $issued->uuid))->assertForbidden();
+        $this->patch(route('invoices.restore', $issued->uuid))->assertForbidden();
 
         [, $otherBusiness] = $this->deliveryMembership(connection: BusinessConnection::Business2);
         app(ActiveBusinessContext::class)->set($otherBusiness);

@@ -23,11 +23,11 @@
     </section>
 
     @if($invoice->archived_at !== null)
-        <div class="mb-6 rounded-xl border border-slate-300 bg-slate-100 p-4 text-sm text-slate-800"><strong>Archivovaný koncept.</strong> Je skrytý z běžného seznamu; jeho revize a auditní historie zůstávají zachované a nelze jej dále měnit ani vystavit.</div>
+        <div class="mb-6 rounded-xl border border-slate-300 bg-slate-100 p-4 text-sm text-slate-800"><strong>{{ $isDraft ? 'Archivovaný koncept.' : 'Archivovaná vystavená faktura.' }}</strong> Doklad je skrytý z aktivního seznamu; číslo, revize, PDF a auditní historie zůstávají zachované.</div>
     @elseif($isDraft)
         <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Koncept zatím nemá číslo dokladu.</strong> Před vystavením jej lze upravit; každá skutečná změna vytvoří novou revizi.</div>
     @else
-        <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Vystavený doklad je neměnný.</strong> Jeho číslo, revizi, snapshoty ani částky nelze změnit.</div>
+        <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Historie vystaveného dokladu je neměnná.</strong> Původní revize a snapshoty nelze přepsat; případná admin oprava vytvoří novou immutable revizi při zachování čísla faktury.</div>
     @endif
     <x-invoices.detail :invoice="$invoice" :revision="$revision" />
     @if(!$isDraft)

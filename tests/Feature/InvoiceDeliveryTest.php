@@ -242,8 +242,8 @@ class InvoiceDeliveryTest extends TestCase
         $this->assertSame(1, InvoiceEmailDelivery::query()->count());
         $this->assertStringContainsString($invoice->document_number, $delivery->subject);
         $this->assertStringContainsString('PDF faktury', $delivery->body_text);
-        $this->assertStringNotContainsString($publicUrl, $delivery->body_text);
-        $this->assertStringNotContainsString($publicUrl, $delivery->body_html);
+        $this->assertStringContainsString($publicUrl, $delivery->body_text);
+        $this->assertStringContainsString($publicUrl, $delivery->body_html);
         Mail::assertSent(InvoiceIssuedMail::class, function (InvoiceIssuedMail $mail) use ($delivery, $publicUrl): bool {
             $document = $delivery->document;
             $expected = Attachment::fromStorageDisk($document->storage_disk, $document->storage_path)

@@ -25,7 +25,7 @@ class InvoiceReader
             $revisionRelation.'.supplierSnapshot', $revisionRelation.'.customerSnapshot',
             $revisionRelation.'.bankAccountSnapshot', $revisionRelation.'.vatSnapshots',
             $revisionRelation.'.items.vatSnapshot', $revisionRelation.'.vatSummaries',
-            'documents', 'emailDeliveries.document', 'payments.originalPayment', 'payments.reversals',
+            'documents.revision', 'emailDeliveries.document', 'payments.originalPayment', 'payments.reversals',
         ]);
     }
 
@@ -38,18 +38,19 @@ class InvoiceReader
             'currentRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
             'issuedRevision:id,invoice_id,revision_number,grand_total',
             'issuedRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
-            'documents:id,invoice_id,storage_path,storage_disk,original_filename',
+            'documents:id,uuid,invoice_id,invoice_revision_id,storage_path,storage_disk,original_filename,mime_type,generated_at',
         ])->select('invoices.*')->selectRaw(
             "(SELECT COALESCE(SUM(CASE WHEN invoice_payments.payment_type = 'payment' THEN invoice_payments.amount ELSE -invoice_payments.amount END), 0) FROM invoice_payments WHERE invoice_payments.invoice_id = invoices.id) AS payment_paid_total",
         );
 
-        if (($filters['status'] ?? null) === 'archived') {
+        $visibility = $filters['visibility'] ?? 'active';
+        if ($visibility === 'archived') {
             $query->whereNotNull('archived_at');
-        } else {
+        } elseif ($visibility !== 'all') {
             $query->whereNull('archived_at');
-            if (in_array($filters['status'] ?? null, [InvoiceStatus::Draft->value, InvoiceStatus::Issued->value], true)) {
-                $query->where('status', $filters['status']);
-            }
+        }
+        if (in_array($filters['status'] ?? null, [InvoiceStatus::Draft->value, InvoiceStatus::Issued->value], true)) {
+            $query->where('status', $filters['status']);
         }
         if (in_array($filters['currency'] ?? null, ['CZK', 'EUR'], true)) {
             $query->where('currency', $filters['currency']);

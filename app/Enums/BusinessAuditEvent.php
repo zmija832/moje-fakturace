@@ -6,6 +6,8 @@ enum BusinessAuditEvent: string
 {
     case CompanySettingsCreated = 'company_settings.created';
     case CompanySettingsUpdated = 'company_settings.updated';
+    case InvoiceEmailSettingsCreated = 'invoice_email_settings.created';
+    case InvoiceEmailSettingsUpdated = 'invoice_email_settings.updated';
     case BankAccountCreated = 'bank_account.created';
     case BankAccountUpdated = 'bank_account.updated';
     case BankAccountActivated = 'bank_account.activated';
@@ -38,6 +40,9 @@ enum BusinessAuditEvent: string
     case InvoiceDraftRevisionCreated = 'invoice.draft_revision_created';
     case InvoiceDraftUpdateConflict = 'invoice.draft_update_conflict';
     case InvoiceDraftArchived = 'invoice.draft_archived';
+    case InvoiceArchived = 'invoice.archived';
+    case InvoiceRestored = 'invoice.restored';
+    case InvoiceIssuedRevisionCreated = 'invoice.issued_revision_created';
     case InvoiceIssued = 'invoice.issued';
     case InvoiceIssueConflict = 'invoice.issue_conflict';
     case InvoicePdfGenerated = 'invoice.pdf_generated';
@@ -58,6 +63,8 @@ enum BusinessAuditEvent: string
         return match ($this) {
             self::CompanySettingsCreated => 'Vytvořeno nastavení subjektu',
             self::CompanySettingsUpdated => 'Upraveno nastavení subjektu',
+            self::InvoiceEmailSettingsCreated => 'Vytvořeno nastavení e-mailů',
+            self::InvoiceEmailSettingsUpdated => 'Upraveno nastavení e-mailů',
             self::BankAccountCreated => 'Vytvořen bankovní účet',
             self::BankAccountUpdated => 'Upraven bankovní účet',
             self::BankAccountActivated => 'Aktivován bankovní účet',
@@ -90,6 +97,9 @@ enum BusinessAuditEvent: string
             self::InvoiceDraftRevisionCreated => 'Vytvořena revize návrhu faktury',
             self::InvoiceDraftUpdateConflict => 'Konflikt při úpravě návrhu faktury',
             self::InvoiceDraftArchived => 'Archivován koncept faktury',
+            self::InvoiceArchived => 'Archivována faktura',
+            self::InvoiceRestored => 'Obnovena faktura',
+            self::InvoiceIssuedRevisionCreated => 'Vytvořena admin revize vystavené faktury',
             self::InvoiceIssued => 'Vystavena faktura',
             self::InvoiceIssueConflict => 'Konflikt při vystavení faktury',
             self::InvoicePdfGenerated => 'Vygenerováno PDF faktury',

@@ -20,6 +20,11 @@ class InvoiceDocument extends BusinessModel
         static::deleting(fn (): never => throw new LogicException('Dokument faktury nelze smazat.'));
     }
 
+    public function revision(): BelongsTo
+    {
+        return $this->belongsTo(InvoiceRevision::class, 'invoice_revision_id');
+    }
+
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);

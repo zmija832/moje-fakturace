@@ -37,7 +37,7 @@ class InvoiceDeliveryController extends Controller
         $invoice = $reader->find($uuid);
         Gate::authorize('downloadPdf', $invoice);
         $document = $documentUuid === null
-            ? $invoice->documents->first()
+            ? $invoice->currentPdfDocument()
             : $invoice->documents->firstWhere('uuid', $documentUuid);
         if (! $document instanceof InvoiceDocument || $document->storage_disk !== InvoicePdfGenerator::DISK || ! Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path)) {
             abort(404);

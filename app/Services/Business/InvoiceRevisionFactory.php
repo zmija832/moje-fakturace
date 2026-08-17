@@ -110,6 +110,24 @@ class InvoiceRevisionFactory
             throw InvoiceIssuedImmutable::mutationDenied();
         }
 
+        return $this->persistPrepared($invoice, $revisionNumber, $prepared);
+    }
+
+    /** @param array<string, mixed> $prepared */
+    public function persistIssuedCorrection(Invoice $invoice, int $revisionNumber, array $prepared): InvoiceRevision
+    {
+        $this->requireBusinessTransaction();
+
+        if ($invoice->status !== InvoiceStatus::Issued) {
+            throw new LogicException('Admin revizi lze vytvořit pouze pro vystavenou fakturu.');
+        }
+
+        return $this->persistPrepared($invoice, $revisionNumber, $prepared);
+    }
+
+    /** @param array<string, mixed> $prepared */
+    private function persistPrepared(Invoice $invoice, int $revisionNumber, array $prepared): InvoiceRevision
+    {
         $revision = new InvoiceRevision;
         $revision->forceFill([
             'invoice_id' => $invoice->id,

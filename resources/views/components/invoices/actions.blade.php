@@ -8,6 +8,9 @@
 @endphp
 
 <div class="flex flex-wrap items-start gap-2" aria-label="Akce faktury">
+    @can('restore', $invoice)
+        <form method="POST" action="{{ route('invoices.restore', $invoice->uuid) }}">@csrf @method('PATCH')<button class="button-primary" type="submit">Obnovit</button></form>
+    @endcan
     @if($isDraft)
         @can('update', $invoice)
             <a class="button-secondary" href="{{ route('invoices.edit', $invoice->uuid) }}">Upravit návrh</a>
@@ -55,6 +58,10 @@
         @endcan
         <a class="button-secondary" href="#invoice-audit-history">Auditní historie</a>
     @else
+        @can('reviseIssued', $invoice)
+            <a class="button-secondary border-red-300 text-red-800" href="{{ route('invoices.issued-edit.warning', $invoice->uuid) }}">Upravit vystavenou</a>
+        @endcan
+
         @can('sendEmail', $invoice)
             <a class="button-primary" href="{{ route('invoices.email.form', $invoice->uuid) }}">Odeslat klientovi</a>
         @endcan
@@ -70,7 +77,7 @@
         @endcan
 
         @can('downloadPdf', $invoice)
-            @if($invoice->documents->isNotEmpty())
+            @if($invoice->currentPdfDocument() !== null)
                 <a class="button-secondary" href="{{ route('invoices.pdf.download', $invoice->uuid) }}">Stáhnout PDF</a>
             @endif
         @endcan
@@ -79,8 +86,8 @@
             <form method="POST" action="{{ route('invoices.pdf.generate', $invoice->uuid) }}">
                 @csrf
                 <input type="hidden" name="generation_correlation_uuid" value="{{ $generationCorrelationUuid }}">
-                <input type="hidden" name="force_regenerate" value="{{ $invoice->documents->isNotEmpty() ? '1' : '0' }}">
-                <button class="button-secondary" type="submit" title="Vytvoří nový neměnný PDF soubor ze stejné vystavené revize.">{{ $invoice->documents->isEmpty() ? 'Vygenerovat PDF' : 'Přegenerovat PDF' }}</button>
+                <input type="hidden" name="force_regenerate" value="{{ $invoice->currentPdfDocument() !== null ? '1' : '0' }}">
+                <button class="button-secondary" type="submit" title="Vytvoří nový neměnný PDF soubor ze stejné vystavené revize.">{{ $invoice->currentPdfDocument() === null ? 'Vygenerovat PDF' : 'Přegenerovat PDF' }}</button>
             </form>
         @endcan
 
@@ -93,6 +100,13 @@
 
         @can('managePublicLink', $invoice)
             <a class="button-secondary" href="#invoice-public-link">Webfaktura</a>
+        @endcan
+
+        @can('archive', $invoice)
+            <form method="POST" action="{{ route('invoices.archive', $invoice->uuid) }}" onsubmit="return confirm('Vystavená faktura se pouze skryje ze seznamu; číslo, revize, PDF i audit zůstanou zachované. Pokračovat?')">
+                @csrf @method('PATCH')
+                <button class="button-secondary" type="submit">Archivovat ze seznamu</button>
+            </form>
         @endcan
 
         <a class="button-secondary" href="#invoice-delivery-history">Historie odeslání</a>

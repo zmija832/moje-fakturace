@@ -86,6 +86,11 @@ class Invoice extends BusinessModel
         return $this->hasMany(InvoiceDocument::class)->latest('generated_at')->latest('id');
     }
 
+    public function currentPdfDocument(): ?InvoiceDocument
+    {
+        return $this->documents->firstWhere('invoice_revision_id', $this->issued_revision_id);
+    }
+
     public function emailDeliveries(): HasMany
     {
         return $this->hasMany(InvoiceEmailDelivery::class)->latest('attempted_at')->latest('id');

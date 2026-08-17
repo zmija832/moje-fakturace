@@ -5,6 +5,7 @@ namespace App\Enums;
 enum BusinessAuditableType: string
 {
     case CompanySettings = 'company_settings';
+    case InvoiceEmailSettings = 'invoice_email_settings';
     case BankAccount = 'bank_account';
     case BankAccountDefault = 'bank_account_default';
     case Client = 'client';
@@ -23,6 +24,7 @@ enum BusinessAuditableType: string
     {
         return match ($this) {
             self::CompanySettings => 'Nastavení subjektu',
+            self::InvoiceEmailSettings => 'Nastavení e-mailů',
             self::BankAccount => 'Bankovní účet',
             self::BankAccountDefault => 'Výchozí bankovní účet',
             self::Client => 'Klient',

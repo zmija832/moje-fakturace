@@ -233,7 +233,7 @@ class InvoicesHttpTest extends TestCase
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
             ->assertSee($invoice->document_number)
             ->assertSee('Odeslat klientovi')->assertSee('Zaznamenat úhradu')->assertSee('Duplikovat fakturu')
-            ->assertSee('Tiskový náhled')->assertSee('Vygenerovat PDF')->assertSee('Detail odběratele')
+            ->assertSee('Tiskový náhled')->assertSee('Stáhnout PDF')->assertSee('Detail odběratele')
             ->assertSee('aria-label="Akce faktury"', false)->assertDontSee('Další akce')
             ->assertDontSee('Upravit návrh');
     }
@@ -455,7 +455,7 @@ class InvoicesHttpTest extends TestCase
         CompanySetting::query()->update(['legal_name' => 'Změněná živá firma']);
         app(ActiveBusinessContext::class)->clear();
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee($issued->document_number)
-            ->assertSee('Historický klient')->assertSee('Vystavený doklad je neměnný')
+            ->assertSee('Historický klient')->assertSee('Historie vystaveného dokladu je neměnná')
             ->assertDontSee('Změněný živý klient')->assertDontSee('Změněný živý účet')
             ->assertDontSee('Změněná živá sazba')->assertDontSee('Změněná živá firma')
             ->assertDontSee('Upravit návrh')->assertDontSee('document_number_allocation_id');
@@ -464,7 +464,7 @@ class InvoicesHttpTest extends TestCase
 
     public function test_routes_options_policy_and_html_security(): void
     {
-        foreach (['invoices.index', 'invoices.create', 'invoices.store', 'invoices.preview', 'invoices.show', 'invoices.edit', 'invoices.update', 'invoices.issue', 'invoices.duplicate', 'invoices.archive'] as $name) {
+        foreach (['invoices.index', 'invoices.create', 'invoices.store', 'invoices.preview', 'invoices.show', 'invoices.edit', 'invoices.update', 'invoices.issue', 'invoices.duplicate', 'invoices.archive', 'invoices.restore', 'invoices.issued-edit.warning', 'invoices.issued-edit.confirm', 'invoices.issued-edit', 'invoices.issued-update'] as $name) {
             $route = app('router')->getRoutes()->getByName($name);
             $middleware = $route->gatherMiddleware();
             $this->assertContains('web', $middleware);

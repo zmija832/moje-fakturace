@@ -30,10 +30,9 @@ class InvoiceMailer
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly InvoiceReader $reader,
         private readonly InvoicePdfGenerator $pdfGenerator,
-        private readonly InvoiceDocumentViewModelFactory $viewModels,
+        private readonly InvoiceEmailTemplateRenderer $templateRenderer,
         private readonly BusinessAuditSanitizer $auditSanitizer,
         private readonly BusinessAuditWriter $auditWriter,
-        private readonly InvoicePublicLinkService $publicLinks,
         private readonly MailConfigurationInspector $mailConfiguration,
     ) {}
 
@@ -61,20 +60,19 @@ class InvoiceMailer
         if (! Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path)) {
             throw InvoiceDocumentNotFound::create();
         }
-        $model = $this->viewModels->make($invoice)->toArray();
+        $rendered = $this->templateRenderer->render($invoice);
         $recipientEmail = trim((string) ($input['recipient_email'] ?? $invoice->issuedRevision->customerSnapshot->email));
         if ($recipientEmail === '' || filter_var($recipientEmail, FILTER_VALIDATE_EMAIL) === false) {
             throw InvoiceEmailRecipientMissing::create();
         }
         $recipientName = trim((string) ($input['recipient_name'] ?? $invoice->issuedRevision->customerSnapshot->display_name));
-        $subject = trim((string) ($input['subject'] ?? ''));
-        $subject = $subject !== '' ? $subject : 'Faktura '.$invoice->document_number.' od '.$model['supplier']['name'];
+        $subjectOverride = trim((string) ($input['subject'] ?? ''));
+        $subject = $subjectOverride !== '' ? $subjectOverride : $rendered['subject'];
         $message = trim((string) ($input['message'] ?? ''));
-        $publicUrl = $this->publicLinks->activeUrlForInvoice($invoice);
-        [$bodyText, $bodyHtml] = $this->bodies($model, $recipientName, $message, $publicUrl);
-        [$storedBodyText, $storedBodyHtml] = $this->bodies($model, $recipientName, $message, null);
+        $bodyText = $rendered['body_text'].($message === '' ? '' : "\n\n".$message);
+        $bodyHtml = $rendered['body_html'].($message === '' ? '' : '<p>'.nl2br(e($message)).'</p>');
 
-        [$delivery, $created] = DB::connection($connection)->transaction(function () use ($invoice, $document, $correlationUuid, $recipientEmail, $recipientName, $subject, $storedBodyText, $storedBodyHtml): array {
+        [$delivery, $created] = DB::connection($connection)->transaction(function () use ($invoice, $document, $correlationUuid, $recipientEmail, $recipientName, $subject, $bodyText, $bodyHtml): array {
             $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== InvoiceStatus::Issued) {
                 throw InvoiceNotIssuedForDelivery::create();
@@ -94,8 +92,8 @@ class InvoiceMailer
                 'recipient_email' => $recipientEmail,
                 'recipient_name' => $recipientName !== '' ? $recipientName : null,
                 'subject' => $subject,
-                'body_text' => $storedBodyText,
-                'body_html' => $storedBodyHtml,
+                'body_text' => $bodyText,
+                'body_html' => $bodyHtml,
                 'status' => InvoiceEmailDeliveryStatus::Pending->value,
                 'send_correlation_uuid' => $correlationUuid,
                 'attempted_at' => now(),
@@ -131,7 +129,9 @@ class InvoiceMailer
                     $bodyText,
                     $bodyHtml,
                     $document,
-                    filter_var($model['supplier']['email'], FILTER_VALIDATE_EMAIL) ? $model['supplier']['email'] : null,
+                    $rendered['sender_name'],
+                    $rendered['reply_to'],
+                    $rendered['attach_pdf'],
                 ));
 
             return DB::connection($connection)->transaction(function () use ($delivery, $sentMessage): InvoiceEmailDelivery {
@@ -187,38 +187,6 @@ class InvoiceMailer
             }, 3);
             throw InvoiceEmailSendFailed::create();
         }
-    }
-
-    private function bodies(array $model, string $recipientName, string $message, ?string $publicUrl): array
-    {
-        $greeting = $recipientName !== '' ? 'Dobrý den, '.$recipientName.',' : 'Dobrý den,';
-        $lines = [$greeting, '', 'zasíláme fakturu '.$model['document_number'].' od '.$model['supplier']['name'].'.', 'Částka: '.$model['totals']['grand_total'].' '.$model['currency'], 'Splatnost: '.$model['due_on']];
-        if ($message !== '') {
-            $lines[] = '';
-            $lines[] = $message;
-        }
-        if ($publicUrl !== null) {
-            $lines[] = '';
-            $lines[] = 'Webfaktura: '.$publicUrl;
-        }
-        $lines[] = '';
-        $lines[] = 'PDF faktury je přiloženo k této zprávě.';
-        $lines[] = '';
-        $lines[] = 'S pozdravem';
-        $lines[] = $model['supplier']['name'];
-        $text = implode("\n", $lines);
-
-        $html = nl2br(e($text));
-        if ($publicUrl !== null) {
-            $safeUrl = e($publicUrl);
-            $html = str_replace(
-                'Webfaktura: '.$safeUrl,
-                'Webfaktura: <a href="'.$safeUrl.'">Zobrazit fakturu online</a>',
-                $html,
-            );
-        }
-
-        return [$text, '<div style="font-family:Arial,sans-serif;line-height:1.5">'.$html.'</div>'];
     }
 
     private function actor(): ?string

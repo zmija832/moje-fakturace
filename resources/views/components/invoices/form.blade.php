@@ -1,4 +1,4 @@
-@props(['action','method','submitLabel','clients','clientsTruncated'=>false,'bankAccounts','vatRates','currencies','paymentMethods','discountTypes','defaultBankAccounts','defaultVatRateUuid'=>null,'isVatPayer'=>false,'defaults'=>[],'invoice'=>null,'revision'=>null,'correlationUuid'=>null,'allowInlineClientCreation'=>false,'clientTypes'=>[],'countries'=>[],'showCreateActions'=>false])
+@props(['action','method','submitLabel','clients','clientsTruncated'=>false,'bankAccounts','vatRates','currencies','paymentMethods','discountTypes','defaultBankAccounts','defaultVatRateUuid'=>null,'isVatPayer'=>false,'defaults'=>[],'invoice'=>null,'revision'=>null,'correlationUuid'=>null,'allowInlineClientCreation'=>false,'clientTypes'=>[],'countries'=>[],'showCreateActions'=>false,'issuedEdit'=>false])
 @php
     $values = $revision ? ['customer_uuid'=>$revision->customerSnapshot->source_client_uuid,'bank_account_uuid'=>$revision->bankAccountSnapshot?->source_bank_account_uuid,'currency'=>$revision->currency,'issued_on'=>$revision->issued_on->format('Y-m-d'),'taxable_supply_on'=>$revision->taxable_supply_on->format('Y-m-d'),'due_on'=>$revision->due_on->format('Y-m-d'),'payment_method'=>$revision->payment_method->value,'variable_symbol'=>$revision->variable_symbol,'note'=>$revision->note,'invoice_discount_type'=>$revision->invoice_discount_type->value,'invoice_discount_value'=>$revision->invoice_discount_value] : $defaults;
     $storedItems = $revision?->items->map(fn($item)=>['description'=>$item->description,'quantity'=>$item->quantity,'unit'=>$item->unit,'unit_price'=>$item->unit_price,'discount_type'=>$item->discount_type->value,'discount_value'=>$item->discount_value,...$isVatPayer ? ['vat_rate_uuid'=>$item->vatSnapshot->source_vat_rate_uuid] : []])->all();
@@ -48,6 +48,7 @@
     @csrf
     @if($method !== 'POST') @method($method) @endif
     @if($revision)<input type="hidden" name="version" value="{{ $invoice->version }}"><input type="hidden" name="correlation_uuid" value="{{ $correlationUuid }}">@endif
+    @if($issuedEdit)<input type="hidden" name="admin_edit_confirmation" value="1">@endif
     <section class="card"><h2 class="mb-5 text-lg font-bold">1. Odběratel a platba</h2><div class="grid gap-5 md:grid-cols-2">
         <div>
             <label for="customer_uuid">Klient *</label>

@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Domain\Invoices\Exceptions\InvoiceDraftIdempotencyConflict;
 use App\Domain\Invoices\Exceptions\InvoiceDraftVersionConflict;
 use App\Domain\Invoices\Exceptions\InvoiceIssuedImmutable;
+use App\Domain\Invoices\Exceptions\InvoiceIssuedRevisionIdempotencyConflict;
+use App\Domain\Invoices\Exceptions\InvoiceIssuedRevisionVersionConflict;
 use App\Domain\Invoices\Exceptions\InvoiceIssueIdempotencyConflict;
 use App\Domain\Invoices\Exceptions\InvoiceIssueSequenceUnavailable;
 use App\Domain\Invoices\Exceptions\InvoiceIssueVersionConflict;
 use App\Domain\Invoices\Exceptions\InvoiceNotDraft;
 use App\Domain\Invoices\Exceptions\InvoiceNotReadyForIssue;
+use App\Domain\Invoices\Exceptions\InvoicePdfGenerationFailed;
 use App\Enums\BusinessAuditableType;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\InvoiceStatus;
@@ -18,6 +21,7 @@ use App\Http\Requests\IssueInvoiceRequest;
 use App\Http\Requests\PreviewInvoiceRequest;
 use App\Http\Requests\StoreInvoiceDraftRequest;
 use App\Http\Requests\UpdateInvoiceDraftRequest;
+use App\Http\Requests\UpdateIssuedInvoiceRequest;
 use App\Models\Business\Invoice;
 use App\Services\Business\BusinessAuditService;
 use App\Services\Business\InvoiceArchiveService;
@@ -26,8 +30,10 @@ use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceDuplicator;
 use App\Services\Business\InvoiceFormOptions;
 use App\Services\Business\InvoiceIssueAvailability;
+use App\Services\Business\InvoiceIssuedRevisionService;
 use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentReader;
+use App\Services\Business\InvoicePdfGenerator;
 use App\Services\Business\InvoicePreviewService;
 use App\Services\Business\InvoicePublicLinkService;
 use App\Services\Business\InvoiceQrPaymentService;
@@ -68,6 +74,7 @@ class InvoiceController extends Controller
         InvoiceDraftService $service,
         InvoiceIssuer $issuer,
         InvoiceIssueAvailability $availability,
+        InvoicePdfGenerator $pdfGenerator,
     ): RedirectResponse {
         $attributes = $request->safe()->except(['submission_action']);
         $invoice = $service->create($attributes);
@@ -78,8 +85,11 @@ class InvoiceController extends Controller
             try {
                 $issued = $issuer->issue($invoice->uuid, $invoice->version, (string) Str::uuid());
 
-                return redirect()->route('invoices.show', $issued->uuid)
+                $pdfError = $this->generatePdfAfterIssuance($issued, $pdfGenerator);
+                $response = redirect()->route('invoices.show', $issued->uuid)
                     ->with('status', 'Faktura byla vytvořena a vystavena pod číslem '.$issued->document_number.'.');
+
+                return $pdfError === null ? $response : $response->with('error', $pdfError);
             } catch (InvoiceNotReadyForIssue $exception) {
                 return redirect()->route('invoices.show', $invoice->uuid)
                     ->with('error', 'Faktura byla uložena jako koncept, ale nebyla vystavena: '.$availability->readinessReason($exception->reason));
@@ -167,6 +177,87 @@ class InvoiceController extends Controller
             ->with('status', 'Byl vytvořen nový koncept podle původní faktury. Před uložením zkontrolujte data a částky.');
     }
 
+    public function issuedEditWarning(string $uuid, InvoiceReader $reader): View
+    {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('reviseIssued', $invoice);
+
+        return view('business.invoices.issued-edit-warning', ['invoice' => $invoice]);
+    }
+
+    public function confirmIssuedEdit(string $uuid, InvoiceReader $reader): RedirectResponse
+    {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('reviseIssued', $invoice);
+        session()->put($this->issuedEditSessionKey($invoice->uuid), now()->addMinutes(30)->timestamp);
+
+        return redirect()->route('invoices.issued-edit', $invoice->uuid);
+    }
+
+    public function issuedEdit(string $uuid, InvoiceReader $reader, InvoiceFormOptions $options): View|RedirectResponse
+    {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('reviseIssued', $invoice);
+        if (! $this->issuedEditConfirmed($invoice->uuid)) {
+            return redirect()->route('invoices.issued-edit.warning', $invoice->uuid);
+        }
+        $revision = $invoice->issuedRevision;
+
+        return view('business.invoices.issued-edit', [
+            'invoice' => $invoice,
+            'revision' => $revision,
+            'correlationUuid' => (string) Str::uuid(),
+            ...$options->forDate($revision->taxable_supply_on->format('Y-m-d')),
+        ]);
+    }
+
+    public function updateIssued(
+        UpdateIssuedInvoiceRequest $request,
+        string $uuid,
+        InvoiceReader $reader,
+        InvoiceIssuedRevisionService $editor,
+        InvoicePdfGenerator $pdfGenerator,
+    ): RedirectResponse {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('reviseIssued', $invoice);
+        if (! $this->issuedEditConfirmed($invoice->uuid)) {
+            return redirect()->route('invoices.issued-edit.warning', $invoice->uuid)
+                ->with('error', 'Před admin úpravou je nutné potvrdit varování.');
+        }
+        $originalRevisionId = $invoice->issued_revision_id;
+
+        try {
+            $revision = $editor->update(
+                $invoice->uuid,
+                (int) $request->validated('version'),
+                (string) $request->validated('correlation_uuid'),
+                $request->safe()->except(['version', 'correlation_uuid', 'admin_edit_confirmation']),
+            );
+        } catch (InvoiceIssuedRevisionVersionConflict) {
+            return redirect()->route('invoices.show', $invoice->uuid)
+                ->with('error', 'Vystavenou fakturu mezitím upravil jiný administrátor. Data nebyla přepsána.');
+        } catch (InvoiceIssuedRevisionIdempotencyConflict) {
+            return redirect()->route('invoices.show', $invoice->uuid)
+                ->with('error', 'Opakovaný požadavek nelze bezpečně přiřadit k této faktuře.');
+        }
+
+        session()->forget($this->issuedEditSessionKey($invoice->uuid));
+        if ((int) $revision->id === (int) $originalRevisionId) {
+            return redirect()->route('invoices.show', $invoice->uuid)->with('status', 'Nebyly zjištěny žádné změny.');
+        }
+
+        try {
+            $pdfGenerator->generate($invoice->uuid, (string) Str::uuid(), true);
+        } catch (InvoicePdfGenerationFailed) {
+            return redirect()->route('invoices.show', $invoice->uuid)
+                ->with('status', 'Nová issued revize byla bezpečně uložena; původní revize zůstala zachována.')
+                ->with('error', 'Nové PDF se nepodařilo vytvořit. Faktura zůstává vystavená; použijte akci Přegenerovat PDF.');
+        }
+
+        return redirect()->route('invoices.show', $invoice->uuid)
+            ->with('status', 'Vystavená faktura byla uložena jako nová immutable revize a vznikla nová verze PDF.');
+    }
+
     public function archive(
         string $uuid,
         InvoiceReader $reader,
@@ -176,13 +267,30 @@ class InvoiceController extends Controller
         Gate::authorize('archive', $invoice);
 
         try {
-            $archive->archiveDraft($invoice->uuid);
-        } catch (ValidationException) {
-            return back()->with('error', 'Archivovat lze pouze aktivní koncept faktury.');
+            $archive->archive($invoice->uuid);
+        } catch (ValidationException $exception) {
+            return back()->with('error', $exception->getMessage());
         }
 
         return redirect()->route('invoices.index')
-            ->with('status', 'Koncept byl archivován. Revize a auditní historie zůstaly zachované.');
+            ->with('status', 'Faktura byla archivována ze seznamu. Doklad, číslo, revize, PDF a audit zůstaly zachované.');
+    }
+
+    public function restore(
+        string $uuid,
+        InvoiceReader $reader,
+        InvoiceArchiveService $archive,
+    ): RedirectResponse {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('restore', $invoice);
+
+        try {
+            $archive->restore($invoice->uuid);
+        } catch (ValidationException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        return redirect()->route('invoices.show', $invoice->uuid)->with('status', 'Faktura byla obnovena do aktivního seznamu.');
     }
 
     public function update(
@@ -226,6 +334,7 @@ class InvoiceController extends Controller
         InvoiceReader $reader,
         InvoiceIssuer $issuer,
         InvoiceIssueAvailability $availability,
+        InvoicePdfGenerator $pdfGenerator,
     ): RedirectResponse {
         $invoice = $reader->find($uuid);
         Gate::authorize('issue', $invoice);
@@ -250,8 +359,34 @@ class InvoiceController extends Controller
                 ->with('error', 'Vystavenou fakturu nelze vystavit znovu jiným požadavkem.');
         }
 
-        return redirect()->route('invoices.show', $issued->uuid)
+        $pdfError = $this->generatePdfAfterIssuance($issued, $pdfGenerator);
+        $response = redirect()->route('invoices.show', $issued->uuid)
             ->with('status', 'Faktura byla vystavena pod číslem '.$issued->document_number.'.');
+
+        return $pdfError === null ? $response : $response->with('error', $pdfError);
+    }
+
+    private function generatePdfAfterIssuance(Invoice $invoice, InvoicePdfGenerator $generator): ?string
+    {
+        try {
+            $generator->generate($invoice->uuid, (string) Str::uuid());
+
+            return null;
+        } catch (InvoicePdfGenerationFailed) {
+            return 'Faktura zůstala úspěšně vystavená, ale první PDF se nepodařilo vytvořit. Použijte akci Přegenerovat PDF.';
+        }
+    }
+
+    private function issuedEditSessionKey(string $invoiceUuid): string
+    {
+        return 'invoice-issued-edit-confirmed.'.$invoiceUuid;
+    }
+
+    private function issuedEditConfirmed(string $invoiceUuid): bool
+    {
+        $expiresAt = session()->get($this->issuedEditSessionKey($invoiceUuid));
+
+        return is_int($expiresAt) && $expiresAt >= now()->timestamp;
     }
 
     public function preview(PreviewInvoiceRequest $request, InvoicePreviewService $preview): JsonResponse

@@ -2,7 +2,7 @@
 
 @php
     if ($invoice->archived_at !== null) {
-        $label = 'Archivovaný koncept';
+        $label = $invoice->status === \App\Enums\InvoiceStatus::Draft ? 'Archivovaný koncept' : 'Archivovaná';
         $classes = 'bg-slate-200 text-slate-700 ring-slate-300';
     } elseif ($invoice->status === \App\Enums\InvoiceStatus::Draft) {
         $label = 'Koncept';

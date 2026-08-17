@@ -65,7 +65,7 @@ class InvoicePublicLinkTest extends TestCase
         $this->assertStringNotContainsString($stored->token_hash, (string) $audit->new_values);
     }
 
-    public function test_public_pdf_uses_existing_latest_artifact_and_never_regenerates(): void
+    public function test_public_pdf_uses_existing_current_revision_artifact_and_never_regenerates(): void
     {
         [$admin, $business] = $this->deliveryMembership();
         app(ActiveBusinessContext::class)->set($business);
@@ -145,6 +145,7 @@ class InvoicePublicLinkTest extends TestCase
         $url = app(InvoicePublicLinkService::class)->url($link);
         app(ActiveBusinessContext::class)->clear();
         auth()->logout();
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.60']);
 
         foreach (range(1, 60) as $_request) {
             $this->get($url)->assertOk();

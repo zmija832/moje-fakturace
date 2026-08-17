@@ -46,6 +46,7 @@ class InvoicePdfGenerator
         if ($invoice->status !== InvoiceStatus::Issued) {
             throw InvoiceNotIssuedForDelivery::create();
         }
+        $revisionId = (int) $invoice->issued_revision_id;
         $existing = InvoiceDocument::query()->where('generation_correlation_uuid', $correlationUuid)->first();
         if ($existing !== null) {
             if ((int) $existing->invoice_id !== (int) $invoice->id) {
@@ -54,7 +55,7 @@ class InvoicePdfGenerator
 
             return $existing;
         }
-        $latest = $invoice->documents()->first();
+        $latest = $invoice->documents()->where('invoice_revision_id', $revisionId)->first();
         if (! $forceRegenerate && $latest !== null && Storage::disk(self::DISK)->exists($latest->storage_path)) {
             return $latest;
         }
@@ -71,9 +72,9 @@ class InvoicePdfGenerator
             $hash = hash('sha256', $pdf);
             $size = strlen($pdf);
 
-            $document = DB::connection($connection)->transaction(function () use ($invoice, $correlationUuid, $forceRegenerate, $documentUuid, $tempPath, $finalPath, $hash, $size, &$moved): InvoiceDocument {
+            $document = DB::connection($connection)->transaction(function () use ($invoice, $revisionId, $correlationUuid, $forceRegenerate, $documentUuid, $tempPath, $finalPath, $hash, $size, &$moved): InvoiceDocument {
                 $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
-                if ($locked->status !== InvoiceStatus::Issued) {
+                if ($locked->status !== InvoiceStatus::Issued || (int) $locked->issued_revision_id !== $revisionId) {
                     throw InvoiceNotIssuedForDelivery::create();
                 }
                 $existing = InvoiceDocument::query()->where('generation_correlation_uuid', $correlationUuid)->first();
@@ -84,7 +85,7 @@ class InvoicePdfGenerator
 
                     return $existing;
                 }
-                $latest = $locked->documents()->first();
+                $latest = $locked->documents()->where('invoice_revision_id', $revisionId)->first();
                 if (! $forceRegenerate && $latest !== null && Storage::disk(self::DISK)->exists($latest->storage_path)) {
                     return $latest;
                 }
@@ -92,6 +93,7 @@ class InvoicePdfGenerator
                 $document->forceFill([
                     'uuid' => $documentUuid,
                     'invoice_id' => $locked->id,
+                    'invoice_revision_id' => $revisionId,
                     'document_type' => InvoiceDocumentType::InvoicePdf->value,
                     'storage_disk' => self::DISK,
                     'storage_path' => $finalPath,
