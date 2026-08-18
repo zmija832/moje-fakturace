@@ -46,7 +46,7 @@ class InvoiceArchiveService
                 }
 
                 $before = $this->auditSanitizer->snapshot(BusinessAuditableType::Invoice, $invoice);
-                if ($invoice->status === InvoiceStatus::Issued) {
+                if ($invoice->status->hasIssuedDocument()) {
                     DB::connection($connection)->statement("SET @invoice_admin_operation = 'archive', @invoice_admin_uuid = ?", [$invoice->uuid]);
                 }
                 DB::connection($connection)->table('invoices')->where('id', $invoice->id)->update([

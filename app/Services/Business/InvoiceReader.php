@@ -18,7 +18,7 @@ class InvoiceReader
     {
         $this->connectionResolver->resolve();
         $invoice = Invoice::query()->where('uuid', $invoiceUuid)->firstOrFail();
-        $revisionRelation = $invoice->status === InvoiceStatus::Issued ? 'issuedRevision' : 'currentRevision';
+        $revisionRelation = $invoice->status->hasIssuedDocument() ? 'issuedRevision' : 'currentRevision';
 
         return $invoice->load([
             'numberAllocation', 'documentSequence',
@@ -46,10 +46,19 @@ class InvoiceReader
         $visibility = $filters['visibility'] ?? 'active';
         if ($visibility === 'archived') {
             $query->whereNotNull('archived_at');
+        } elseif ($visibility === 'cancelled') {
+            $query->whereNull('archived_at')->where('status', InvoiceStatus::Cancelled->value);
+        } elseif ($visibility === 'drafts') {
+            $query->whereNull('archived_at')->where('status', InvoiceStatus::Draft->value);
+        } elseif ($visibility === 'unpaid') {
+            $query->whereNull('archived_at')->where('status', InvoiceStatus::Issued->value);
+        } elseif ($visibility === 'paid') {
+            $query->whereNull('archived_at')->where('status', InvoiceStatus::Issued->value);
         } elseif ($visibility !== 'all') {
             $query->whereNull('archived_at');
+            $query->where('status', '!=', InvoiceStatus::Cancelled->value);
         }
-        if (in_array($filters['status'] ?? null, [InvoiceStatus::Draft->value, InvoiceStatus::Issued->value], true)) {
+        if (in_array($filters['status'] ?? null, array_column(InvoiceStatus::cases(), 'value'), true)) {
             $query->where('status', $filters['status']);
         }
         if (in_array($filters['currency'] ?? null, ['CZK', 'EUR'], true)) {
@@ -63,6 +72,11 @@ class InvoiceReader
         }
         $paidSql = "(SELECT COALESCE(SUM(CASE WHEN ip.payment_type = 'payment' THEN ip.amount ELSE -ip.amount END), 0) FROM invoice_payments ip WHERE ip.invoice_id = invoices.id)";
         $grandTotalSql = '(SELECT ir.grand_total FROM invoice_revisions ir WHERE ir.id = invoices.issued_revision_id)';
+        if ($visibility === 'unpaid') {
+            $query->whereRaw("{$grandTotalSql} - {$paidSql} > 0");
+        } elseif ($visibility === 'paid') {
+            $query->whereRaw("{$paidSql} >= {$grandTotalSql}");
+        }
         $paymentStatus = $filters['payment_status'] ?? null;
         if (in_array($paymentStatus, ['unpaid', 'partially_paid', 'paid', 'overpaid'], true)) {
             $query->where('status', InvoiceStatus::Issued->value);

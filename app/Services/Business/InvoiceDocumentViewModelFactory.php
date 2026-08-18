@@ -5,7 +5,6 @@ namespace App\Services\Business;
 use App\Domain\Invoices\Exceptions\InvoiceNotIssuedForDelivery;
 use App\Domain\Invoices\InvoiceDecimal;
 use App\Domain\Invoices\InvoiceDocumentViewModel;
-use App\Enums\InvoiceStatus;
 use App\Enums\VatTaxType;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceRevision;
@@ -16,7 +15,7 @@ class InvoiceDocumentViewModelFactory
 
     public function make(Invoice $invoice): InvoiceDocumentViewModel
     {
-        if ($invoice->status !== InvoiceStatus::Issued || $invoice->issuedRevision === null) {
+        if (! $invoice->status->hasIssuedDocument() || $invoice->issuedRevision === null) {
             throw InvoiceNotIssuedForDelivery::create();
         }
         $revision = $invoice->issuedRevision;
@@ -29,7 +28,7 @@ class InvoiceDocumentViewModelFactory
             'template_version' => 'invoice-v1',
             'locale' => 'cs',
             'document_number' => $invoice->document_number,
-            'status_label' => 'Vystavená',
+            'status_label' => $invoice->status->label(),
             'issued_on' => $this->date($revision->issued_on),
             'taxable_supply_on' => $this->date($revision->taxable_supply_on),
             'due_on' => $this->date($revision->due_on),

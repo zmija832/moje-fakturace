@@ -12,7 +12,7 @@
         @can('downloadPdf', $invoice)
             @if($invoice->currentPdfDocument() !== null)<a class="font-semibold text-blue-700 hover:underline" href="{{ route('invoices.pdf.download', $invoice->uuid) }}">PDF</a>@endif
         @endcan
-        @can('create', \App\Models\Business\Invoice::class)
+        @can('duplicate', $invoice)
             <form method="POST" action="{{ route('invoices.duplicate', $invoice->uuid) }}">@csrf<button class="font-semibold text-blue-700 hover:underline" type="submit">Duplikovat</button></form>
         @endcan
         @can('managePublicLink', $invoice)<a class="font-semibold text-blue-700 hover:underline" href="{{ route('invoices.show', $invoice->uuid) }}#invoice-public-link">Webfaktura</a>@endcan

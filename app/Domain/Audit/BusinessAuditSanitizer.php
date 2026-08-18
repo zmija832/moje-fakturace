@@ -90,6 +90,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::Invoice => [
                 'document_type', 'status', 'currency', 'issued_on', 'taxable_supply_on',
                 'due_on', 'payment_method', 'variable_symbol', 'note', 'archived_at',
+                'cancelled_at', 'cancelled_by_actor', 'cancellation_reason',
             ],
             BusinessAuditableType::InvoiceDocument,
             BusinessAuditableType::InvoiceEmailDelivery,
@@ -150,6 +151,9 @@ class BusinessAuditSanitizer
             'issued_revision_uuid' => $revision->uuid,
             'version' => $invoice->version,
             'archived_at' => $this->scalar($invoice->archived_at),
+            'cancelled_at' => $this->scalar($invoice->cancelled_at),
+            'cancelled_by_actor' => $invoice->cancelled_by_actor,
+            'cancellation_reason' => $invoice->cancellation_reason,
             'issued_on' => $this->scalar($revision->issued_on),
             'taxable_supply_on' => $this->scalar($revision->taxable_supply_on),
             'due_on' => $this->scalar($revision->due_on),

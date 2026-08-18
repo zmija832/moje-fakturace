@@ -406,6 +406,17 @@ class BusinessMigrationCommandTest extends TestCase
         }
 
         foreach (['business_1', 'business_2'] as $connection) {
+            foreach (['cancelled_at', 'cancelled_by_actor', 'cancellation_reason', 'cancellation_correlation_uuid'] as $column) {
+                $this->assertTrue(Schema::connection($connection)->hasColumn('invoices', $column));
+            }
+            $this->assertTrue(DB::connection($connection)->table('migrations')
+                ->where('migration', '2026_08_17_000000_add_invoice_cancellation_and_deletion_workflows')->exists());
+            $issuedGuard = DB::connection($connection)->selectOne(
+                "SELECT ACTION_STATEMENT AS body FROM information_schema.TRIGGERS
+                 WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 'invoices_issued_immutable_update'",
+            );
+            $this->assertStringContainsString("NEW.`status` = 'cancelled'", $issuedGuard->body);
+
             $foreignSchemas = DB::connection($connection)->select(
                 "SELECT DISTINCT REFERENCED_TABLE_SCHEMA AS referenced_schema
                  FROM information_schema.KEY_COLUMN_USAGE

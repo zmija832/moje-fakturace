@@ -15,6 +15,7 @@ use App\Http\Controllers\DocumentSequenceController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
 use App\Http\Controllers\InvoiceEmailSettingController;
+use App\Http\Controllers\InvoiceLifecycleController;
 use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\InvoicePublicLinkController;
 use App\Http\Controllers\PublicInvoiceController;
@@ -180,6 +181,12 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.archive');
         Route::patch('/faktury/{uuid}/obnovit', [InvoiceController::class, 'restore'])
             ->whereUuid('uuid')->name('invoices.restore');
+        Route::post('/faktury/{uuid}/stornovat', [InvoiceLifecycleController::class, 'cancel'])
+            ->whereUuid('uuid')->name('invoices.cancel');
+        Route::delete('/faktury/{uuid}/koncept', [InvoiceLifecycleController::class, 'deleteDraft'])
+            ->whereUuid('uuid')->name('invoices.draft.delete');
+        Route::delete('/faktury/{uuid}/testovaci-purge', [InvoiceLifecycleController::class, 'purgeTest'])
+            ->whereUuid('uuid')->name('invoices.test-purge');
         Route::post('/faktury/{uuid}/webfaktura', [InvoicePublicLinkController::class, 'store'])
             ->whereUuid('uuid')->name('invoices.public-link.store');
         Route::post('/faktury/{uuid}/webfaktura/obnovit', [InvoicePublicLinkController::class, 'regenerate'])

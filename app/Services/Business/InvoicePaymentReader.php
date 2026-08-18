@@ -4,7 +4,6 @@ namespace App\Services\Business;
 
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Invoices\InvoicePaymentSummary;
-use App\Enums\InvoiceStatus;
 use App\Models\Business\Invoice;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +15,7 @@ class InvoicePaymentReader
 
     public function summary(Invoice $invoice): InvoicePaymentSummary
     {
-        if ($invoice->status !== InvoiceStatus::Issued) {
+        if (! $invoice->status->hasIssuedDocument()) {
             throw new LogicException('Platební souhrn je dostupný pouze pro vystavenou fakturu.');
         }
 
@@ -35,7 +34,7 @@ class InvoicePaymentReader
 
     public function summaryFromAggregate(Invoice $invoice): ?InvoicePaymentSummary
     {
-        if ($invoice->status !== InvoiceStatus::Issued) {
+        if (! $invoice->status->hasIssuedDocument()) {
             return null;
         }
 

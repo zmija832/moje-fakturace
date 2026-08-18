@@ -143,7 +143,7 @@ abstract class TestCase extends BaseTestCase
 
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_16_010000_create_invoice_email_settings')
+            ->where('migration', '2026_08_17_000000_add_invoice_cancellation_and_deletion_workflows')
             ->exists();
     }
 

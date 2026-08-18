@@ -3,8 +3,11 @@
 namespace App\Models\Business;
 
 use App\Domain\Invoices\Exceptions\InvoiceIssuedImmutable;
+use App\Domain\Invoices\InvoicePaymentSummary;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\DocumentType;
+use App\Enums\InvoiceDisplayState;
+use App\Enums\InvoicePaymentStatus;
 use App\Enums\InvoiceStatus;
 use App\Models\Concerns\HasServerGeneratedUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,12 +23,13 @@ class Invoice extends BusinessModel
     protected static function booted(): void
     {
         static::updating(function (self $invoice): void {
-            if ($invoice->getOriginal('status') === InvoiceStatus::Issued->value || $invoice->status === InvoiceStatus::Issued) {
+            $original = InvoiceStatus::tryFrom((string) $invoice->getRawOriginal('status'));
+            if ($original?->hasIssuedDocument() || $invoice->status->hasIssuedDocument()) {
                 throw InvoiceIssuedImmutable::mutationDenied();
             }
         });
         static::deleting(function (self $invoice): void {
-            if ($invoice->status === InvoiceStatus::Issued) {
+            if ($invoice->status->hasIssuedDocument()) {
                 throw InvoiceIssuedImmutable::mutationDenied();
             }
         });
@@ -106,6 +110,35 @@ class Invoice extends BusinessModel
         return $this->hasMany(InvoicePublicLink::class)->latest('id');
     }
 
+    public function displayState(?InvoicePaymentSummary $paymentSummary = null): InvoiceDisplayState
+    {
+        if ($this->archived_at !== null) {
+            return InvoiceDisplayState::Archived;
+        }
+        if ($this->status === InvoiceStatus::Cancelled) {
+            return InvoiceDisplayState::Cancelled;
+        }
+        if ($this->status === InvoiceStatus::Draft) {
+            return InvoiceDisplayState::Draft;
+        }
+        if ($paymentSummary?->isOverdue) {
+            return InvoiceDisplayState::Overdue;
+        }
+
+        return $this->paymentDisplayState($paymentSummary);
+    }
+
+    public function paymentDisplayState(?InvoicePaymentSummary $paymentSummary): InvoiceDisplayState
+    {
+        return match ($paymentSummary?->status) {
+            InvoicePaymentStatus::Unpaid => InvoiceDisplayState::Unpaid,
+            InvoicePaymentStatus::PartiallyPaid => InvoiceDisplayState::PartiallyPaid,
+            InvoicePaymentStatus::Paid => InvoiceDisplayState::Paid,
+            InvoicePaymentStatus::Overpaid => InvoiceDisplayState::Overpaid,
+            default => InvoiceDisplayState::Unpaid,
+        };
+    }
+
     protected function casts(): array
     {
         return [
@@ -118,6 +151,7 @@ class Invoice extends BusinessModel
             'version' => 'integer',
             'issued_at' => 'immutable_datetime',
             'archived_at' => 'immutable_datetime',
+            'cancelled_at' => 'immutable_datetime',
         ];
     }
 }

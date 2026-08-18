@@ -47,6 +47,30 @@ class InvoicePolicy extends BusinessPolicy
             && $invoice->archived_at === null;
     }
 
+    public function cancel(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user)
+            && in_array($invoice->status, [InvoiceStatus::Issued, InvoiceStatus::Cancelled], true)
+            && $invoice->archived_at === null;
+    }
+
+    public function deleteDraft(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user) && $invoice->status === InvoiceStatus::Draft;
+    }
+
+    public function purgeTest(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user)
+            && $invoice->status->hasIssuedDocument()
+            && in_array(strtolower($invoice->uuid), config('business.invoice_test_purge_uuids', []), true);
+    }
+
+    public function duplicate(User $user, Invoice $invoice): bool
+    {
+        return $this->canManage($user) && $invoice->status === InvoiceStatus::Issued;
+    }
+
     public function archive(User $user, Invoice $invoice): bool
     {
         return $this->canManage($user) && $invoice->archived_at === null;
@@ -59,7 +83,7 @@ class InvoicePolicy extends BusinessPolicy
 
     public function print(User $user, Invoice $invoice): bool
     {
-        return $this->canView($user) && $invoice->status === InvoiceStatus::Issued;
+        return $this->canView($user) && $invoice->status->hasIssuedDocument();
     }
 
     public function downloadPdf(User $user, Invoice $invoice): bool
@@ -84,7 +108,7 @@ class InvoicePolicy extends BusinessPolicy
     public function viewPayments(User $user, ?Invoice $invoice = null): bool
     {
         return $this->canView($user)
-            && ($invoice === null || $invoice->status === InvoiceStatus::Issued);
+            && ($invoice === null || $invoice->status->hasIssuedDocument());
     }
 
     public function recordPayment(User $user, ?Invoice $invoice = null): bool

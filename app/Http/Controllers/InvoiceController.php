@@ -118,10 +118,10 @@ class InvoiceController extends Controller
     ): View {
         Gate::authorize('view', Invoice::class);
         $invoice = $reader->find($uuid);
-        $revision = $invoice->status === InvoiceStatus::Issued ? $invoice->issuedRevision : $invoice->currentRevision;
+        $revision = $invoice->status->hasIssuedDocument() ? $invoice->issuedRevision : $invoice->currentRevision;
         $issueOptions = $invoice->status === InvoiceStatus::Draft
             ? $options->forDate($revision->issued_on->format('Y-m-d')) : [];
-        $paymentSummary = $invoice->status === InvoiceStatus::Issued ? $paymentReader->summary($invoice) : null;
+        $paymentSummary = $invoice->status->hasIssuedDocument() ? $paymentReader->summary($invoice) : null;
         $issueAvailability = $invoice->status === InvoiceStatus::Draft && auth()->user()?->can('issue', $invoice)
             ? $availability->for($invoice)
             : ['can_issue' => false, 'reason' => null];
@@ -136,6 +136,7 @@ class InvoiceController extends Controller
             'issueCorrelationUuid' => (string) Str::uuid(),
             'generationCorrelationUuid' => (string) Str::uuid(),
             'paymentCorrelationUuid' => (string) Str::uuid(),
+            'cancellationCorrelationUuid' => (string) Str::uuid(),
             'paymentSummary' => $paymentSummary,
             'paymentMethods' => DefaultPaymentMethod::options(),
             'issueAvailability' => $issueAvailability,
@@ -163,8 +164,7 @@ class InvoiceController extends Controller
     public function duplicate(string $uuid, InvoiceReader $reader, InvoiceDuplicator $duplicator): RedirectResponse
     {
         $source = $reader->find($uuid);
-        Gate::authorize('view', $source);
-        Gate::authorize('create', Invoice::class);
+        Gate::authorize('duplicate', $source);
 
         try {
             $draft = $duplicator->duplicate($source);

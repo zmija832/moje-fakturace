@@ -1,6 +1,7 @@
 <x-layouts.app :title="$invoice->document_number ?? 'Koncept faktury'">
     @php
         $isDraft = $invoice->status === \App\Enums\InvoiceStatus::Draft;
+        $isCancelled = $invoice->status === \App\Enums\InvoiceStatus::Cancelled;
     @endphp
 
     <section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -18,15 +19,26 @@
             <div class="shrink-0 text-left lg:text-right"><p class="text-sm text-slate-500">Celková částka</p><p class="mt-1 text-3xl font-bold tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::format($revision->grand_total) }} {{ $revision->currency }}</p></div>
         </div>
         <div class="mt-5 border-t border-slate-200 pt-4">
-            <x-invoices.actions :invoice="$invoice" :revision="$revision" :payment-summary="$paymentSummary" :issue-availability="$issueAvailability" :document-sequences="$documentSequences ?? collect()" :sequence-previews="$sequencePreviews ?? []" :default-sequence-uuid="$defaultSequenceUuid ?? null" :issue-correlation-uuid="$issueCorrelationUuid" :generation-correlation-uuid="$generationCorrelationUuid" />
+            <x-invoices.actions :invoice="$invoice" :revision="$revision" :payment-summary="$paymentSummary" :issue-availability="$issueAvailability" :document-sequences="$documentSequences ?? collect()" :sequence-previews="$sequencePreviews ?? []" :default-sequence-uuid="$defaultSequenceUuid ?? null" :issue-correlation-uuid="$issueCorrelationUuid" :generation-correlation-uuid="$generationCorrelationUuid" :cancellation-correlation-uuid="$cancellationCorrelationUuid" />
         </div>
     </section>
 
+    @if($isCancelled)
+        <div class="mb-6 rounded-xl border-2 border-rose-300 bg-rose-50 p-5 text-rose-950" role="alert">
+            <p class="text-lg font-black tracking-wide">STORNOVÁNO</p>
+            <dl class="mt-3 grid gap-2 text-sm md:grid-cols-3">
+                <div><dt class="font-semibold">Stornováno</dt><dd>{{ $invoice->cancelled_at->format('j. n. Y H:i') }}</dd></div>
+                <div><dt class="font-semibold">Provedl</dt><dd>{{ $invoice->cancelled_by_actor }}</dd></div>
+                <div><dt class="font-semibold">Důvod</dt><dd>{{ $invoice->cancellation_reason }}</dd></div>
+            </dl>
+            <p class="mt-3 text-sm">Číslo {{ $invoice->document_number }} zůstává trvale použité. Revize, snapshoty, PDF, platby, odeslání a audit jsou zachovány pouze pro historické čtení.</p>
+        </div>
+    @endif
     @if($invoice->archived_at !== null)
         <div class="mb-6 rounded-xl border border-slate-300 bg-slate-100 p-4 text-sm text-slate-800"><strong>{{ $isDraft ? 'Archivovaný koncept.' : 'Archivovaná vystavená faktura.' }}</strong> Doklad je skrytý z aktivního seznamu; číslo, revize, PDF a auditní historie zůstávají zachované.</div>
     @elseif($isDraft)
         <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Koncept zatím nemá číslo dokladu.</strong> Před vystavením jej lze upravit; každá skutečná změna vytvoří novou revizi.</div>
-    @else
+    @elseif(!$isCancelled)
         <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Historie vystaveného dokladu je neměnná.</strong> Původní revize a snapshoty nelze přepsat; případná admin oprava vytvoří novou immutable revizi při zachování čísla faktury.</div>
     @endif
     <x-invoices.detail :invoice="$invoice" :revision="$revision" />

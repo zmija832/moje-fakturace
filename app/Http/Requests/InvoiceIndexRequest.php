@@ -21,7 +21,7 @@ class InvoiceIndexRequest extends FormRequest
     {
         return [
             'search' => ['nullable', 'string', 'max:100'],
-            'visibility' => ['nullable', Rule::in(['active', 'archived', 'all'])],
+            'visibility' => ['nullable', Rule::in(['active', 'drafts', 'unpaid', 'paid', 'cancelled', 'archived', 'all'])],
             'status' => ['nullable', Rule::in(['all', ...array_column(InvoiceStatus::cases(), 'value')])],
             'client_uuid' => ['nullable', 'uuid'],
             'currency' => ['nullable', Rule::in(['all', ...array_keys(CompanySettingOptions::CURRENCIES)])],
