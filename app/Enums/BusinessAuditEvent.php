@@ -60,6 +60,7 @@ enum BusinessAuditEvent: string
     case InvoiceCancelled = 'invoice.cancelled';
     case InvoiceDraftDeleted = 'invoice.draft_deleted';
     case InvoiceTestPurged = 'invoice.test_purged';
+    case InvoiceDeleted = 'invoice.deleted';
 
     public function label(): string
     {
@@ -119,7 +120,8 @@ enum BusinessAuditEvent: string
             self::InvoicePublicLinkRegenerated => 'Obnoven odkaz Webfaktury',
             self::InvoiceCancelled => 'Stornována faktura',
             self::InvoiceDraftDeleted => 'Trvale odstraněn koncept faktury',
-            self::InvoiceTestPurged => 'Trvale odstraněna testovací faktura',
+            self::InvoiceTestPurged => 'Historicky odstraněna testovací faktura',
+            self::InvoiceDeleted => 'Trvale odstraněna faktura',
         };
     }
 

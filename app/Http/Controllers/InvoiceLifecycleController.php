@@ -3,12 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\CancelInvoiceRequest;
-use App\Http\Requests\DeleteInvoiceDraftRequest;
-use App\Http\Requests\PurgeTestInvoiceRequest;
+use App\Http\Requests\DeleteInvoiceRequest;
 use App\Services\Business\InvoiceCancellationService;
-use App\Services\Business\InvoiceDraftDeletionService;
+use App\Services\Business\InvoiceDeletionService;
 use App\Services\Business\InvoiceReader;
-use App\Services\Business\InvoiceTestPurgeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -39,42 +37,23 @@ class InvoiceLifecycleController extends Controller
             ->with('status', 'Faktura byla stornována. Číslo dokladu a historie zůstaly zachovány.');
     }
 
-    public function deleteDraft(
-        DeleteInvoiceDraftRequest $request,
+    public function delete(
+        DeleteInvoiceRequest $request,
         string $uuid,
         InvoiceReader $reader,
-        InvoiceDraftDeletionService $deletion,
+        InvoiceDeletionService $deletion,
     ): RedirectResponse {
         $invoice = $reader->find($uuid);
-        Gate::authorize('deleteDraft', $invoice);
+        Gate::authorize('deletePermanently', $invoice);
 
         try {
-            $deletion->delete($invoice->uuid);
+            $result = $deletion->delete($invoice->uuid);
         } catch (ValidationException $exception) {
             return back()->withErrors($exception->errors());
         }
 
-        return redirect()->route('invoices.index')->with('status', 'Koncept byl trvale odstraněn.');
-    }
+        $label = $result['document_number'] === null ? 'Koncept' : "Faktura {$result['document_number']}";
 
-    public function purgeTest(
-        PurgeTestInvoiceRequest $request,
-        string $uuid,
-        InvoiceReader $reader,
-        InvoiceTestPurgeService $purge,
-    ): RedirectResponse {
-        $invoice = $reader->find($uuid);
-        Gate::authorize('purgeTest', $invoice);
-
-        try {
-            $documentNumber = $purge->purge($invoice->uuid, (string) $request->validated('document_number'));
-        } catch (ValidationException $exception) {
-            return back()->withErrors($exception->errors())->withInput();
-        }
-
-        return redirect()->route('invoices.index')->with(
-            'status',
-            "Testovací faktura {$documentNumber} byla trvale odstraněna. Její číslo zůstává navždy použité.",
-        );
+        return redirect()->route('invoices.index')->with('status', "{$label} byla trvale odstraněna.");
     }
 }

@@ -54,16 +54,10 @@ class InvoicePolicy extends BusinessPolicy
             && $invoice->archived_at === null;
     }
 
-    public function deleteDraft(User $user, Invoice $invoice): bool
-    {
-        return $this->canManage($user) && $invoice->status === InvoiceStatus::Draft;
-    }
-
-    public function purgeTest(User $user, Invoice $invoice): bool
+    public function deletePermanently(User $user, Invoice $invoice): bool
     {
         return $this->canManage($user)
-            && $invoice->status->hasIssuedDocument()
-            && in_array(strtolower($invoice->uuid), config('business.invoice_test_purge_uuids', []), true);
+            && in_array($invoice->status, [InvoiceStatus::Draft, InvoiceStatus::Issued, InvoiceStatus::Cancelled], true);
     }
 
     public function duplicate(User $user, Invoice $invoice): bool

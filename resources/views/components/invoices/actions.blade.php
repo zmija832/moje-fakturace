@@ -8,7 +8,7 @@
         && \App\Domain\Invoices\InvoiceDecimal::compare($paymentSummary->remainingTotal, '0') > 0;
 @endphp
 
-<div x-data="{ cancelOpen: false, deleteDraftOpen: false, purgeOpen: false, purgeConfirmation: '', purgeNumber: '' }">
+<div x-data="{ cancelOpen: false, deleteOpen: false }">
 <div class="flex flex-wrap items-start gap-2" aria-label="Akce faktury">
     @can('restore', $invoice)
         <form method="POST" action="{{ route('invoices.restore', $invoice->uuid) }}">@csrf @method('PATCH')<button class="button-primary" type="submit">Obnovit</button></form>
@@ -58,8 +58,8 @@
                 <button class="button-secondary text-red-700" type="submit">Archivovat koncept</button>
             </form>
         @endcan
-        @can('deleteDraft', $invoice)
-            <button class="button-secondary border-red-300 text-red-800" type="button" @click="deleteDraftOpen = true">Odstranit koncept</button>
+        @can('deletePermanently', $invoice)
+            <button class="button-secondary border-red-300 text-red-800" type="button" @click="deleteOpen = true">Odstranit koncept</button>
         @endcan
         <a class="button-secondary" href="#invoice-audit-history">Auditní historie</a>
     @else
@@ -126,8 +126,8 @@
         @endcan
         <a class="button-secondary" href="#invoice-audit-history">Auditní historie</a>
 
-        @can('purgeTest', $invoice)
-            <button class="button-secondary border-red-500 bg-red-50 font-semibold text-red-900" type="button" @click="purgeOpen = true">Trvale odstranit testovací fakturu</button>
+        @can('deletePermanently', $invoice)
+            <button class="button-secondary border-red-500 bg-red-50 font-semibold text-red-900" type="button" @click="deleteOpen = true">Smazat fakturu</button>
         @endcan
     @endif
 </div>
@@ -150,26 +150,12 @@
 @endcan
 @endif
 
-@can('deleteDraft', $invoice)
-<div x-cloak x-show="deleteDraftOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-draft-title" @keydown.escape.window="deleteDraftOpen = false">
-    <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" @click.outside="deleteDraftOpen = false">
-        <h2 id="delete-draft-title" class="text-xl font-bold">Opravdu chcete tento koncept trvale odstranit?</h2>
-        <p class="mt-2 text-sm text-slate-700">Revize a snapshoty konceptu budou odstraněny. Auditní záznam operace zůstane dohledatelný.</p>
-        <form class="mt-5 flex justify-end gap-2" method="POST" action="{{ route('invoices.draft.delete', $invoice->uuid) }}">@csrf @method('DELETE')<input type="hidden" name="confirmation" value="ODSTRANIT"><button class="button-secondary" type="button" @click="deleteDraftOpen = false">Zrušit</button><button class="button-primary bg-red-700 hover:bg-red-800" type="submit">Odstranit koncept</button></form>
-    </div>
-</div>
-@endcan
-
-@can('purgeTest', $invoice)
-<div x-cloak x-show="purgeOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="purge-invoice-title" @keydown.escape.window="purgeOpen = false">
-    <div class="w-full max-w-xl rounded-2xl border-2 border-red-300 bg-white p-6 shadow-xl" @click.outside="purgeOpen = false">
-        <h2 id="purge-invoice-title" class="text-xl font-bold text-red-900">Trvale odstranit testovací fakturu {{ $invoice->document_number }}</h2>
-        <p class="mt-2 text-sm text-slate-800">Tato operace je nevratná. Číslo faktury zůstane trvale použité a nebude vydáno znovu. Operace funguje pouze pro UUID výslovně povolené serverovou konfigurací.</p>
-        <form class="mt-5 space-y-4" method="POST" action="{{ route('invoices.test-purge', $invoice->uuid) }}">@csrf @method('DELETE')
-            <div><label for="purge_document_number">Opište číslo faktury</label><input id="purge_document_number" name="document_number" x-model="purgeNumber" required autocomplete="off"></div>
-            <div><label for="purge_confirmation">Napište ODSTRANIT</label><input id="purge_confirmation" name="confirmation" x-model="purgeConfirmation" required autocomplete="off"></div>
-            <div class="flex justify-end gap-2"><button class="button-secondary" type="button" @click="purgeOpen = false">Zrušit</button><button class="button-primary bg-red-800 hover:bg-red-900" type="submit" :disabled="purgeConfirmation !== 'ODSTRANIT' || purgeNumber !== '{{ $invoice->document_number }}'" :class="{ 'cursor-not-allowed opacity-50': purgeConfirmation !== 'ODSTRANIT' || purgeNumber !== '{{ $invoice->document_number }}' }">Trvale odstranit</button></div>
-        </form>
+@can('deletePermanently', $invoice)
+<div x-cloak x-show="deleteOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-invoice-title" @keydown.escape.window="deleteOpen = false">
+    <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" @click.outside="deleteOpen = false">
+        <h2 id="delete-invoice-title" class="text-xl font-bold">{{ $isDraft ? 'Smazat koncept?' : 'Smazat fakturu '.$invoice->document_number.'?' }}</h2>
+        <p class="mt-2 text-sm text-slate-700">Faktura a její související data budou trvale odstraněna. Tuto operaci nelze vrátit.</p>
+        <form class="mt-5 flex justify-end gap-2" method="POST" action="{{ route('invoices.delete', $invoice->uuid) }}">@csrf @method('DELETE')<input type="hidden" name="confirmation" value="1"><button class="button-secondary" type="button" @click="deleteOpen = false">Zrušit</button><button class="button-primary bg-red-700 hover:bg-red-800" type="submit">{{ $isDraft ? 'Odstranit koncept' : 'Smazat fakturu' }}</button></form>
     </div>
 </div>
 @endcan

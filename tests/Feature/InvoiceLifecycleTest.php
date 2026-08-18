@@ -4,14 +4,19 @@ namespace Tests\Feature;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Enums\BusinessConnection;
+use App\Services\Business\InvoiceDeletionService;
 use App\Services\Business\InvoiceDuplicator;
 use App\Services\Business\InvoiceIssuer;
+use App\Services\Business\InvoiceMailer;
+use App\Services\Business\InvoicePaymentService;
 use App\Services\Business\InvoicePdfGenerator;
 use App\Services\Business\InvoicePublicLinkService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
 use Tests\Concerns\InteractsWithBusinessDatabases;
 use Tests\TestCase;
@@ -26,7 +31,6 @@ class InvoiceLifecycleTest extends TestCase
         parent::setUp();
         $this->refreshBusinessTestDatabases();
         Storage::fake('invoice_documents');
-        config()->set('business.invoice_test_purge_uuids', []);
     }
 
     protected function tearDown(): void
@@ -155,16 +159,16 @@ class InvoiceLifecycleTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
 
-        $this->delete(route('invoices.draft.delete', $draft->uuid), ['confirmation' => 'ODSTRANIT'])
+        $this->delete(route('invoices.delete', $draft->uuid), ['confirmation' => '1'])
             ->assertRedirect(route('invoices.index'))->assertSessionHas('status');
         $this->assertFalse(DB::connection('business_1')->table('invoices')->where('id', $invoiceId)->exists());
         $this->assertFalse(DB::connection('business_1')->table('invoice_revisions')->where('id', $revisionId)->exists());
         $this->assertFalse(DB::connection('business_1')->table('invoice_items')->where('invoice_revision_id', $revisionId)->exists());
         $this->assertFalse(DB::connection('business_1')->table('invoice_draft_operations')->where('invoice_id', $invoiceId)->exists());
-        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.draft_deleted')->where('auditable_uuid', $draft->uuid)->count());
+        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.deleted')->where('auditable_uuid', $draft->uuid)->count());
     }
 
-    public function test_viewer_cannot_delete_draft_and_issued_invoice_cannot_use_draft_delete(): void
+    public function test_viewer_cannot_delete_invoice_and_other_tenant_uuid_is_not_visible(): void
     {
         [$admin, $business] = $this->deliveryMembership();
         app(ActiveBusinessContext::class)->set($business);
@@ -172,73 +176,120 @@ class InvoiceLifecycleTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         [$viewer] = $this->deliveryMembership('viewer', BusinessConnection::Business1, $business);
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business));
-        $this->delete(route('invoices.draft.delete', $draft->uuid), ['confirmation' => 'ODSTRANIT'])->assertForbidden();
+        $this->get(route('invoices.show', $draft->uuid))->assertOk()
+            ->assertDontSee('Odstranit koncept')->assertDontSee('Smazat fakturu');
+        $this->delete(route('invoices.delete', $draft->uuid), ['confirmation' => '1'])->assertForbidden();
         $this->assertTrue(DB::connection('business_1')->table('invoices')->where('id', $draft->id)->exists());
 
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
         $this->post(route('invoices.cancel', $draft->uuid), [
             'reason' => 'Koncept nelze stornovat.', 'expected_version' => 1, 'correlation_uuid' => (string) Str::uuid(),
         ])->assertForbidden();
-        $this->post(route('invoices.issue', $draft->uuid), [
-            'expected_version' => 1, 'correlation_uuid' => (string) Str::uuid(),
-        ])->assertRedirect();
-        $this->delete(route('invoices.draft.delete', $draft->uuid), ['confirmation' => 'ODSTRANIT'])->assertForbidden();
+        [, $otherBusiness] = $this->deliveryMembership(connection: BusinessConnection::Business2);
+        app(ActiveBusinessContext::class)->set($otherBusiness);
+        [$foreign] = $this->createIssuedInvoice();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $this->delete(route('invoices.delete', $foreign->uuid), ['confirmation' => '1'])->assertNotFound();
+        $this->assertTrue(DB::connection('business_2')->table('invoices')->where('id', $foreign->id)->exists());
     }
 
-    public function test_allowlisted_test_purge_removes_aggregate_and_pdf_but_never_recycles_number(): void
+    public function test_admin_deletes_issued_invoice_with_complete_aggregate_and_reuses_released_number(): void
     {
+        Mail::fake();
         [$admin, $business] = $this->deliveryMembership();
         app(ActiveBusinessContext::class)->set($business);
         [$invoice] = $this->createIssuedInvoice();
         $duplicate = app(InvoiceDuplicator::class)->duplicate($invoice);
         $document = app(InvoicePdfGenerator::class)->generate($invoice->uuid, (string) Str::uuid());
+        app(InvoicePublicLinkService::class)->create($invoice);
+        app(InvoicePaymentService::class)->record($invoice->uuid, (string) Str::uuid(), [
+            'amount' => '10', 'currency' => 'CZK', 'paid_on' => '2026-08-17', 'payment_method' => 'bank_transfer',
+        ]);
+        app(InvoiceMailer::class)->send($invoice->uuid, (string) Str::uuid(), []);
+        DB::connection('business_1')->table('invoice_issued_revision_operations')->insert([
+            'correlation_uuid' => (string) Str::uuid(), 'invoice_id' => $invoice->id,
+            'invoice_revision_id' => $invoice->issued_revision_id, 'created_by_actor' => 'test',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $invoiceId = $invoice->id;
+        $revisionIds = DB::connection('business_1')->table('invoice_revisions')->where('invoice_id', $invoiceId)->pluck('id');
+        $sequenceId = $invoice->document_sequence_id;
         $firstNumber = $invoice->document_number;
-        $firstAllocationId = $invoice->document_number_allocation_id;
-        config()->set('business.invoice_test_purge_uuids', [strtolower($invoice->uuid)]);
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
 
-        $this->delete(route('invoices.test-purge', $invoice->uuid), [
-            'confirmation' => 'ODSTRANIT', 'document_number' => $firstNumber,
-        ])->assertRedirect(route('invoices.index'))->assertSessionHas('status');
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('Smazat fakturu')
+            ->assertDontSee('Trvale odstranit testovací fakturu')->assertDontSee('ODSTRANIT');
+        try {
+            DB::connection('business_1')->table('invoices')->where('id', $invoiceId)->delete();
+            $this->fail('Přímý DELETE vystavené faktury musí zůstat blokovaný databázovým guardem.');
+        } catch (QueryException) {
+            $this->assertTrue(true);
+        }
+        $this->from(route('invoices.show', $invoice->uuid))->delete(route('invoices.delete', $invoice->uuid))
+            ->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHasErrors('confirmation');
+        $this->delete(route('invoices.delete', $invoice->uuid), ['confirmation' => '1'])
+            ->assertRedirect(route('invoices.index'))->assertSessionHas('status');
         $this->assertFalse(DB::connection('business_1')->table('invoices')->where('uuid', $invoice->uuid)->exists());
-        $this->assertTrue(DB::connection('business_1')->table('document_number_allocations')->where('id', $firstAllocationId)->exists());
-        $this->assertSame($invoice->uuid, DB::connection('business_1')->table('document_number_allocations')->where('id', $firstAllocationId)->value('document_uuid'));
-        $this->assertFalse(DB::connection('business_1')->table('invoice_documents')->where('invoice_id', $invoice->id)->exists());
+        foreach (['invoice_documents', 'invoice_email_deliveries', 'invoice_payments', 'invoice_public_links', 'invoice_draft_operations', 'invoice_issued_revision_operations'] as $table) {
+            $this->assertFalse(DB::connection('business_1')->table($table)->where('invoice_id', $invoiceId)->exists(), $table);
+        }
+        foreach (['invoice_items', 'invoice_vat_summaries', 'invoice_vat_snapshots', 'invoice_supplier_snapshots', 'invoice_customer_snapshots', 'invoice_bank_account_snapshots'] as $table) {
+            $this->assertFalse(DB::connection('business_1')->table($table)->whereIn('invoice_revision_id', $revisionIds)->exists(), $table);
+        }
+        $this->assertFalse(DB::connection('business_1')->table('invoice_revisions')->where('invoice_id', $invoiceId)->exists());
+        $this->assertFalse(DB::connection('business_1')->table('document_number_allocations')->where('document_uuid', $invoice->uuid)->exists());
         Storage::disk('invoice_documents')->assertMissing($document->storage_path);
-        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.test_purged')->where('auditable_uuid', $invoice->uuid)->count());
+        $audit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.deleted')->where('auditable_uuid', $invoice->uuid)->sole();
+        $this->assertTrue((bool) json_decode($audit->metadata, true, flags: JSON_THROW_ON_ERROR)['allocation_released']);
+        $this->assertSame(1, DB::connection('business_1')->table('document_sequences')->where('id', $sequenceId)->value('next_number'));
 
         app(ActiveBusinessContext::class)->set($business);
         $next = app(InvoiceIssuer::class)->issue($duplicate->uuid, $duplicate->version, (string) Str::uuid());
-        $this->assertNotSame($firstNumber, $next->document_number);
-        $this->assertSame(2, DB::connection('business_1')->table('document_number_allocations')->count());
-        $this->assertGreaterThan(
-            DB::connection('business_1')->table('document_number_allocations')->where('id', $firstAllocationId)->value('sequence_number'),
-            DB::connection('business_1')->table('document_number_allocations')->where('id', $next->document_number_allocation_id)->value('sequence_number'),
-        );
+        $this->assertSame($firstNumber, $next->document_number);
+        $this->assertSame(1, DB::connection('business_1')->table('document_number_allocations')->count());
+        app(ActiveBusinessContext::class)->clear();
+        $this->delete(route('invoices.delete', $invoice->uuid), ['confirmation' => '1'])->assertNotFound();
     }
 
-    public function test_test_purge_requires_server_allowlist_admin_and_safe_invoice(): void
+    #[DataProvider('tailReleaseCases')]
+    public function test_number_sequence_rewinds_only_over_deleted_contiguous_tail(array $deletedNumbers, int $expectedNext, array $remainingNumbers): void
     {
         [$admin, $business] = $this->deliveryMembership();
+        $this->actingAs($admin);
         app(ActiveBusinessContext::class)->set($business);
-        [$invoice] = $this->createIssuedInvoice();
-        app(ActiveBusinessContext::class)->clear();
-        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
-        $this->delete(route('invoices.test-purge', $invoice->uuid), [
-            'confirmation' => 'ODSTRANIT', 'document_number' => $invoice->document_number,
-        ])->assertForbidden();
-        $this->assertTrue(DB::connection('business_1')->table('invoices')->where('id', $invoice->id)->exists());
+        [$first] = $this->createIssuedInvoice();
+        $invoices = [1 => $first];
+        for ($number = 2; $number <= 6; $number++) {
+            $draft = app(InvoiceDuplicator::class)->duplicate($first);
+            $invoices[$number] = app(InvoiceIssuer::class)->issue($draft->uuid, $draft->version, (string) Str::uuid());
+        }
+        $nextDraft = app(InvoiceDuplicator::class)->duplicate($first);
+        $sequenceId = $first->document_sequence_id;
 
-        config()->set('business.invoice_test_purge_uuids', [strtolower($invoice->uuid)]);
-        $this->post(route('invoices.payments.store', $invoice->uuid), [
-            'amount' => '1', 'currency' => 'CZK', 'paid_on' => '2026-08-17',
-            'payment_method' => 'bank_transfer', 'correlation_uuid' => (string) Str::uuid(),
-        ])->assertRedirect();
-        $this->from(route('invoices.show', $invoice->uuid))->delete(route('invoices.test-purge', $invoice->uuid), [
-            'confirmation' => 'ODSTRANIT', 'document_number' => $invoice->document_number,
-        ])->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHasErrors('invoice');
-        $this->assertTrue(DB::connection('business_1')->table('invoices')->where('id', $invoice->id)->exists());
-        $this->assertSame(1, DB::connection('business_1')->table('invoice_payments')->where('invoice_id', $invoice->id)->count());
+        foreach ($deletedNumbers as $number) {
+            app(InvoiceDeletionService::class)->delete($invoices[$number]->uuid);
+        }
+
+        $this->assertSame($remainingNumbers, DB::connection('business_1')->table('document_number_allocations')
+            ->where('document_sequence_id', $sequenceId)->orderBy('sequence_number')->pluck('sequence_number')->map(fn ($value): int => (int) $value)->all());
+        $this->assertSame($expectedNext, (int) DB::connection('business_1')->table('document_sequences')->where('id', $sequenceId)->value('next_number'));
+
+        $issued = app(InvoiceIssuer::class)->issue($nextDraft->uuid, $nextDraft->version, (string) Str::uuid());
+        $this->assertSame($expectedNext, (int) DB::connection('business_1')->table('document_number_allocations')
+            ->where('id', $issued->document_number_allocation_id)->value('sequence_number'));
+        $allocations = DB::connection('business_1')->table('document_number_allocations')->where('document_sequence_id', $sequenceId)->get();
+        $this->assertSame($allocations->count(), $allocations->pluck('sequence_number')->unique()->count());
+    }
+
+    public static function tailReleaseCases(): array
+    {
+        return [
+            'delete last 6' => [[6], 6, [1, 2, 3, 4, 5]],
+            'delete tail 5 and 6' => [[5, 6], 5, [1, 2, 3, 4]],
+            'delete all' => [[1, 2, 3, 4, 5, 6], 1, []],
+            'delete middle 3' => [[3], 7, [1, 2, 4, 5, 6]],
+        ];
     }
 }

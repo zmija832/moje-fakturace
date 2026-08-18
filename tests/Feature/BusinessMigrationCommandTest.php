@@ -411,11 +411,20 @@ class BusinessMigrationCommandTest extends TestCase
             }
             $this->assertTrue(DB::connection($connection)->table('migrations')
                 ->where('migration', '2026_08_17_000000_add_invoice_cancellation_and_deletion_workflows')->exists());
+            $this->assertTrue(DB::connection($connection)->table('migrations')
+                ->where('migration', '2026_08_18_000000_enable_permanent_invoice_deletion')->exists());
             $issuedGuard = DB::connection($connection)->selectOne(
                 "SELECT ACTION_STATEMENT AS body FROM information_schema.TRIGGERS
                  WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 'invoices_issued_immutable_update'",
             );
             $this->assertStringContainsString("NEW.`status` = 'cancelled'", $issuedGuard->body);
+            $this->assertStringContainsString("BINARY 'invoice_delete'", $issuedGuard->body);
+            $this->assertStringNotContainsString("BINARY 'test_purge'", $issuedGuard->body);
+            $paymentDeleteGuard = DB::connection($connection)->selectOne(
+                "SELECT ACTION_STATEMENT AS body FROM information_schema.TRIGGERS
+                 WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 'invoice_payments_immutable_delete'",
+            );
+            $this->assertStringContainsString("i.`status` = 'purging'", $paymentDeleteGuard->body);
 
             $foreignSchemas = DB::connection($connection)->select(
                 "SELECT DISTINCT REFERENCED_TABLE_SCHEMA AS referenced_schema
