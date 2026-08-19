@@ -61,6 +61,13 @@ enum BusinessAuditEvent: string
     case InvoiceDraftDeleted = 'invoice.draft_deleted';
     case InvoiceTestPurged = 'invoice.test_purged';
     case InvoiceDeleted = 'invoice.deleted';
+    case RecurringInvoiceCreated = 'recurring_invoice.created';
+    case RecurringInvoiceUpdated = 'recurring_invoice.updated';
+    case RecurringInvoicePaused = 'recurring_invoice.paused';
+    case RecurringInvoiceResumed = 'recurring_invoice.resumed';
+    case RecurringInvoiceManualRun = 'recurring_invoice.manual_run';
+    case InvoiceAutomationSettingsUpdated = 'invoice_automation_settings.updated';
+    case InvoiceReminderPreferenceChanged = 'invoice.reminder_preference_changed';
 
     public function label(): string
     {
@@ -122,6 +129,13 @@ enum BusinessAuditEvent: string
             self::InvoiceDraftDeleted => 'Trvale odstraněn koncept faktury',
             self::InvoiceTestPurged => 'Historicky odstraněna testovací faktura',
             self::InvoiceDeleted => 'Trvale odstraněna faktura',
+            self::RecurringInvoiceCreated => 'Vytvořena opakovaná faktura',
+            self::RecurringInvoiceUpdated => 'Upravena opakovaná faktura',
+            self::RecurringInvoicePaused => 'Pozastavena opakovaná faktura',
+            self::RecurringInvoiceResumed => 'Obnovena opakovaná faktura',
+            self::RecurringInvoiceManualRun => 'Ručně spuštěna opakovaná faktura',
+            self::InvoiceAutomationSettingsUpdated => 'Změněno nastavení automatizace',
+            self::InvoiceReminderPreferenceChanged => 'Změněno nastavení upomínek faktury',
         };
     }
 

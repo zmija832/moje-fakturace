@@ -110,6 +110,16 @@ class Invoice extends BusinessModel
         return $this->hasMany(InvoicePublicLink::class)->latest('id');
     }
 
+    public function reminderOverride(): HasOne
+    {
+        return $this->hasOne(InvoiceReminderOverride::class);
+    }
+
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(InvoiceReminder::class)->orderBy('level');
+    }
+
     public function displayState(?InvoicePaymentSummary $paymentSummary = null): InvoiceDisplayState
     {
         if ($this->archived_at !== null) {

@@ -339,15 +339,16 @@ class InvoiceIssuerTest extends TestCase
         $processes = [];
 
         for ($index = 0; $index < 2; $index++) {
-            $process = new Process([
-                PHP_BINARY,
+            $process = new Process($this->businessPhpCommand(
                 base_path('tests/Support/issue-invoice.php'),
-                'business_1',
-                $invoice->uuid,
-                '1',
-                $correlation,
-                $barrier,
-            ], base_path(), $this->businessChildProcessEnvironment());
+                [
+                    'business_1',
+                    $invoice->uuid,
+                    '1',
+                    $correlation,
+                    $barrier,
+                ],
+            ), base_path(), $this->businessChildProcessEnvironment());
             $process->setTimeout(45);
             $processes[] = $process;
         }

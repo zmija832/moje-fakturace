@@ -413,6 +413,16 @@ class BusinessMigrationCommandTest extends TestCase
                 ->where('migration', '2026_08_17_000000_add_invoice_cancellation_and_deletion_workflows')->exists());
             $this->assertTrue(DB::connection($connection)->table('migrations')
                 ->where('migration', '2026_08_18_000000_enable_permanent_invoice_deletion')->exists());
+            $this->assertTrue(DB::connection($connection)->table('migrations')
+                ->where('migration', '2026_08_19_000000_add_invoice_automation')->exists());
+            foreach (['recurring_invoice_templates', 'recurring_invoice_items', 'recurring_invoice_runs', 'invoice_automation_settings', 'invoice_reminders', 'invoice_paid_notifications'] as $automationTable) {
+                $this->assertTrue(Schema::connection($connection)->hasTable($automationTable));
+                $this->assertFalse(Schema::connection('central')->hasTable($automationTable));
+            }
+            foreach (['claim_token', 'claimed_at', 'send_attempts'] as $claimColumn) {
+                $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_reminders', $claimColumn));
+                $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_paid_notifications', $claimColumn));
+            }
             $issuedGuard = DB::connection($connection)->selectOne(
                 "SELECT ACTION_STATEMENT AS body FROM information_schema.TRIGGERS
                  WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 'invoices_issued_immutable_update'",

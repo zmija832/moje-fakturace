@@ -418,3 +418,28 @@ Alpine.data('invoiceEditor', (config) => ({
 window.Alpine = Alpine;
 
 Alpine.start();
+
+const recurringItems = document.getElementById('recurring-items');
+const recurringItemTemplate = document.getElementById('recurring-item-template');
+const recurringAddItem = document.getElementById('recurring-add-item');
+
+if (recurringItems && recurringItemTemplate instanceof HTMLTemplateElement && recurringAddItem) {
+    const bindRemove = (button) => button?.addEventListener('click', () => {
+        if (recurringItems.querySelectorAll('.recurring-item').length > 1) {
+            button.closest('.recurring-item')?.remove();
+        }
+    });
+
+    recurringItems.querySelectorAll('.recurring-remove').forEach(bindRemove);
+    recurringAddItem.addEventListener('click', () => {
+        const indexes = Array.from(recurringItems.querySelectorAll('[name^="items["]'))
+            .map((element) => Number(element.name.match(/^items\[(\d+)]/)?.[1] ?? -1));
+        const index = Math.max(0, ...indexes) + 1;
+        const fragment = recurringItemTemplate.content.cloneNode(true);
+        fragment.querySelectorAll('[name]').forEach((element) => {
+            element.name = element.name.replace('__INDEX__', String(index));
+        });
+        bindRemove(fragment.querySelector('.recurring-remove'));
+        recurringItems.appendChild(fragment);
+    });
+}

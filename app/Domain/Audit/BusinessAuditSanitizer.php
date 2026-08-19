@@ -9,12 +9,14 @@ use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceAutomationSetting;
 use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoiceEmailDelivery;
 use App\Models\Business\InvoiceEmailSetting;
 use App\Models\Business\InvoicePayment;
 use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\InvoiceRevision;
+use App\Models\Business\RecurringInvoiceTemplate;
 use App\Models\Business\VatRate;
 use BackedEnum;
 use DateTimeInterface;
@@ -39,6 +41,8 @@ class BusinessAuditSanitizer
             BusinessAuditableType::InvoiceEmailDelivery => $this->invoiceEmailDelivery($this->expect($model, InvoiceEmailDelivery::class)),
             BusinessAuditableType::InvoicePayment => $this->invoicePayment($this->expect($model, InvoicePayment::class)),
             BusinessAuditableType::InvoicePublicLink => $this->invoicePublicLink($this->expect($model, InvoicePublicLink::class)),
+            BusinessAuditableType::RecurringInvoice => $this->recurringInvoice($this->expect($model, RecurringInvoiceTemplate::class)),
+            BusinessAuditableType::InvoiceAutomationSettings => $this->automationSettings($this->expect($model, InvoiceAutomationSetting::class)),
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
@@ -96,6 +100,8 @@ class BusinessAuditSanitizer
             BusinessAuditableType::InvoiceEmailDelivery,
             BusinessAuditableType::InvoicePayment => [],
             BusinessAuditableType::InvoicePublicLink => [],
+            BusinessAuditableType::RecurringInvoice => ['name', 'client_uuid', 'bank_account_uuid', 'currency', 'payment_method', 'due_days', 'interval_months', 'next_run_on', 'mode', 'auto_send', 'is_active', 'note', 'invoice_discount_type', 'invoice_discount_value'],
+            BusinessAuditableType::InvoiceAutomationSettings => ['reminders_enabled', 'reminder_mode', 'reminder_day_1', 'reminder_day_2', 'reminder_day_3', 'notify_admin_when_paid', 'notify_customer_when_paid', 'paid_subject', 'paid_body'],
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => [],
@@ -366,6 +372,16 @@ class BusinessAuditSanitizer
             'created_at' => $this->scalar($link->created_at),
             'revoked_at' => $this->scalar($link->revoked_at),
         ]);
+    }
+
+    private function recurringInvoice(RecurringInvoiceTemplate $template): array
+    {
+        return $this->withoutNulls(['name' => $template->name, 'client_uuid' => $template->client_uuid, 'bank_account_uuid' => $template->bank_account_uuid, 'currency' => $template->currency, 'payment_method' => $template->payment_method, 'due_days' => $template->due_days, 'interval_months' => $template->interval_months, 'next_run_on' => $this->scalar($template->next_run_on), 'mode' => $template->mode, 'auto_send' => (bool) $template->auto_send, 'is_active' => (bool) $template->is_active, 'version' => $template->version]);
+    }
+
+    private function automationSettings(InvoiceAutomationSetting $setting): array
+    {
+        return ['reminders_enabled' => (bool) $setting->reminders_enabled, 'reminder_mode' => $setting->reminder_mode, 'reminder_day_1' => $setting->reminder_day_1, 'reminder_day_2' => $setting->reminder_day_2, 'reminder_day_3' => $setting->reminder_day_3, 'notify_admin_when_paid' => (bool) $setting->notify_admin_when_paid, 'notify_customer_when_paid' => (bool) $setting->notify_customer_when_paid];
     }
 
     private function maskEmail(string $email): string

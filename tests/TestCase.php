@@ -132,6 +132,7 @@ abstract class TestCase extends BaseTestCase
             'audit_logs', 'vat_rates', 'invoices', 'invoice_revisions',
             'invoice_documents', 'invoice_email_deliveries', 'invoice_payments',
             'invoice_public_links',
+            'recurring_invoice_templates', 'recurring_invoice_runs', 'invoice_automation_settings',
         ];
         $existingTables = collect(Schema::connection($connection)->getTables())
             ->pluck('name')
@@ -141,9 +142,20 @@ abstract class TestCase extends BaseTestCase
             return false;
         }
 
+        if (! Schema::connection($connection)->hasColumns('invoice_reminders', [
+            'claim_token', 'claimed_at', 'send_attempts',
+        ])) {
+            return false;
+        }
+        if (! Schema::connection($connection)->hasColumns('invoice_paid_notifications', [
+            'claim_token', 'claimed_at', 'send_attempts',
+        ])) {
+            return false;
+        }
+
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_18_000000_enable_permanent_invoice_deletion')
+            ->where('migration', '2026_08_19_000000_add_invoice_automation')
             ->exists();
     }
 

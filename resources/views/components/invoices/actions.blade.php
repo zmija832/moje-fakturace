@@ -74,7 +74,12 @@
         @can('recordPayment', $invoice)
             @if($hasOutstanding)
                 <a class="button-secondary" href="#invoice-payment-entry">Zaznamenat úhradu</a>
+                <a class="button-secondary" href="{{ route('invoices.reminders.form', $invoice->uuid) }}">Odeslat upomínku</a>
             @endif
+            <form method="POST" action="{{ route('invoices.reminders.toggle', $invoice->uuid) }}">@csrf @method('PATCH')
+                <input type="hidden" name="disabled" value="{{ $invoice->reminderOverride?->disabled ? '0' : '1' }}">
+                <button class="button-secondary" type="submit">{{ $invoice->reminderOverride?->disabled ? 'Zapnout automatické upomínky' : 'Nevyžadovat automatické upomínky' }}</button>
+            </form>
         @endcan
 
         @can('print', $invoice)

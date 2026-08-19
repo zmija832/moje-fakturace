@@ -19,6 +19,8 @@ enum BusinessAuditableType: string
     case InvoiceEmailDelivery = 'invoice_email_delivery';
     case InvoicePayment = 'invoice_payment';
     case InvoicePublicLink = 'invoice_public_link';
+    case RecurringInvoice = 'recurring_invoice';
+    case InvoiceAutomationSettings = 'invoice_automation_settings';
 
     public function label(): string
     {
@@ -38,6 +40,8 @@ enum BusinessAuditableType: string
             self::InvoiceEmailDelivery => 'Odeslání faktury',
             self::InvoicePayment => 'Platba faktury',
             self::InvoicePublicLink => 'Veřejný odkaz faktury',
+            self::RecurringInvoice => 'Opakovaná faktura',
+            self::InvoiceAutomationSettings => 'Nastavení automatizace',
         };
     }
 

@@ -12,13 +12,16 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
+use App\Http\Controllers\InvoiceAutomationSettingController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
 use App\Http\Controllers\InvoiceEmailSettingController;
 use App\Http\Controllers\InvoiceLifecycleController;
 use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\InvoicePublicLinkController;
+use App\Http\Controllers\InvoiceReminderController;
 use App\Http\Controllers\PublicInvoiceController;
+use App\Http\Controllers\RecurringInvoiceController;
 use App\Http\Controllers\VatRateController;
 use Illuminate\Support\Facades\Route;
 
@@ -64,6 +67,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->name('invoice-email-settings.edit');
         Route::put('/nastaveni/emaily', [InvoiceEmailSettingController::class, 'update'])
             ->name('invoice-email-settings.update');
+        Route::get('/nastaveni/automatizace', [InvoiceAutomationSettingController::class, 'edit'])->name('automation-settings.edit');
+        Route::put('/nastaveni/automatizace', [InvoiceAutomationSettingController::class, 'update'])->name('automation-settings.update');
 
         Route::get('/nastaveni/subjekt', [CompanySettingsController::class, 'edit'])
             ->name('company-settings.edit');
@@ -195,6 +200,9 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.payments.store');
         Route::post('/faktury/{uuid}/platby/{paymentUuid}/storno', [InvoicePaymentController::class, 'reverse'])
             ->whereUuid(['uuid', 'paymentUuid'])->name('invoices.payments.reverse');
+        Route::get('/faktury/{uuid}/upominka', [InvoiceReminderController::class, 'form'])->whereUuid('uuid')->name('invoices.reminders.form');
+        Route::post('/faktury/{uuid}/upominka', [InvoiceReminderController::class, 'send'])->whereUuid('uuid')->name('invoices.reminders.send');
+        Route::patch('/faktury/{uuid}/upominky', [InvoiceReminderController::class, 'toggle'])->whereUuid('uuid')->name('invoices.reminders.toggle');
         Route::get('/faktury/{uuid}', [InvoiceController::class, 'show'])
             ->whereUuid('uuid')->name('invoices.show');
         Route::get('/klienti', [ClientController::class, 'index'])->name('clients.index');
@@ -214,8 +222,15 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('clients.activate');
         Route::patch('/klienti/{uuid}/archivovat', [ClientController::class, 'archive'])
             ->whereUuid('uuid')->name('clients.archive');
-        Route::view('/pravidelne-fakturace', 'coming-soon', ['module' => 'Pravidelné fakturace'])
-            ->name('recurring.index');
+        Route::get('/pravidelne-fakturace', [RecurringInvoiceController::class, 'index'])->name('recurring.index');
+        Route::get('/pravidelne-fakturace/nova', [RecurringInvoiceController::class, 'create'])->name('recurring.create');
+        Route::post('/pravidelne-fakturace', [RecurringInvoiceController::class, 'store'])->name('recurring.store');
+        Route::get('/pravidelne-fakturace/{uuid}', [RecurringInvoiceController::class, 'show'])->whereUuid('uuid')->name('recurring.show');
+        Route::get('/pravidelne-fakturace/{uuid}/upravit', [RecurringInvoiceController::class, 'edit'])->whereUuid('uuid')->name('recurring.edit');
+        Route::put('/pravidelne-fakturace/{uuid}', [RecurringInvoiceController::class, 'update'])->whereUuid('uuid')->name('recurring.update');
+        Route::patch('/pravidelne-fakturace/{uuid}/pozastavit', [RecurringInvoiceController::class, 'pause'])->whereUuid('uuid')->name('recurring.pause');
+        Route::patch('/pravidelne-fakturace/{uuid}/obnovit', [RecurringInvoiceController::class, 'resume'])->whereUuid('uuid')->name('recurring.resume');
+        Route::post('/pravidelne-fakturace/{uuid}/spustit', [RecurringInvoiceController::class, 'run'])->whereUuid('uuid')->name('recurring.run');
         Route::view('/export', 'coming-soon', ['module' => 'Export'])
             ->name('exports.index');
     });

@@ -4,6 +4,20 @@ namespace Tests\Concerns;
 
 trait BuildsBusinessProcessEnvironment
 {
+    /** @param list<string> $arguments @return list<string> */
+    protected function businessPhpCommand(string $script, array $arguments = []): array
+    {
+        $command = [PHP_BINARY, '-d', 'extension_dir='.ini_get('extension_dir')];
+        foreach (['mbstring', 'openssl', 'fileinfo', 'curl', 'intl', 'gd', 'pdo_mysql'] as $extension) {
+            if (extension_loaded($extension)) {
+                $command[] = '-d';
+                $command[] = 'extension=php_'.$extension.'.dll';
+            }
+        }
+
+        return [...$command, $script, ...$arguments];
+    }
+
     /** @return array<string, string> */
     protected function businessChildProcessEnvironment(): array
     {

@@ -18,6 +18,7 @@
                 ['route' => 'exports.index', 'active' => 'exports.*', 'label' => 'Export'],
                 ['route' => 'company-settings.edit', 'active' => 'company-settings.*', 'label' => 'Nastavení subjektu'],
                 ['route' => 'invoice-email-settings.edit', 'active' => 'invoice-email-settings.*', 'label' => 'E-maily'],
+                ['route' => 'automation-settings.edit', 'active' => 'automation-settings.*', 'label' => 'Upomínky a automatizace'],
                 ['route' => 'bank-accounts.index', 'active' => 'bank-accounts.*', 'label' => 'Bankovní účty'],
                 ['route' => 'document-sequences.index', 'active' => 'document-sequences.*', 'label' => 'Číselné řady'],
                 ['route' => 'vat-rates.index', 'active' => 'vat-rates.*', 'label' => 'Sazby DPH'],
