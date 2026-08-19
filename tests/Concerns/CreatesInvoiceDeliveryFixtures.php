@@ -44,7 +44,7 @@ trait CreatesInvoiceDeliveryFixtures
     }
 
     /** @return array{Invoice,Client,BankAccount,VatRate} */
-    protected function createIssuedInvoice(bool $issue = true): array
+    protected function createIssuedInvoice(bool $issue = true, string $dueOn = '2026-08-16'): array
     {
         $company = new CompanySetting;
         $company->forceFill([
@@ -82,7 +82,7 @@ trait CreatesInvoiceDeliveryFixtures
         $default->forceFill(['document_type' => 'issued_invoice', 'document_sequence_id' => $sequence->id])->save();
         $draft = app(InvoiceDraftService::class)->create([
             'customer_uuid' => $client->uuid, 'bank_account_uuid' => $account->uuid, 'currency' => 'CZK',
-            'issued_on' => '2026-08-02', 'taxable_supply_on' => '2026-08-02', 'due_on' => '2026-08-16',
+            'issued_on' => '2026-08-02', 'taxable_supply_on' => '2026-08-02', 'due_on' => $dueOn,
             'payment_method' => 'bank_transfer', 'variable_symbol' => '20260001', 'note' => 'Poznámka faktury',
             'invoice_discount_type' => 'none', 'invoice_discount_value' => '0',
             'items' => [[

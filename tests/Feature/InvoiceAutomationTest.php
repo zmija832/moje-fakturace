@@ -6,11 +6,13 @@ use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Domain\BusinessContext\Exceptions\MissingBusinessContext;
 use App\Enums\BusinessConnection;
 use App\Mail\AutomationMail;
+use App\Models\Business\BankAccount;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoicePaidNotification;
 use App\Models\Business\InvoiceReminder;
 use App\Models\Business\RecurringInvoiceRun;
 use App\Models\Business\RecurringInvoiceTemplate;
+use App\Services\Business\BankAccountService;
 use App\Services\Business\DashboardOverviewService;
 use App\Services\Business\InvoiceAutomationSettingsService;
 use App\Services\Business\InvoiceDraftService;
@@ -58,6 +60,35 @@ class InvoiceAutomationTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->expectException(MissingBusinessContext::class);
         RecurringInvoiceTemplate::query()->count();
+    }
+
+    public function test_recurring_create_uses_currency_default_but_existing_template_keeps_its_account(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, $client, $original] = $this->createIssuedInvoice(false);
+        $replacement = new BankAccount;
+        $replacement->forceFill([
+            'name' => 'Výchozí CZK účet',
+            'iban' => 'CZ5855000000001265098001',
+            'bic' => 'RZBCCZPP',
+            'currency' => 'CZK',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        app(BankAccountService::class)->setDefault($replacement->uuid);
+        $template = app(RecurringInvoiceService::class)->create($this->templatePayload($client->uuid, $original->uuid));
+        $this->actingAs($admin);
+
+        $response = $this->withSession($this->deliveryBusinessSession($business))->get(route('recurring.create'));
+
+        $response->assertOk()->assertSee('@change="$refs.bankAccount.value = defaults[currency] ?? \'\'"', false);
+        $this->assertMatchesRegularExpression(
+            '/<option value="'.preg_quote($replacement->uuid, '/').'"[^>]*selected/',
+            $response->getContent(),
+        );
+        app(BankAccountService::class)->setDefault($original->uuid);
+        $this->assertSame($original->uuid, $template->refresh()->bank_account_uuid);
     }
 
     public function test_due_run_is_idempotent_and_preserves_month_end_anchor(): void

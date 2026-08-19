@@ -94,7 +94,8 @@ class InvoicesHttpTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
-        $this->get(route('invoices.create'))->assertOk()->assertSee('Nová faktura')
+        $createResponse = $this->get(route('invoices.create'));
+        $createResponse->assertOk()->assertSee('Nová faktura')
             ->assertSee('name="_token"', false)->assertSee('Rozpis výpočtu')
             ->assertSee('Uložit jako koncept')->assertSee('Vytvořit fakturu')
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
@@ -110,8 +111,13 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('invoice-items-table--vat', false)
             ->assertSee('class="invoice-items-header"', false)
             ->assertSee('class="invoice-item-row"', false)
+            ->assertSee('@change="applyDefaultBankAccount"', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
+        $this->assertMatchesRegularExpression(
+            '/<option value="'.preg_quote($account->uuid, '/').'"[^>]*selected/',
+            $createResponse->getContent(),
+        );
         $before = $this->counts();
         $this->postJson(route('invoices.preview'), $this->payload($client, $account, $rate))
             ->assertOk()->assertJsonPath('totals.grand_total', '100.0000');

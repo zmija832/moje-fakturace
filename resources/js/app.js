@@ -5,6 +5,7 @@ Alpine.data('invoiceEditor', (config) => ({
     items: config.items,
     currency: config.currency,
     paymentMethod: config.paymentMethod,
+    defaultBankAccounts: config.defaultBankAccounts ?? {},
     preview: null,
     previewError: '',
     loading: false,
@@ -303,7 +304,10 @@ Alpine.data('invoiceEditor', (config) => ({
     applyClient(event) {
         const option = event.target.selectedOptions[0];
         if (!option?.value) return;
-        if (option.dataset.currency) this.currency = option.dataset.currency;
+        if (option.dataset.currency) {
+            this.currency = option.dataset.currency;
+            this.$nextTick(() => this.applyDefaultBankAccount());
+        }
         if (option.dataset.paymentMethod) this.paymentMethod = option.dataset.paymentMethod;
         const issued = this.$refs.form.elements.issued_on?.value;
         const due = this.$refs.form.elements.due_on;
@@ -313,6 +317,14 @@ Alpine.data('invoiceEditor', (config) => ({
             due.value = date.toISOString().slice(0, 10);
         }
         this.queuePreview();
+    },
+    applyDefaultBankAccount() {
+        const select = this.$refs.bankAccountSelect;
+        if (!select) return;
+
+        const defaultUuid = this.defaultBankAccounts[this.currency] ?? '';
+        const option = Array.from(select.options).find((candidate) => candidate.value === defaultUuid && !candidate.disabled);
+        select.value = option?.value ?? '';
     },
     queuePreview(delay = 400) {
         window.clearTimeout(this.previewTimer);

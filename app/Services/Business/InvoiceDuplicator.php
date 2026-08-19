@@ -2,7 +2,9 @@
 
 namespace App\Services\Business;
 
+use App\Enums\DefaultPaymentMethod;
 use App\Enums\InvoiceStatus;
+use App\Models\Business\BankAccount;
 use App\Models\Business\Client;
 use App\Models\Business\Invoice;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +37,20 @@ class InvoiceDuplicator
         }
 
         $defaults = $this->formOptions->defaults($client);
+        $sourceBankAccountUuid = $revision->bankAccountSnapshot?->source_bank_account_uuid;
+        $bankAccount = $sourceBankAccountUuid === null ? null : BankAccount::query()
+            ->where('uuid', $sourceBankAccountUuid)
+            ->where('currency', $revision->currency)
+            ->where('is_active', true)
+            ->whereNull('archived_at')
+            ->first();
+        $bankAccountUuid = $bankAccount?->uuid
+            ?? $this->formOptions->defaultBankAccountUuid($revision->currency);
+        if ($revision->payment_method === DefaultPaymentMethod::BankTransfer && $bankAccountUuid === null) {
+            throw ValidationException::withMessages([
+                'bank_account' => 'Původní bankovní účet již není dostupný a pro měnu faktury není nastaven použitelný výchozí účet.',
+            ]);
+        }
         $isVatPayer = $this->vatResolver->isVatPayer();
         $items = $revision->items->map(function ($item) use ($isVatPayer): array {
             $values = [
@@ -55,7 +71,7 @@ class InvoiceDuplicator
 
         return $this->drafts->create([
             'customer_uuid' => $client->uuid,
-            'bank_account_uuid' => $revision->bankAccountSnapshot?->source_bank_account_uuid,
+            'bank_account_uuid' => $bankAccountUuid,
             'currency' => $revision->currency,
             'issued_on' => $defaults['issued_on'],
             'taxable_supply_on' => $defaults['taxable_supply_on'],

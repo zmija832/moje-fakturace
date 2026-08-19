@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\SaveRecurringInvoiceRequest;
 use App\Models\Business\RecurringInvoiceTemplate;
+use App\Services\Business\BusinessDate;
 use App\Services\Business\InvoiceFormOptions;
 use App\Services\Business\RecurringInvoiceRunner;
 use App\Services\Business\RecurringInvoiceService;
@@ -20,11 +21,11 @@ class RecurringInvoiceController extends Controller
         return view('business.recurring.index', ['templates' => RecurringInvoiceTemplate::query()->with('runs')->orderByDesc('is_active')->orderBy('next_run_on')->paginate(30)]);
     }
 
-    public function create(InvoiceFormOptions $options): View
+    public function create(InvoiceFormOptions $options, BusinessDate $businessDate): View
     {
         Gate::authorize('create', RecurringInvoiceTemplate::class);
 
-        return view('business.recurring.form', ['template' => new RecurringInvoiceTemplate, 'options' => $options->forDate(today()->format('Y-m-d'))]);
+        return view('business.recurring.form', ['template' => new RecurringInvoiceTemplate, 'options' => $options->forDate($businessDate->today()->format('Y-m-d'))]);
     }
 
     public function store(SaveRecurringInvoiceRequest $request, RecurringInvoiceService $service): RedirectResponse

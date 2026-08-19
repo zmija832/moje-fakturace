@@ -27,11 +27,13 @@ class InvoiceReminderService
         private readonly AutomationTemplateRenderer $renderer,
         private readonly InvoiceEmailSettingsService $emailSettings,
         private readonly BusinessConnectionResolver $connectionResolver,
+        private readonly BusinessDate $businessDate,
     ) {}
 
     /** @return array{processed:int,failed:int} */
     public function runDue(CarbonImmutable $today, int $limit = 50): array
     {
+        $today = $this->businessDate->normalize($today);
         $settings = $this->settings->current();
         $result = ['processed' => 0, 'failed' => 0];
         if (! $settings->reminders_enabled) {
@@ -42,7 +44,7 @@ class InvoiceReminderService
             ->with(['issuedRevision.customerSnapshot', 'issuedRevision.supplierSnapshot', 'payments', 'reminderOverride'])
             ->where('status', InvoiceStatus::Issued->value)
             ->whereNull('archived_at')
-            ->whereDate('due_on', '<', $today)
+            ->whereDate('due_on', '<', $today->format('Y-m-d'))
             ->limit($limit)
             ->get();
 
@@ -55,7 +57,7 @@ class InvoiceReminderService
                 continue;
             }
 
-            $daysOverdue = (int) $invoice->due_on->diffInDays($today);
+            $daysOverdue = $this->businessDate->daysBetween($invoice->due_on, $today);
             foreach ([1, 2, 3] as $level) {
                 $configuredDay = $settings->{"reminder_day_{$level}"};
                 if ($configuredDay === null || (int) $configuredDay > $daysOverdue) {
@@ -85,7 +87,7 @@ class InvoiceReminderService
                             $result['processed']++;
                         }
                     } else {
-                        $scheduledOn = CarbonImmutable::parse($invoice->due_on)->addDays((int) $configuredDay);
+                        $scheduledOn = $this->businessDate->addDays($invoice->due_on, (int) $configuredDay);
                         $this->prepare(
                             $invoice,
                             $level,
@@ -115,6 +117,7 @@ class InvoiceReminderService
         bool $send,
         InvoiceReminderOrigin $origin = InvoiceReminderOrigin::Automatic,
     ): InvoiceReminder {
+        $scheduledOn = $this->businessDate->normalize($scheduledOn);
         $connection = $this->connectionResolver->resolve()->connectionName();
         $reminder = DB::connection($connection)->transaction(function () use ($invoice, $level, $scheduledOn, $origin): InvoiceReminder {
             $lockedInvoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->first();
@@ -143,7 +146,7 @@ class InvoiceReminderService
                 $setting->{"reminder_subject_{$level}"},
                 $setting->{"reminder_body_{$level}"},
                 $summary->remainingTotal,
-                $lockedInvoice->due_on->diffInDays($scheduledOn),
+                $this->businessDate->daysBetween($lockedInvoice->due_on, $scheduledOn),
             );
             $reminder = new InvoiceReminder;
             $reminder->forceFill([

@@ -4,11 +4,10 @@ namespace App\Console\Commands;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Models\Business;
-use App\Models\Business\CompanySetting;
+use App\Services\Business\BusinessDate;
 use App\Services\Business\InvoicePaidNotificationService;
 use App\Services\Business\InvoiceReminderService;
 use App\Services\Business\RecurringInvoiceRunner;
-use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -18,7 +17,7 @@ class RunInvoiceAutomationCommand extends Command
 
     protected $description = 'Idempotentně zpracuje opakované faktury, upomínky a retry notifikací po zaplacení';
 
-    public function handle(ActiveBusinessContext $context): int
+    public function handle(ActiveBusinessContext $context, BusinessDate $businessDate): int
     {
         $requestedBusiness = trim((string) ($this->option('business') ?? ''));
         $query = Business::query()->where('is_active', true);
@@ -36,8 +35,7 @@ class RunInvoiceAutomationCommand extends Command
         foreach ($businesses as $business) {
             $context->set($business);
             try {
-                $timezone = CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)->value('timezone') ?: config('app.timezone');
-                $today = CarbonImmutable::now($timezone)->startOfDay();
+                $today = $businessDate->today();
                 $limit = max(1, min(100, (int) $this->option('limit')));
                 $recurring = app(RecurringInvoiceRunner::class)->runDue($today, $limit);
                 $reminders = app(InvoiceReminderService::class)->runDue($today, $limit);

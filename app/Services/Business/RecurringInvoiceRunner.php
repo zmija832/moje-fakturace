@@ -22,6 +22,7 @@ class RecurringInvoiceRunner
     {
         $connection = $this->resolver->resolve()->connectionName();
         $scheduledOn ??= $template->next_run_on->toImmutable();
+        $scheduledOn = BusinessDate::normalize($scheduledOn);
         $run = $this->reserve($template, $scheduledOn, $connection);
         if (in_array($run->status, ['draft_created', 'issued', 'sent'], true) || ! $this->claim($run, $connection)) {
             return $run->refresh();
@@ -63,8 +64,9 @@ class RecurringInvoiceRunner
 
     public function runDue(CarbonImmutable $today, int $limit = 50): array
     {
+        $today = BusinessDate::normalize($today);
         $result = ['processed' => 0, 'failed' => 0];
-        RecurringInvoiceTemplate::query()->where('is_active', true)->whereDate('next_run_on', '<=', $today)->orderBy('next_run_on')->limit($limit)->get()->each(function ($template) use (&$result): void {
+        RecurringInvoiceTemplate::query()->where('is_active', true)->whereDate('next_run_on', '<=', $today->format('Y-m-d'))->orderBy('next_run_on')->limit($limit)->get()->each(function ($template) use (&$result): void {
             try {
                 $this->run($template);
                 $result['processed']++;

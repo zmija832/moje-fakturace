@@ -9,6 +9,7 @@ use App\Models\Business;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceReminder;
 use App\Models\User;
+use App\Services\Business\BusinessDate;
 use App\Services\Business\InvoiceArchiveService;
 use App\Services\Business\InvoiceAutomationSettingsService;
 use App\Services\Business\InvoiceCancellationService;
@@ -31,6 +32,35 @@ class InvoiceReminderReliabilityTest extends TestCase
         CarbonImmutable::setTestNow();
         app(ActiveBusinessContext::class)->clear();
         parent::tearDown();
+    }
+
+    public function test_prague_business_date_creates_first_reminder_one_calendar_day_overdue(): void
+    {
+        config(['app.timezone' => 'UTC']);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-08-18 22:30:00', 'UTC'));
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        $this->actingAs($admin);
+        $this->createIssuedInvoice(true, '2026-08-18');
+        $settings = app(InvoiceAutomationSettingsService::class);
+        $settings->save([
+            ...$settings->defaults(),
+            'reminders_enabled' => true,
+            'reminder_mode' => 'prepare',
+            'reminder_day_1' => 1,
+            'reminder_day_2' => null,
+            'reminder_day_3' => null,
+        ]);
+
+        $today = app(BusinessDate::class)->today();
+        $result = app(InvoiceReminderService::class)->runDue($today);
+
+        $this->assertSame('2026-08-19', $today->format('Y-m-d'));
+        $this->assertSame(['processed' => 1, 'failed' => 0], $result);
+        $reminder = InvoiceReminder::query()->sole();
+        $this->assertSame(1, $reminder->level);
+        $this->assertSame('prepared', $reminder->status);
+        $this->assertSame('2026-08-19', $reminder->scheduled_on->format('Y-m-d'));
     }
 
     public function test_missed_seventh_day_creates_second_level_with_original_planned_date(): void

@@ -11,7 +11,10 @@ use LogicException;
 
 class InvoicePaymentReader
 {
-    public function __construct(private readonly BusinessConnectionResolver $connectionResolver) {}
+    public function __construct(
+        private readonly BusinessConnectionResolver $connectionResolver,
+        private readonly BusinessDate $businessDate,
+    ) {}
 
     public function summary(Invoice $invoice): InvoicePaymentSummary
     {
@@ -28,7 +31,7 @@ class InvoicePaymentReader
                 'amount' => $payment->amount,
             ]),
             $invoice->due_on,
-            today(),
+            $this->businessDate->today(),
         );
     }
 
@@ -42,7 +45,7 @@ class InvoicePaymentReader
             $invoice->issuedRevision->grand_total,
             (string) ($invoice->getAttribute('payment_paid_total') ?? '0'),
             $invoice->due_on,
-            today(),
+            $this->businessDate->today(),
         );
     }
 

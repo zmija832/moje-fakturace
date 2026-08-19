@@ -25,13 +25,14 @@ class InvoiceFormOptions
     public function __construct(
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly DocumentSequenceService $sequenceService,
+        private readonly BusinessDate $businessDate,
     ) {}
 
     /** @return array<string, mixed> */
     public function forDate(string $taxableSupplyOn): array
     {
         $this->connectionResolver->resolve();
-        $date = CarbonImmutable::createFromFormat('!Y-m-d', $taxableSupplyOn) ?: today()->toImmutable();
+        $date = CarbonImmutable::createFromFormat('!Y-m-d', $taxableSupplyOn) ?: $this->businessDate->today();
         $clients = Client::query()->whereNull('archived_at')->where('is_active', true)
             ->orderBy('display_name')->limit(201)->get();
         $accounts = BankAccount::query()->with('defaultAssignment')->whereNull('archived_at')
@@ -66,7 +67,8 @@ class InvoiceFormOptions
             ]),
             'defaultSequenceUuid' => $defaultSequenceUuid,
             'defaultBankAccounts' => BankAccountDefault::query()->with('account')->get()
-                ->mapWithKeys(fn (BankAccountDefault $default): array => [$default->currency => $default->account?->uuid]),
+                ->filter(fn (BankAccountDefault $default): bool => $this->isUsableDefaultAccount($default))
+                ->mapWithKeys(fn (BankAccountDefault $default): array => [$default->currency => $default->account->uuid]),
             'defaultVatRateUuid' => $defaultVatRate !== null && ! $defaultVatRate->isSystemManaged()
                 ? $defaultVatRate->uuid
                 : null,
@@ -79,6 +81,7 @@ class InvoiceFormOptions
             'discountTypes' => collect(InvoiceDiscountType::cases())->mapWithKeys(
                 fn (InvoiceDiscountType $type): array => [$type->value => $type->label()],
             )->all(),
+            'businessToday' => $this->businessDate->today()->format('Y-m-d'),
         ];
     }
 
@@ -95,7 +98,8 @@ class InvoiceFormOptions
     public function defaults(?Client $client = null): array
     {
         $company = CompanySetting::query()->where('singleton_key', CompanySetting::SINGLETON_KEY)->first();
-        $issuedOn = today()->format('Y-m-d');
+        $today = $this->businessDate->today();
+        $issuedOn = $today->format('Y-m-d');
         $dueDays = $client?->default_due_days ?? $company?->default_due_days ?? 14;
 
         return [
@@ -103,7 +107,25 @@ class InvoiceFormOptions
             'payment_method' => $client?->default_payment_method ?? $company?->default_payment_method ?? 'bank_transfer',
             'issued_on' => $issuedOn,
             'taxable_supply_on' => $issuedOn,
-            'due_on' => today()->addDays((int) $dueDays)->format('Y-m-d'),
+            'due_on' => $today->addDays((int) $dueDays)->format('Y-m-d'),
         ];
+    }
+
+    public function defaultBankAccountUuid(string $currency): ?string
+    {
+        $this->connectionResolver->resolve();
+        $default = BankAccountDefault::query()->with('account')->find($currency);
+
+        return $default !== null && $this->isUsableDefaultAccount($default)
+            ? $default->account->uuid
+            : null;
+    }
+
+    private function isUsableDefaultAccount(BankAccountDefault $default): bool
+    {
+        return $default->account !== null
+            && $default->account->is_active
+            && $default->account->archived_at === null
+            && $default->account->currency === $default->currency;
     }
 }

@@ -6,11 +6,11 @@ use App\Enums\InvoiceReminderOrigin;
 use App\Enums\InvoiceStatus;
 use App\Models\Business\Invoice;
 use App\Services\Business\AutomationTemplateRenderer;
+use App\Services\Business\BusinessDate;
 use App\Services\Business\InvoiceAutomationSettingsService;
 use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoiceReminderPreferenceService;
 use App\Services\Business\InvoiceReminderService;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -19,7 +19,7 @@ use Illuminate\View\View;
 
 class InvoiceReminderController extends Controller
 {
-    public function form(string $uuid, InvoiceAutomationSettingsService $settings, InvoicePaymentReader $payments, AutomationTemplateRenderer $renderer): View
+    public function form(string $uuid, InvoiceAutomationSettingsService $settings, InvoicePaymentReader $payments, AutomationTemplateRenderer $renderer, BusinessDate $businessDate): View
     {
         $invoice = $this->invoice($uuid);
         Gate::authorize('recordPayment', $invoice);
@@ -27,13 +27,13 @@ class InvoiceReminderController extends Controller
         $summary = $payments->summary($invoice);
         abort_unless($summary->isOverdue, 422, 'Upomínku lze odeslat pouze k faktuře po splatnosti s nedoplatkem.');
         $setting = $settings->current();
-        $days = (int) $invoice->due_on->diffInDays(today());
+        $days = $businessDate->daysBetween($invoice->due_on, $businessDate->today());
         $previews = collect([1, 2, 3])->mapWithKeys(fn ($level) => [$level => $renderer->reminder($invoice, $setting->{"reminder_subject_$level"}, $setting->{"reminder_body_$level"}, $summary->remainingTotal, $days)]);
 
         return view('business.invoices.reminder', compact('invoice', 'previews'));
     }
 
-    public function send(Request $request, string $uuid, InvoiceReminderService $service): RedirectResponse
+    public function send(Request $request, string $uuid, InvoiceReminderService $service, BusinessDate $businessDate): RedirectResponse
     {
         $invoice = $this->invoice($uuid);
         Gate::authorize('recordPayment', $invoice);
@@ -42,7 +42,7 @@ class InvoiceReminderController extends Controller
             $service->prepare(
                 $invoice,
                 (int) $data['level'],
-                CarbonImmutable::today(),
+                $businessDate->today(),
                 true,
                 InvoiceReminderOrigin::Manual,
             );

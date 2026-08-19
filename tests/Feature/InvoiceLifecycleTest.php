@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Enums\BusinessConnection;
+use App\Models\Business\BankAccount;
+use App\Services\Business\BankAccountService;
 use App\Services\Business\InvoiceDeletionService;
 use App\Services\Business\InvoiceDuplicator;
 use App\Services\Business\InvoiceIssuer;
@@ -37,6 +39,34 @@ class InvoiceLifecycleTest extends TestCase
     {
         app(ActiveBusinessContext::class)->clear();
         parent::tearDown();
+    }
+
+    public function test_duplicate_preserves_a_usable_account_and_falls_back_to_the_currency_default(): void
+    {
+        [, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice, , $original] = $this->createIssuedInvoice();
+
+        $preserved = app(InvoiceDuplicator::class)->duplicate($invoice);
+        $this->assertSame($original->uuid, $preserved->currentRevision->bankAccountSnapshot->source_bank_account_uuid);
+
+        $replacement = new BankAccount;
+        $replacement->forceFill([
+            'name' => 'Náhradní CZK účet',
+            'iban' => 'CZ5855000000001265098001',
+            'bic' => 'RZBCCZPP',
+            'currency' => 'CZK',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $accounts = app(BankAccountService::class);
+        $accounts->setDefault($replacement->uuid);
+        $accounts->deactivate($original->uuid);
+
+        $fallback = app(InvoiceDuplicator::class)->duplicate($invoice);
+
+        $this->assertSame($replacement->uuid, $fallback->currentRevision->bankAccountSnapshot->source_bank_account_uuid);
+        $this->assertSame($original->uuid, $invoice->issuedRevision->bankAccountSnapshot->source_bank_account_uuid);
     }
 
     public function test_admin_cancels_issued_invoice_once_and_preserves_all_history(): void
