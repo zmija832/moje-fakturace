@@ -78,7 +78,7 @@ class InvoiceEmailSettingsTest extends TestCase
         app(InvoiceEmailSettingsService::class)->save($this->settings(['attach_pdf' => false, 'include_web_invoice' => true]));
         $rendered = app(InvoiceEmailTemplateRenderer::class)->render($invoice);
         $this->assertSame('Doklad '.$invoice->document_number.' / Příliš žluťoučký klient', $rendered['subject']);
-        $this->assertStringContainsString('100,00 CZK', $rendered['body_text']);
+        $this->assertStringContainsString('100 CZK', $rendered['body_text']);
         $this->assertStringContainsString($url, $rendered['body_text']);
         $this->assertStringContainsString('Žluťoučký dodavatel s.r.o.', $rendered['body_text']);
         $this->assertFalse($rendered['attach_pdf']);

@@ -16,7 +16,7 @@
                     @if($isDraft)<span>Revize {{ $revision->revision_number }} · verze {{ $invoice->version }}</span>@endif
                 </div>
             </div>
-            <div class="shrink-0 text-left lg:text-right"><p class="text-sm text-slate-500">Celková částka</p><p class="mt-1 text-3xl font-bold tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::format($revision->grand_total) }} {{ $revision->currency }}</p></div>
+            <div class="shrink-0 text-left lg:text-right"><p class="text-sm text-slate-500">Celková částka</p><p class="mt-1 text-3xl font-bold tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($revision->grand_total, $revision->currency) }}</p></div>
         </div>
         <div class="mt-5 border-t border-slate-200 pt-4">
             <x-invoices.actions :invoice="$invoice" :revision="$revision" :payment-summary="$paymentSummary" :issue-availability="$issueAvailability" :document-sequences="$documentSequences ?? collect()" :sequence-previews="$sequencePreviews ?? []" :default-sequence-uuid="$defaultSequenceUuid ?? null" :issue-correlation-uuid="$issueCorrelationUuid" :generation-correlation-uuid="$generationCorrelationUuid" :cancellation-correlation-uuid="$cancellationCorrelationUuid" />

@@ -331,13 +331,13 @@ Alpine.data('invoiceEditor', (config) => ({
         this.loading = true;
         this.previewTimer = window.setTimeout(() => this.refreshPreview(), delay);
     },
-    previewLineTotal(position) {
-        const item = this.preview?.items?.find((previewItem) => Number(previewItem.position) === Number(position));
+    previewLineTotalDisplay(position) {
+        const item = this.preview?.display?.items?.find((previewItem) => Number(previewItem.position) === Number(position));
 
         return item?.line_total_amount;
     },
-    previewGrandTotal() {
-        return this.preview?.totals?.grand_total;
+    previewGrandTotalDisplay() {
+        return this.preview?.display?.totals?.grand_total;
     },
     async refreshPreview(force = false) {
         if (!this.$refs.form) return;
@@ -413,17 +413,6 @@ Alpine.data('invoiceEditor', (config) => ({
         if (status >= 500) return 'Server nyní nemůže náhled vypočítat. Zkuste to prosím znovu.';
 
         return 'Náhled nyní nelze vypočítat.';
-    },
-    money(value) {
-        return value === null || value === undefined ? '—' : String(value).replace('.', ',');
-    },
-    lineMoney(value) {
-        if (value === null || value === undefined) return '—';
-
-        const [integer, fraction = ''] = String(value).split('.');
-        const displayedFraction = fraction.padEnd(2, '0').replace(/0+$/, '').padEnd(2, '0');
-
-        return `${integer},${displayedFraction}`;
     },
 }));
 

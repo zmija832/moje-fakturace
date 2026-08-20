@@ -108,11 +108,11 @@ class InvoiceDocumentViewModelFactory
 
     private function money(mixed $value): string
     {
-        return InvoiceDecimal::format($value, 2);
+        return InvoiceDecimal::formatAmount($value);
     }
 
     private function decimal(mixed $value, int $scale): string
     {
-        return rtrim(rtrim(InvoiceDecimal::format($value, $scale), '0'), ',');
+        return InvoiceDecimal::formatDecimal($value, $scale);
     }
 }

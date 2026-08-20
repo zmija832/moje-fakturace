@@ -102,10 +102,9 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('Načíst z ARES')
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
             ->assertSee('Celkem')
-            ->assertSee('previewLineTotal(index+1)', false)
-            ->assertSee('lineMoney(previewLineTotal(index+1))', false)
+            ->assertSee('previewLineTotalDisplay(index+1)', false)
             ->assertSee('Celkem faktura')
-            ->assertSee('previewGrandTotal()', false)
+            ->assertSee('previewGrandTotalDisplay()', false)
             ->assertSee('Přesunout položku ${index+1}', false)
             ->assertSee('draggable="true"', false)
             ->assertSee('invoice-items-table--vat', false)
@@ -120,7 +119,10 @@ class InvoicesHttpTest extends TestCase
         );
         $before = $this->counts();
         $this->postJson(route('invoices.preview'), $this->payload($client, $account, $rate))
-            ->assertOk()->assertJsonPath('totals.grand_total', '100.0000');
+            ->assertOk()
+            ->assertJsonPath('totals.grand_total', '100.0000')
+            ->assertJsonPath('display.items.0.line_total_amount', '100')
+            ->assertJsonPath('display.totals.grand_total', '100');
         $this->assertSame($before, $this->counts());
 
         $response = $this->post(route('invoices.store'), $this->payload($client, $account, $rate));
@@ -134,6 +136,12 @@ class InvoicesHttpTest extends TestCase
             ->assertDontSee('aria-label="Vytvořit nového klienta"', false)
             ->assertDontSee('Načíst z ARES')
             ->assertDontSee('Nový klient');
+
+        $this->get(route('invoices.edit', $invoice->uuid))
+            ->assertOk()
+            ->assertSee('\u0022quantity\u0022:\u00221\u0022', false)
+            ->assertSee('\u0022unit_price\u0022:\u0022100\u0022', false)
+            ->assertDontSee('\u0022unit_price\u0022:\u0022100.0000\u0022', false);
 
         $this->post(route('invoices.store'), $this->payload($client, $account, $rate) + ['grand_total' => '0', 'connection' => 'business_2'])
             ->assertSessionHasErrors(['grand_total', 'connection']);

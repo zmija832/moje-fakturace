@@ -48,18 +48,20 @@ class InvoicePaymentsHttpTest extends TestCase
 
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
             ->assertSee('Platby')->assertSee('Zaznamenat úhradu')->assertSee('Po splatnosti')
+            ->assertSee('id="payment-amount" name="amount" value="100"', false)
+            ->assertDontSee('value="100.0000"', false)
             ->assertSee('Odeslat klientovi')->assertSee('Tiskový náhled')->assertSee('Duplikovat fakturu')
             ->assertSee('bg-amber-100', false)->assertSee('bg-red-100', false)
             ->assertDontSee('business_1')->assertDontSee('invoice_id');
         $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('40'))
             ->assertRedirect(route('invoices.show', $invoice->uuid))->assertSessionHas('status', 'Platba byla bezpečně zaevidována.');
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
-            ->assertSee('40,00')->assertSee('60,00')->assertSee('Částečně uhrazená')->assertSee('Po splatnosti')
+            ->assertSee('40 CZK')->assertSee('60 CZK')->assertSee('Částečně uhrazená')->assertSee('Po splatnosti')
             ->assertSee('bg-blue-100', false);
         $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('60'))
             ->assertSessionHas('status');
         $this->get(route('invoices.show', $invoice->uuid))->assertOk()
-            ->assertSee('Uhrazená')->assertSee('100,00')->assertDontSee('Po splatnosti')
+            ->assertSee('Uhrazená')->assertSee('100 CZK')->assertDontSee('Po splatnosti')
             ->assertSee('bg-emerald-100', false)->assertDontSee('Zaznamenat úhradu');
         $this->get(route('invoices.index', ['payment_status' => 'paid']))->assertOk()->assertSee($invoice->document_number);
         $this->get(route('invoices.index', ['overdue' => 1]))->assertOk()->assertDontSee($invoice->document_number);
@@ -83,7 +85,7 @@ class InvoicePaymentsHttpTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business));
 
-        $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('Platby')->assertSee('25,00')
+        $this->get(route('invoices.show', $invoice->uuid))->assertOk()->assertSee('Platby')->assertSee('25 CZK')
             ->assertDontSee('Zaznamenat úhradu')->assertDontSee('Stornovat');
         $this->post(route('invoices.payments.store', $invoice->uuid), $this->paymentPayload('10'))->assertForbidden();
         $this->post(route('invoices.payments.reverse', [$invoice->uuid, $payment->uuid]), $this->reversalPayload('10'))->assertForbidden();
@@ -148,7 +150,7 @@ class InvoicePaymentsHttpTest extends TestCase
         ];
 
         $this->followingRedirects()->post(route('invoices.payments.store', $invoice->uuid), $payload)
-            ->assertOk()->assertSee('Částečně uhrazená')->assertSee('60,00');
+            ->assertOk()->assertSee('Částečně uhrazená')->assertSee('60 CZK');
         $this->followingRedirects()->post(route('invoices.payments.store', $invoice->uuid), [
             ...$payload, 'amount' => '60', 'correlation_uuid' => (string) Str::uuid(),
         ])->assertOk()->assertSee('Uhrazená')->assertDontSee('Zaznamenat úhradu');

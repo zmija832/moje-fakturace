@@ -105,4 +105,24 @@ class InvoiceDecimalTest extends TestCase
             ['1000.5000', 'EUR', '1 000,50 EUR'],
         ];
     }
+
+    #[DataProvider('displayDecimalValues')]
+    public function test_decimal_quantity_and_input_display_trim_only_insignificant_zeroes(
+        string $value,
+        string $expectedQuantity,
+        string $expectedInput,
+    ): void {
+        $this->assertSame($expectedQuantity, InvoiceDecimal::formatQuantity($value));
+        $this->assertSame($expectedInput, InvoiceDecimal::formatInput($value));
+    }
+
+    public static function displayDecimalValues(): array
+    {
+        return [
+            ['1.0000', '1', '1'],
+            ['1.5000', '1,5', '1.5'],
+            ['1.2340', '1,234', '1.234'],
+            ['1000.2500', '1 000,25', '1000.25'],
+        ];
+    }
 }

@@ -112,8 +112,10 @@ class InvoiceDocumentViewModelTest extends TestCase
         $document = (new InvoiceDocumentViewModelFactory(new InvoiceQrPaymentService))->make($invoice)->toArray();
 
         $this->assertSame('Žluťoučký dodavatel s.r.o.', $document['supplier']['name']);
-        $this->assertSame('90,00', $document['totals']['tax_base_total']);
-        $this->assertSame('90,00', $document['totals']['grand_total']);
+        $this->assertSame('90', $document['totals']['tax_base_total']);
+        $this->assertSame('90', $document['totals']['grand_total']);
+        $this->assertSame('1', $document['items'][0]['quantity']);
+        $this->assertSame('100', $document['items'][0]['unit_price']);
         $this->assertSame('Neplátce DPH', $document['items'][0]['tax_label']);
         $this->assertSame('Neplátce DPH', $document['vat_summaries'][0]['tax_label']);
         $this->assertTrue($document['is_non_payer']);

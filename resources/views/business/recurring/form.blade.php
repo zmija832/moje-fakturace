@@ -1,5 +1,6 @@
 @php
     $editing = $template->exists;
+    $hasOldItems = old('items') !== null;
     $items = old('items', $template->relationLoaded('items')
         ? $template->items->toArray()
         : [['description' => '', 'quantity' => '1', 'unit' => 'ks', 'unit_price' => '0', 'discount_type' => 'none', 'discount_value' => null, 'vat_rate_uuid' => null]]);
@@ -33,11 +34,11 @@
                 @foreach($items as $index => $item)
                     <div class="recurring-item grid gap-2 rounded border p-3 md:grid-cols-8">
                         <input class="input md:col-span-2" name="items[{{ $index }}][description]" required placeholder="Popis" value="{{ $item['description'] ?? '' }}">
-                        <input class="input" name="items[{{ $index }}][quantity]" required aria-label="Množství" value="{{ $item['quantity'] ?? '1' }}">
+                        <input class="input" name="items[{{ $index }}][quantity]" required aria-label="Množství" value="{{ $hasOldItems ? ($item['quantity'] ?? '1') : \App\Domain\Invoices\InvoiceDecimal::formatInput($item['quantity'] ?? '1') }}">
                         <input class="input" name="items[{{ $index }}][unit]" aria-label="MJ" value="{{ $item['unit'] ?? 'ks' }}">
-                        <input class="input" name="items[{{ $index }}][unit_price]" required aria-label="Cena" value="{{ $item['unit_price'] ?? '0' }}">
+                        <input class="input" name="items[{{ $index }}][unit_price]" required aria-label="Cena" value="{{ $hasOldItems ? ($item['unit_price'] ?? '0') : \App\Domain\Invoices\InvoiceDecimal::formatInput($item['unit_price'] ?? '0') }}">
                         <select class="input" name="items[{{ $index }}][discount_type]" aria-label="Typ slevy"><option value="none">Bez slevy</option><option value="percentage" @selected(($item['discount_type'] ?? '') === 'percentage')>%</option><option value="fixed" @selected(($item['discount_type'] ?? '') === 'fixed')>Částka</option></select>
-                        <input class="input" name="items[{{ $index }}][discount_value]" aria-label="Hodnota slevy" placeholder="Sleva" value="{{ $item['discount_value'] ?? '' }}">
+                        <input class="input" name="items[{{ $index }}][discount_value]" aria-label="Hodnota slevy" placeholder="Sleva" value="{{ $hasOldItems || ($item['discount_value'] ?? null) === null ? ($item['discount_value'] ?? '') : \App\Domain\Invoices\InvoiceDecimal::formatInput($item['discount_value']) }}">
                         @if($options['isVatPayer'])<select class="input" name="items[{{ $index }}][vat_rate_uuid]" aria-label="DPH">@foreach($options['vatRates'] as $rate)<option value="{{ $rate->uuid }}" @selected(($item['vat_rate_uuid'] ?? null) === $rate->uuid)>{{ $rate->name }}</option>@endforeach</select>@endif
                         <button class="button-secondary recurring-remove" type="button" aria-label="Odebrat položku">×</button>
                     </div>

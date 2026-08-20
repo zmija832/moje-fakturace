@@ -23,7 +23,7 @@
         </label>
         <label class="block" x-show="['standard', 'reduced', 'zero'].includes(taxType)">
             <span class="form-label">Sazba v %</span>
-            <input class="form-input" name="percentage" inputmode="decimal" value="{{ old('percentage', $rate->percentage) }}" placeholder="21,0000">
+            <input class="form-input" name="percentage" inputmode="decimal" value="{{ old('percentage', $rate->percentage === null ? null : \App\Domain\Invoices\InvoiceDecimal::formatInput($rate->percentage)) }}" placeholder="21">
             <span class="mt-1 block text-xs text-slate-500">Zadejte procentní údaj, například 21 nebo 12,5.</span>
             @error('percentage') <span class="form-error">{{ $message }}</span> @enderror
         </label>

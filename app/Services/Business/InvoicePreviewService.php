@@ -4,6 +4,7 @@ namespace App\Services\Business;
 
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Invoices\InvoiceCalculator;
+use App\Domain\Invoices\InvoiceDecimal;
 use App\Enums\DefaultPaymentMethod;
 use App\Models\Business\CompanySetting;
 use Carbon\CarbonImmutable;
@@ -42,13 +43,25 @@ class InvoicePreviewService
             $currency === 'CZK' && $attributes['payment_method'] === DefaultPaymentMethod::Cash->value ? 0 : 2,
         );
 
+        $previewItems = array_map(fn (array $item): array => array_intersect_key($item, array_flip([
+            'position', 'unit_price_after_discount', 'line_net_amount', 'vat_amount', 'line_total_amount',
+        ])), $calculation['items']);
+
         return [
-            'items' => array_map(fn (array $item): array => array_intersect_key($item, array_flip([
-                'position', 'unit_price_after_discount', 'line_net_amount', 'vat_amount', 'line_total_amount',
-            ])), $calculation['items']),
+            'items' => $previewItems,
             'summaries' => $calculation['summaries'],
             'invoice_discount' => $calculation['invoice_discount'],
             'totals' => $calculation['totals'],
+            'display' => [
+                'items' => array_map(static fn (array $item): array => [
+                    'position' => $item['position'],
+                    'line_total_amount' => InvoiceDecimal::formatAmount($item['line_total_amount']),
+                ], $previewItems),
+                'totals' => array_map(
+                    static fn (string $value): string => InvoiceDecimal::formatAmount($value),
+                    $calculation['totals'],
+                ),
+            ],
         ];
     }
 }

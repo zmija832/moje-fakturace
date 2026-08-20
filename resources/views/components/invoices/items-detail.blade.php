@@ -17,26 +17,26 @@
                         </div>
                         <div class="text-sm">
                             <span class="text-slate-500 xl:sr-only">Množství × jednotková cena</span>
-                            <span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::format($item->quantity, 4) }} {{ $item->unit }} × {{ \App\Domain\Invoices\InvoiceDecimal::format($item->unit_price, 4) }} {{ $revision->currency }}</span>
+                            <span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::formatQuantity($item->quantity) }} {{ $item->unit }} × {{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($item->unit_price, $revision->currency) }}</span>
                         </div>
                         <div class="text-sm">
                             <span class="text-slate-500 xl:sr-only">Sleva</span>
-                            <span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::compare($discountAmount, '0') === 0 ? '—' : \App\Domain\Invoices\InvoiceDecimal::format($discountAmount).' '.$revision->currency }}</span>
+                            <span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::compare($discountAmount, '0') === 0 ? '—' : \App\Domain\Invoices\InvoiceDecimal::formatMoney($discountAmount, $revision->currency) }}</span>
                         </div>
                         <div class="text-left sm:text-right">
                             <span class="text-xs text-slate-500 xl:sr-only">Výsledná částka</span>
-                            <strong class="block tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::format($item->line_total_amount) }} {{ $revision->currency }}</strong>
+                            <strong class="block tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($item->line_total_amount, $revision->currency) }}</strong>
                         </div>
                     </div>
                 @else
                     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,2fr)_minmax(11rem,1fr)_7rem_8rem_9rem_8rem_9rem] xl:items-center">
                         <h3 class="font-semibold">{{ $item->position }}. {{ $item->description }}</h3>
-                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Množství × jednotková cena</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::format($item->quantity, 4) }} {{ $item->unit }} × {{ \App\Domain\Invoices\InvoiceDecimal::format($item->unit_price, 4) }} {{ $revision->currency }}</span></div>
-                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Sleva</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::compare($discountAmount, '0') === 0 ? '—' : \App\Domain\Invoices\InvoiceDecimal::format($discountAmount).' '.$revision->currency }}</span></div>
-                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Základ</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::format($item->line_net_amount) }}</span></div>
-                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Sazba DPH</span><span class="block">{{ $item->vatSnapshot->name }}@if($item->vatSnapshot->percentage !== null) · {{ \App\Domain\Invoices\InvoiceDecimal::format($item->vatSnapshot->percentage) }} % @endif</span></div>
-                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">DPH</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::format($item->vat_amount) }}</span></div>
-                        <div class="text-left sm:text-right"><span class="text-xs text-slate-500 xl:sr-only">Celkem</span><strong class="block tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::format($item->line_total_amount) }} {{ $revision->currency }}</strong></div>
+                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Množství × jednotková cena</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::formatQuantity($item->quantity) }} {{ $item->unit }} × {{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($item->unit_price, $revision->currency) }}</span></div>
+                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Sleva</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::compare($discountAmount, '0') === 0 ? '—' : \App\Domain\Invoices\InvoiceDecimal::formatMoney($discountAmount, $revision->currency) }}</span></div>
+                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Základ</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($item->line_net_amount, $revision->currency) }}</span></div>
+                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">Sazba DPH</span><span class="block">{{ $item->vatSnapshot->name }}@if($item->vatSnapshot->percentage !== null) · {{ \App\Domain\Invoices\InvoiceDecimal::formatDecimal($item->vatSnapshot->percentage) }} % @endif</span></div>
+                        <div class="text-sm"><span class="text-slate-500 xl:sr-only">DPH</span><span class="block">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($item->vat_amount, $revision->currency) }}</span></div>
+                        <div class="text-left sm:text-right"><span class="text-xs text-slate-500 xl:sr-only">Celkem</span><strong class="block tabular-nums">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($item->line_total_amount, $revision->currency) }}</strong></div>
                     </div>
                 @endif
             </article>

@@ -55,6 +55,12 @@ class InvoiceAutomationTest extends TestCase
         $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'recurring_invoice.paused')->count());
         $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'recurring_invoice.resumed')->count());
         $this->withSession($this->deliveryBusinessSession($business))->get(route('recurring.show', $template->uuid))->assertOk();
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('recurring.edit', $template->uuid))
+            ->assertOk()
+            ->assertSee('name="items[0][quantity]" required aria-label="Množství" value="1"', false)
+            ->assertSee('name="items[0][unit_price]" required aria-label="Cena" value="100"', false)
+            ->assertDontSee('value="100.0000"', false);
         [$viewer] = $this->deliveryMembership('viewer', business: $business);
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business))->get(route('recurring.create'))->assertForbidden();
         $this->actingAs($viewer)->withSession($this->deliveryBusinessSession($business))->get(route('automation-settings.edit'))->assertForbidden();

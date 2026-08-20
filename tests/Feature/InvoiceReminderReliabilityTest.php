@@ -109,6 +109,7 @@ class InvoiceReminderReliabilityTest extends TestCase
         Mail::assertSent(AutomationMail::class, 1);
         $audit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.reminder_sent')->sole();
         $values = json_decode($audit->new_values, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('invoice', $audit->auditable_type);
         $this->assertSame($invoice->uuid, $audit->auditable_uuid);
         $this->assertSame($reminder->uuid, $values['reminder_uuid']);
         $this->assertSame('automatic', $values['origin']);
@@ -255,6 +256,24 @@ class InvoiceReminderReliabilityTest extends TestCase
             ->assertSee('1. upomínka')
             ->assertSee('Odeslaná')
             ->assertSee('Odeslána 1. upomínka');
+    }
+
+    public function test_successful_manual_send_is_visible_in_invoice_http_audit_history(): void
+    {
+        Mail::fake();
+        [$invoice, $service, $admin, $business] = $this->environment('prepare', secondDay: null);
+        $service->prepare($invoice, 1, CarbonImmutable::parse('2026-08-17'), false);
+
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->post(route('invoices.reminders.send', $invoice->uuid), ['level' => 1])
+            ->assertRedirect(route('invoices.show', $invoice->uuid));
+
+        Mail::assertSent(AutomationMail::class, 1);
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('invoices.show', $invoice->uuid))
+            ->assertOk()
+            ->assertSee('Odeslána 1. upomínka')
+            ->assertSee($admin->name);
     }
 
     public function test_archived_invoice_manual_post_is_rejected_without_record_or_mail(): void

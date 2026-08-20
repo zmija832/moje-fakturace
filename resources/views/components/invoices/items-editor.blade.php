@@ -76,14 +76,14 @@
                         <label class="text-xs lg:sr-only" :for="`item-${index}-vat`">DPH *</label>
                         <select :id="`item-${index}-vat`" :name="`items[${index}][vat_rate_uuid]`" x-model="item.vat_rate_uuid" required :aria-invalid="hasFieldError(index,'vat_rate_uuid') ? 'true' : null" :aria-describedby="hasFieldError(index,'vat_rate_uuid') ? `item-${index}-vat-error` : null">
                             <option value="">Vyberte</option>
-                            @foreach($vatRates as $rate)<option value="{{ $rate->uuid }}">{{ $rate->name }}@if($rate->percentage !== null) · {{ \App\Domain\Invoices\InvoiceDecimal::format($rate->percentage) }} % @endif</option>@endforeach
+                            @foreach($vatRates as $rate)<option value="{{ $rate->uuid }}">{{ $rate->name }}@if($rate->percentage !== null) · {{ \App\Domain\Invoices\InvoiceDecimal::formatDecimal($rate->percentage) }} % @endif</option>@endforeach
                         </select>
                         <p class="field-error" :id="`item-${index}-vat-error`" x-show="fieldError(index,'vat_rate_uuid')" x-text="fieldError(index,'vat_rate_uuid')"></p>
                     </div>
                 @endif
                 <div class="flex min-h-10 flex-col justify-center whitespace-nowrap pl-2 text-right">
                     <span class="text-xs font-medium text-slate-500 lg:sr-only">Celkem</span>
-                    <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${lineMoney(previewLineTotal(index+1))}${previewLineTotal(index+1) == null ? '' : ` ${currency}`}`">—</output>
+                    <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(index+1) ?? '—'}${previewLineTotalDisplay(index+1) == null ? '' : ` ${currency}`}`">—</output>
                     <span class="text-xs text-slate-400" x-show="loading">aktualizuji…</span>
                 </div>
                 <div class="flex items-start justify-end">
@@ -98,7 +98,7 @@
         <button class="button-secondary self-start" type="button" @click="addItem">Přidat položku</button>
         <div class="text-right" aria-live="polite">
             <span class="text-sm font-semibold text-slate-600">Celkem faktura</span>
-            <output class="ml-3 whitespace-nowrap text-xl font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${lineMoney(previewGrandTotal())}${previewGrandTotal() == null ? '' : ` ${currency}`}`">—</output>
+            <output class="ml-3 whitespace-nowrap text-xl font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${currency}`}`">—</output>
             <span class="ml-2 text-xs text-slate-400" x-show="loading">aktualizuji…</span>
         </div>
     </div>

@@ -8,10 +8,10 @@
         </div>
         <p class="mt-3 text-sm text-red-700" x-show="previewError" x-text="previewError"></p>
         <dl class="mt-3 grid gap-3 text-sm sm:grid-cols-4" x-show="preview">
-            <div><dt class="text-slate-500">Slevy</dt><dd class="font-semibold" x-text="money(preview?.totals?.discount_total)"></dd></div>
-            <div><dt class="text-slate-500">Základ</dt><dd class="font-semibold" x-text="money(preview?.totals?.tax_base_total)"></dd></div>
-            <div><dt class="text-slate-500">DPH</dt><dd class="font-semibold" x-text="money(preview?.totals?.vat_total)"></dd></div>
-            <div><dt class="text-slate-500">Celkem</dt><dd class="font-bold" x-text="`${money(preview?.totals?.grand_total)} ${currency}`"></dd></div>
+            <div><dt class="text-slate-500">Slevy</dt><dd class="font-semibold" x-text="preview?.display?.totals?.discount_total ?? '—'"></dd></div>
+            <div><dt class="text-slate-500">Základ</dt><dd class="font-semibold" x-text="preview?.display?.totals?.tax_base_total ?? '—'"></dd></div>
+            <div><dt class="text-slate-500">DPH</dt><dd class="font-semibold" x-text="preview?.display?.totals?.vat_total ?? '—'"></dd></div>
+            <div><dt class="text-slate-500">Celkem</dt><dd class="font-bold" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${currency}`}`"></dd></div>
         </dl>
     </section>
 @else

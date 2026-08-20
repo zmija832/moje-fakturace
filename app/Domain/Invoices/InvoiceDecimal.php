@@ -162,13 +162,45 @@ final class InvoiceDecimal
 
     public static function formatMoney(mixed $value, string $currency): string
     {
-        $normalized = self::normalize($value, 2);
-        $negative = str_starts_with($normalized, '-');
-        [$integer, $fraction] = explode('.', ltrim($normalized, '-'), 2);
-        $integer = preg_replace('/\B(?=(\d{3})+(?!\d))/', ' ', $integer) ?? $integer;
-        $amount = ($negative ? '-' : '').$integer.($fraction === '00' ? '' : ','.$fraction);
+        return self::formatAmount($value).' '.strtoupper(trim($currency));
+    }
 
-        return $amount.' '.strtoupper(trim($currency));
+    public static function formatAmount(mixed $value): string
+    {
+        return self::formatDecimal($value, 2, ',', true, 2);
+    }
+
+    public static function formatQuantity(mixed $value): string
+    {
+        return self::formatDecimal($value, self::SCALE);
+    }
+
+    public static function formatInput(mixed $value, int $maxScale = self::SCALE): string
+    {
+        return self::formatDecimal($value, $maxScale, '.', false);
+    }
+
+    public static function formatDecimal(
+        mixed $value,
+        int $maxScale = self::SCALE,
+        string $decimalSeparator = ',',
+        bool $groupThousands = true,
+        int $fractionDigitsWhenNonZero = 0,
+    ): string {
+        $normalized = self::normalize($value, $maxScale);
+        $negative = str_starts_with($normalized, '-');
+        $absolute = ltrim($normalized, '-');
+        [$integer, $fraction] = array_pad(explode('.', $absolute, 2), 2, '');
+        $fraction = rtrim($fraction, '0');
+        if ($fraction !== '' && $fractionDigitsWhenNonZero > 0) {
+            $fraction = str_pad($fraction, $fractionDigitsWhenNonZero, '0');
+        }
+
+        if ($groupThousands) {
+            $integer = preg_replace('/\B(?=(\d{3})+(?!\d))/', ' ', $integer) ?? $integer;
+        }
+
+        return ($negative ? '-' : '').$integer.($fraction === '' ? '' : $decimalSeparator.$fraction);
     }
 
     public static function assertFits(mixed $value, int $maxIntegerDigits = self::MONEY_INTEGER_DIGITS): void
