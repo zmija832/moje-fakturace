@@ -17,6 +17,7 @@ use App\Services\Business\InvoicePaymentService;
 use App\Services\Business\InvoiceReminderPreferenceService;
 use App\Services\Business\InvoiceReminderService;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -61,6 +62,8 @@ class InvoiceReminderReliabilityTest extends TestCase
         $this->assertSame(1, $reminder->level);
         $this->assertSame('prepared', $reminder->status);
         $this->assertSame('2026-08-19', $reminder->scheduled_on->format('Y-m-d'));
+        $this->assertStringContainsString('100 CZK', $reminder->body_text);
+        $this->assertStringNotContainsString('100.0000', $reminder->body_text);
     }
 
     public function test_missed_seventh_day_creates_second_level_with_original_planned_date(): void
@@ -98,10 +101,18 @@ class InvoiceReminderReliabilityTest extends TestCase
         $reminder = $service->prepare($invoice, 1, CarbonImmutable::parse('2026-08-17'), false);
         $reminder->forceFill(['status' => 'failed', 'failure_code' => 'TransportException'])->save();
 
+        auth()->logout();
+
         $this->assertSame(1, $service->runDue(CarbonImmutable::parse('2026-08-24'))['processed']);
         $this->assertSame('sent', $reminder->refresh()->status);
         $this->assertSame(1, $reminder->send_attempts);
         Mail::assertSent(AutomationMail::class, 1);
+        $audit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.reminder_sent')->sole();
+        $values = json_decode($audit->new_values, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame($invoice->uuid, $audit->auditable_uuid);
+        $this->assertSame($reminder->uuid, $values['reminder_uuid']);
+        $this->assertSame('automatic', $values['origin']);
+        $this->assertNull($audit->actor_user_uuid);
 
         $this->assertSame(0, $service->runDue(CarbonImmutable::parse('2026-08-25'))['processed']);
         $this->assertSame(1, $reminder->refresh()->send_attempts);
@@ -117,6 +128,7 @@ class InvoiceReminderReliabilityTest extends TestCase
         $this->assertSame(0, $service->runDue(CarbonImmutable::parse('2026-08-24'))['processed']);
         $this->assertSame('prepared', $reminder->refresh()->status);
         $this->assertSame(0, $reminder->send_attempts);
+        $this->assertSame(0, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.reminder_sent')->count());
         Mail::assertNothingSent();
     }
 
@@ -181,7 +193,7 @@ class InvoiceReminderReliabilityTest extends TestCase
     public function test_disabled_automatic_reminders_do_not_block_admin_manual_send(): void
     {
         Mail::fake();
-        [$invoice, $service, , $business] = $this->environment('send', secondDay: null);
+        [$invoice, $service, $admin, $business] = $this->environment('send', secondDay: null);
         app(InvoiceReminderPreferenceService::class)->set($invoice, true, 'test');
 
         $this->assertSame(0, $service->runDue(CarbonImmutable::parse('2026-08-24'))['processed']);
@@ -197,12 +209,52 @@ class InvoiceReminderReliabilityTest extends TestCase
         $this->assertSame('sent', $reminder->status);
         $this->assertSame(1, $reminder->send_attempts);
         Mail::assertSent(AutomationMail::class, 1);
+        $audit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.reminder_sent')->sole();
+        $values = json_decode($audit->new_values, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame($invoice->uuid, $audit->auditable_uuid);
+        $this->assertSame($reminder->uuid, $values['reminder_uuid']);
+        $this->assertSame(1, $values['level']);
+        $this->assertSame('manual', $values['origin']);
+        $this->assertSame($admin->name, $audit->actor_name);
 
         $this->withSession($this->deliveryBusinessSession($business))
             ->post(route('invoices.reminders.send', $invoice->uuid), ['level' => 1])
             ->assertRedirect(route('invoices.show', $invoice->uuid));
         $this->assertSame(1, $reminder->refresh()->send_attempts);
         Mail::assertSent(AutomationMail::class, 1);
+        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.reminder_sent')->count());
+    }
+
+    public function test_reminder_pages_distinguish_states_and_invoice_detail_shows_history(): void
+    {
+        Mail::fake();
+        [$invoice, $service, , $business] = $this->environment('prepare', secondDay: null);
+        $reminder = $service->prepare($invoice, 1, CarbonImmutable::parse('2026-08-17'), false);
+
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('invoices.reminders.form', $invoice->uuid))
+            ->assertOk()
+            ->assertSee('Tato upomínka je připravena k odeslání.');
+
+        $reminder->forceFill(['status' => 'failed'])->save();
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('invoices.reminders.form', $invoice->uuid))
+            ->assertOk()
+            ->assertSee('Předchozí pokus selhal.');
+
+        $service->send($reminder->refresh(), InvoiceReminderOrigin::Manual);
+
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('invoices.reminders.form', $invoice->uuid))
+            ->assertOk()
+            ->assertSee('Tato upomínka již byla odeslána');
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('invoices.show', $invoice->uuid))
+            ->assertOk()
+            ->assertSee('Historie upomínek')
+            ->assertSee('1. upomínka')
+            ->assertSee('Odeslaná')
+            ->assertSee('Odeslána 1. upomínka');
     }
 
     public function test_archived_invoice_manual_post_is_rejected_without_record_or_mail(): void

@@ -4,6 +4,8 @@ namespace App\Services\Business;
 
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Invoices\InvoicePaymentSummary;
+use App\Enums\BusinessAuditableType;
+use App\Enums\BusinessAuditEvent;
 use App\Enums\InvoicePaymentStatus;
 use App\Enums\InvoiceReminderOrigin;
 use App\Enums\InvoiceStatus;
@@ -28,6 +30,7 @@ class InvoiceReminderService
         private readonly InvoiceEmailSettingsService $emailSettings,
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly BusinessDate $businessDate,
+        private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
     /** @return array{processed:int,failed:int} */
@@ -178,7 +181,7 @@ class InvoiceReminderService
 
         [$claimed, $token] = $claim;
         if (! filter_var($claimed->recipient_email, FILTER_VALIDATE_EMAIL)) {
-            return $this->finishClaim($claimed, $token, 'failed', 'recipient_missing', 'Klient nemá platnou e-mailovou adresu.');
+            return $this->finishClaim($claimed, $token, 'failed', $origin, 'recipient_missing', 'Klient nemá platnou e-mailovou adresu.');
         }
 
         try {
@@ -190,12 +193,13 @@ class InvoiceReminderService
                 $email->reply_to,
             ));
 
-            return $this->finishClaim($claimed, $token, 'sent');
+            return $this->finishClaim($claimed, $token, 'sent', $origin);
         } catch (Throwable $exception) {
             $this->finishClaim(
                 $claimed,
                 $token,
                 'failed',
+                $origin,
                 class_basename($exception),
                 'Odeslání upomínky selhalo. Podrobnost je v aplikačním logu.',
             );
@@ -269,12 +273,13 @@ class InvoiceReminderService
         InvoiceReminder $reminder,
         string $token,
         string $status,
+        InvoiceReminderOrigin $origin,
         ?string $failureCode = null,
         ?string $failureMessage = null,
     ): InvoiceReminder {
         $connection = $this->connectionResolver->resolve()->connectionName();
 
-        return DB::connection($connection)->transaction(function () use ($reminder, $token, $status, $failureCode, $failureMessage): InvoiceReminder {
+        return DB::connection($connection)->transaction(function () use ($reminder, $token, $status, $origin, $failureCode, $failureMessage): InvoiceReminder {
             $locked = InvoiceReminder::query()->whereKey($reminder->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== 'sending' || ! hash_equals((string) $locked->claim_token, $token)) {
                 return $locked;
@@ -287,6 +292,26 @@ class InvoiceReminderService
                 'failure_code' => $failureCode,
                 'failure_message' => $failureMessage,
             ])->save();
+
+            if ($status === 'sent') {
+                $invoiceUuid = Invoice::query()->whereKey($locked->invoice_id)->value('uuid');
+                $this->auditWriter->write(
+                    BusinessAuditEvent::InvoiceReminderSent,
+                    BusinessAuditableType::Invoice,
+                    $invoiceUuid,
+                    null,
+                    [
+                        'invoice_uuid' => $invoiceUuid,
+                        'reminder_uuid' => $locked->uuid,
+                        'level' => $locked->level,
+                        'recipient' => $locked->recipient_email,
+                        'origin' => $origin->value,
+                        'sent_at' => $locked->sent_at?->toIso8601String(),
+                        'status' => $locked->status,
+                    ],
+                    ['status'],
+                );
+            }
 
             return $locked;
         }, 3);

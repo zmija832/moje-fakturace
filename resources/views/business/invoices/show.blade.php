@@ -49,6 +49,7 @@
         @endcan
         <x-invoices.payments :invoice="$invoice" :summary="$paymentSummary" :payment-methods="$paymentMethods" :correlation-uuid="$paymentCorrelationUuid" />
         <x-invoices.delivery-history :invoice="$invoice" />
+        <x-invoices.reminder-history :invoice="$invoice" />
     @endif
     <div id="invoice-audit-history" class="scroll-mt-6">
         <x-invoices.audit-history :audits="$audits" />

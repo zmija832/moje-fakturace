@@ -31,10 +31,15 @@
     <div class="min-h-screen" x-data="{ menuOpen: false }">
         <header class="border-b border-slate-200 bg-white">
             <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-                <a href="{{ route('dashboard') }}" class="flex items-center gap-3 font-bold">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-700 text-white" aria-hidden="true">F</span>
-                    <span>{{ config('app.name') }}</span>
-                </a>
+                <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+                    <a href="{{ route('dashboard') }}" class="flex items-center gap-3 font-bold">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-700 text-white" aria-hidden="true">F</span>
+                        <span>{{ config('app.name') }}</span>
+                    </a>
+                    @auth
+                        <span class="max-w-52 truncate text-base font-bold uppercase tracking-wide text-slate-700 sm:max-w-72" title="{{ auth()->user()->name }}">{{ auth()->user()->name }}</span>
+                    @endauth
+                </div>
 
                 <button type="button" class="button-secondary lg:hidden" @click="menuOpen = ! menuOpen" :aria-expanded="menuOpen">
                     Menu

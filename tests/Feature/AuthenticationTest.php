@@ -22,12 +22,19 @@ class AuthenticationTest extends TestCase
 
     public function test_authenticated_user_can_open_dashboard(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['name' => 'Milan Zítek']);
 
         $this->actingAs($user)
             ->get('/dashboard')
             ->assertOk()
-            ->assertSee($user->name);
+            ->assertSee('Milan Zítek');
+
+        $other = User::factory()->create(['name' => 'Jana Nováková']);
+        $this->actingAs($other)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertSee('Jana Nováková')
+            ->assertDontSee('Milan Zítek');
     }
 
     public function test_successful_and_failed_login_are_audited_without_password(): void

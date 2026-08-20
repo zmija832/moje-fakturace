@@ -40,7 +40,7 @@ class RecurringInvoiceController extends Controller
         $template = $this->find($uuid);
         Gate::authorize('view', $template);
 
-        return view('business.recurring.show', ['template' => $template->load(['items', 'runs'])]);
+        return view('business.recurring.show', ['template' => $template->load(['items', 'runs.invoice'])]);
     }
 
     public function edit(string $uuid, InvoiceFormOptions $options): View

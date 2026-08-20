@@ -16,6 +16,11 @@ class RecurringInvoiceRun extends BusinessModel
         return $this->belongsTo(RecurringInvoiceTemplate::class, 'recurring_invoice_template_id');
     }
 
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'invoice_uuid', 'uuid');
+    }
+
     protected function casts(): array
     {
         return ['scheduled_on' => 'date', 'started_at' => 'immutable_datetime', 'finished_at' => 'immutable_datetime'];

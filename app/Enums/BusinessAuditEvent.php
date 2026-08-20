@@ -68,6 +68,7 @@ enum BusinessAuditEvent: string
     case RecurringInvoiceManualRun = 'recurring_invoice.manual_run';
     case InvoiceAutomationSettingsUpdated = 'invoice_automation_settings.updated';
     case InvoiceReminderPreferenceChanged = 'invoice.reminder_preference_changed';
+    case InvoiceReminderSent = 'invoice.reminder_sent';
 
     public function label(): string
     {
@@ -136,6 +137,7 @@ enum BusinessAuditEvent: string
             self::RecurringInvoiceManualRun => 'Ručně spuštěna opakovaná faktura',
             self::InvoiceAutomationSettingsUpdated => 'Změněno nastavení automatizace',
             self::InvoiceReminderPreferenceChanged => 'Změněno nastavení upomínek faktury',
+            self::InvoiceReminderSent => 'Odeslána upomínka',
         };
     }
 

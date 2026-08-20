@@ -26,6 +26,7 @@ class InvoiceReader
             $revisionRelation.'.bankAccountSnapshot', $revisionRelation.'.vatSnapshots',
             $revisionRelation.'.items.vatSnapshot', $revisionRelation.'.vatSummaries',
             'documents.revision', 'emailDeliveries.document', 'payments.originalPayment', 'payments.reversals',
+            'reminders',
         ]);
     }
 

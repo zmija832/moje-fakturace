@@ -160,6 +160,17 @@ final class InvoiceDecimal
         return str_replace('.', $decimalSeparator, self::normalize($value, $scale));
     }
 
+    public static function formatMoney(mixed $value, string $currency): string
+    {
+        $normalized = self::normalize($value, 2);
+        $negative = str_starts_with($normalized, '-');
+        [$integer, $fraction] = explode('.', ltrim($normalized, '-'), 2);
+        $integer = preg_replace('/\B(?=(\d{3})+(?!\d))/', ' ', $integer) ?? $integer;
+        $amount = ($negative ? '-' : '').$integer.($fraction === '00' ? '' : ','.$fraction);
+
+        return $amount.' '.strtoupper(trim($currency));
+    }
+
     public static function assertFits(mixed $value, int $maxIntegerDigits = self::MONEY_INTEGER_DIGITS): void
     {
         $normalized = self::normalize($value, self::SCALE);

@@ -94,7 +94,7 @@ class BusinessSwitchingTest extends TestCase
 
     public function test_dashboard_displays_correct_business_name_and_registration_number(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['name' => 'Milan Zítek']);
         $business = $this->business('Správná OSVČ', '12345678', 'business_1');
         $user->businesses()->attach($business, ['role' => 'admin']);
 
@@ -102,6 +102,7 @@ class BusinessSwitchingTest extends TestCase
             ->withSession([config('business.session_key') => $business->uuid])
             ->get('/dashboard')
             ->assertOk()
+            ->assertSee('Milan Zítek')
             ->assertSee('Správná OSVČ')
             ->assertSee('IČO 12345678');
     }

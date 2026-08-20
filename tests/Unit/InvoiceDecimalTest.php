@@ -88,4 +88,21 @@ class InvoiceDecimalTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         InvoiceDecimal::money(1.25);
     }
+
+    #[DataProvider('displayMoneyValues')]
+    public function test_money_display_uses_czech_format_without_database_scale(string $value, string $currency, string $expected): void
+    {
+        $this->assertSame($expected, InvoiceDecimal::formatMoney($value, $currency));
+    }
+
+    public static function displayMoneyValues(): array
+    {
+        return [
+            ['555.0000', 'CZK', '555 CZK'],
+            ['555.5000', 'CZK', '555,50 CZK'],
+            ['555.2500', 'CZK', '555,25 CZK'],
+            ['1000.0000', 'EUR', '1 000 EUR'],
+            ['1000.5000', 'EUR', '1 000,50 EUR'],
+        ];
+    }
 }

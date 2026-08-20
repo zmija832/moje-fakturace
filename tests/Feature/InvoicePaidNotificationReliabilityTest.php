@@ -9,6 +9,7 @@ use App\Models\Business;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoicePaidNotification;
 use App\Models\Business\InvoicePayment;
+use App\Services\Business\AutomationTemplateRenderer;
 use App\Services\Business\InvoiceAutomationSettingsService;
 use App\Services\Business\InvoicePaidNotificationService;
 use App\Services\Business\InvoicePaymentService;
@@ -61,6 +62,17 @@ class InvoicePaidNotificationReliabilityTest extends TestCase
         $this->assertSame('sent', $notification->status);
         $this->assertSame(1, $notification->send_attempts);
         Mail::assertSent(AutomationMail::class, 1);
+    }
+
+    public function test_paid_amount_placeholder_uses_customer_facing_money_format(): void
+    {
+        [$invoice] = $this->environment(admin: false, customer: false);
+
+        $rendered = app(AutomationTemplateRenderer::class)->paid($invoice, '{amount}', 'Přijato {amount}.', '2026-08-19');
+
+        $this->assertSame('100 CZK', $rendered['subject']);
+        $this->assertSame('Přijato 100 CZK.', $rendered['body']);
+        $this->assertStringNotContainsString('.0000', $rendered['body']);
     }
 
     public function test_missing_customer_email_and_smtp_failure_end_as_failed(): void

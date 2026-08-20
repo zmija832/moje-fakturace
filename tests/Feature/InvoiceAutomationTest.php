@@ -15,6 +15,7 @@ use App\Models\Business\RecurringInvoiceTemplate;
 use App\Services\Business\BankAccountService;
 use App\Services\Business\DashboardOverviewService;
 use App\Services\Business\InvoiceAutomationSettingsService;
+use App\Services\Business\InvoiceDeletionService;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentService;
@@ -106,6 +107,32 @@ class InvoiceAutomationTest extends TestCase
         $this->assertSame(1, RecurringInvoiceRun::query()->count());
         $this->assertSame('2027-02-28', $template->refresh()->next_run_on->format('Y-m-d'));
         $this->assertNotNull($first->invoice_uuid);
+    }
+
+    public function test_recurring_history_keeps_run_but_removes_link_after_generated_draft_is_deleted(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, $client, $account] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $template = app(RecurringInvoiceService::class)->create($this->templatePayload($client->uuid, $account->uuid));
+        $run = app(RecurringInvoiceRunner::class)->run($template);
+        $invoiceUrl = route('invoices.show', $run->invoice_uuid);
+
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('recurring.show', $template->uuid))
+            ->assertOk()
+            ->assertSee($invoiceUrl, false)
+            ->assertSee('Otevřít');
+
+        app(InvoiceDeletionService::class)->delete($run->invoice_uuid);
+
+        $this->assertSame($run->invoice_uuid, $run->refresh()->invoice_uuid);
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->get(route('recurring.show', $template->uuid))
+            ->assertOk()
+            ->assertDontSee($invoiceUrl, false)
+            ->assertSee('Faktura smazána');
     }
 
     public function test_reminder_uses_ledger_skips_paid_and_is_exactly_once(): void
