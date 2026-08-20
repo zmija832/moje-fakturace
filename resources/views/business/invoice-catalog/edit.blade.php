@@ -1,0 +1,1 @@
+<x-layouts.app title="Upravit položku"><h1 class="mb-6 text-2xl font-bold">Upravit položku</h1>@include('business.invoice-catalog._form',['action'=>route('invoice-catalog.update',$item->uuid),'method'=>'PUT'])</x-layouts.app>

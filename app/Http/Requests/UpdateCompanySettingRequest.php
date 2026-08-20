@@ -79,7 +79,7 @@ class UpdateCompanySettingRequest extends FormRequest
             'default_due_days' => 'výchozí splatnost',
             'default_payment_method' => 'výchozí způsob úhrady',
             'invoice_intro' => 'text před položkami',
-            'invoice_outro' => 'text za položkami',
+            'invoice_outro' => 'text ve spodní části faktury',
         ];
     }
 

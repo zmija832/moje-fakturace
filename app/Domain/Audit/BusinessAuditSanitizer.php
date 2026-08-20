@@ -10,6 +10,7 @@ use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceAutomationSetting;
+use App\Models\Business\InvoiceCatalogItem;
 use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoiceEmailDelivery;
 use App\Models\Business\InvoiceEmailSetting;
@@ -33,6 +34,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::InvoiceEmailSettings => $this->invoiceEmailSettings($this->expect($model, InvoiceEmailSetting::class)),
             BusinessAuditableType::BankAccount => $this->bankAccount($this->expect($model, BankAccount::class)),
             BusinessAuditableType::Client => $this->client($this->expect($model, Client::class)),
+            BusinessAuditableType::InvoiceCatalogItem => $this->catalogItem($this->expect($model, InvoiceCatalogItem::class)),
             BusinessAuditableType::DocumentSequence => $this->documentSequence($this->expect($model, DocumentSequence::class)),
             BusinessAuditableType::DocumentNumberAllocation => $this->allocation($this->expect($model, DocumentNumberAllocation::class)),
             BusinessAuditableType::VatRate => $this->vatRate($this->expect($model, VatRate::class)),
@@ -78,6 +80,7 @@ class BusinessAuditSanitizer
                 'default_due_days', 'default_payment_method', 'language', 'note',
                 'is_active', 'archived_at',
             ],
+            BusinessAuditableType::InvoiceCatalogItem => ['name', 'unit_price', 'unit', 'currency', 'vat_rate_uuid', 'is_active'],
             BusinessAuditableType::DocumentSequence => [
                 'document_type', 'name', 'prefix', 'suffix', 'year_format',
                 'sequence_digits', 'start_number', 'reset_period', 'is_active',
@@ -241,6 +244,19 @@ class BusinessAuditSanitizer
             'default_currency' => $client->default_currency,
             'is_active' => (bool) $client->is_active,
             'is_archived' => $client->archived_at !== null,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function catalogItem(InvoiceCatalogItem $item): array
+    {
+        return $this->withoutNulls([
+            'name' => $item->name,
+            'unit_price' => $item->unit_price,
+            'unit' => $item->unit,
+            'currency' => $item->currency,
+            'vat_rate_uuid' => $item->vat_rate_uuid,
+            'is_active' => (bool) $item->is_active,
         ]);
     }
 

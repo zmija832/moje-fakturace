@@ -63,6 +63,7 @@ class InvoiceDeliveryTest extends TestCase
         $this->assertStringContainsString('Neplátce DPH', $print);
         $this->assertStringContainsString('Jednotková cena', $print);
         $this->assertStringContainsString('100 Kč', $print);
+        $this->assertStringContainsString('Děkujeme za spolupráci.', $print);
         $this->assertStringNotContainsString('100 CZK', $print);
         $this->assertSame(1, substr_count($print, 'Neplátce DPH'));
         $this->assertStringNotContainsString('Souhrn DPH', $print);
@@ -97,7 +98,7 @@ class InvoiceDeliveryTest extends TestCase
         $client->forceFill(['display_name' => 'Živý klient změněn', 'email' => 'live@example.test'])->save();
         $account->forceFill(['name' => 'Živý účet změněn'])->save();
         $rate->forceFill(['name' => 'Živá sazba změněna'])->save();
-        CompanySetting::query()->update(['legal_name' => 'Živá firma změněna']);
+        CompanySetting::query()->update(['legal_name' => 'Živá firma změněna', 'invoice_outro' => 'Nový živý text']);
         $after = app(InvoiceDocumentViewModelFactory::class)->make($invoice->fresh()->load('issuedRevision'))->toArray();
         $this->assertSame($before, $after);
 

@@ -1,6 +1,44 @@
 import Alpine from 'alpinejs';
 import { buildInvoicePreviewFormData } from './invoice-preview-payload';
 
+async function lookupClientInAres(url, csrf, ico) {
+    const normalized = String(ico ?? '').replace(/\s+/g, '');
+    if (!/^\d{8}$/.test(normalized)) {
+        const error = new Error('IČO musí obsahovat přesně 8 číslic.');
+        error.validation = true;
+        throw error;
+    }
+    const response = await fetch(url, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf }, body: JSON.stringify({ ico: normalized }) });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 422) {
+        const error = new Error(data.errors?.ico?.[0] ?? 'Zadané IČO není platné.');
+        error.validation = true;
+        throw error;
+    }
+    if (!response.ok || !data.subject) throw new Error(data.message ?? 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.');
+    return { ...data, ico: normalized };
+}
+
+Alpine.data('aresClientForm', (config) => ({
+    loading: false, message: '', warning: '', error: '',
+    async lookup() {
+        if (this.loading) return;
+        this.loading = true; this.message = ''; this.warning = ''; this.error = '';
+        try {
+            const result = await lookupClientInAres(config.url, config.csrf, this.$refs.form.elements.registration_number.value);
+            for (const field of ['company_name', 'registration_number', 'tax_id', 'street', 'city', 'postal_code', 'country_code']) {
+                const input = this.$refs.form.elements.namedItem(field);
+                const value = result.subject[field];
+                if (input && typeof value === 'string' && value !== '') input.value = value;
+            }
+            this.message = 'Údaje byly načteny z ARES. Před uložením je můžete upravit.';
+            this.warning = Array.isArray(result.warnings) ? result.warnings.join(' ') : '';
+        } catch (error) {
+            this.error = error instanceof Error ? error.message : 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.';
+        } finally { this.loading = false; }
+    },
+}));
+
 Alpine.data('invoiceEditor', (config) => ({
     items: config.items,
     currency: config.currency,
@@ -28,6 +66,8 @@ Alpine.data('invoiceEditor', (config) => ({
     init() {
         this.items.forEach((item) => {
             item._editorKey = this.editorItemKey();
+            item._catalogResults = [];
+            item._catalogRequest = 0;
         });
 
         if (Object.keys(this.errors).length === 0) {
@@ -53,6 +93,7 @@ Alpine.data('invoiceEditor', (config) => ({
     addItem() {
         this.items.push({
             _editorKey: this.editorItemKey(),
+            _catalogResults: [], _catalogRequest: 0,
             description: '', quantity: '1', unit: 'ks', unit_price: '0',
             discount_type: 'none', discount_value: '0',
             ...(config.isVatPayer ? { vat_rate_uuid: config.defaultVatRateUuid ?? '' } : {}),
@@ -155,6 +196,32 @@ Alpine.data('invoiceEditor', (config) => ({
     fieldError(index, field) {
         return this.errors[`items.${index}.${field}`]?.[0] ?? '';
     },
+    async searchCatalog(index) {
+        const item = this.items[index];
+        if (!item || !config.catalogSearchUrl) return;
+        const requestId = ++item._catalogRequest;
+        const url = new URL(config.catalogSearchUrl, window.location.origin);
+        url.searchParams.set('currency', this.currency);
+        url.searchParams.set('q', item.description ?? '');
+        try {
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            const data = await response.json().catch(() => ({}));
+            if (requestId === item._catalogRequest) item._catalogResults = response.ok && Array.isArray(data.items) ? data.items : [];
+        } catch {
+            if (requestId === item._catalogRequest) item._catalogResults = [];
+        }
+    },
+    applyCatalogItem(index, catalogItem) {
+        const item = this.items[index];
+        if (!item || catalogItem.currency !== this.currency) return;
+        item.description = catalogItem.name;
+        item.unit_price = catalogItem.unit_price;
+        item.unit = catalogItem.unit;
+        if (config.isVatPayer && catalogItem.vat_rate_uuid) item.vat_rate_uuid = catalogItem.vat_rate_uuid;
+        item._catalogRequest++;
+        item._catalogResults = [];
+        this.queuePreview(0);
+    },
     hasFieldError(index, field) {
         return this.fieldError(index, field) !== '';
     },
@@ -195,41 +262,12 @@ Alpine.data('invoiceEditor', (config) => ({
         this.aresWarning = '';
         this.quickClientGeneralError = '';
 
-        if (!/^\d{8}$/.test(ico)) {
-            this.quickClientErrors = {
-                ...this.quickClientErrors,
-                registration_number: ['IČO musí obsahovat přesně 8 číslic.'],
-            };
-            return;
-        }
-
-        registrationInput.value = ico;
         this.quickClientErrors = { ...this.quickClientErrors, registration_number: [] };
         this.aresLoading = true;
 
         try {
-            const response = await fetch(config.aresLookupUrl, {
-                method: 'POST',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': config.csrf,
-                },
-                body: JSON.stringify({ ico }),
-            });
-            const data = await response.json().catch(() => ({}));
-
-            if (response.status === 422) {
-                this.quickClientErrors = {
-                    ...this.quickClientErrors,
-                    registration_number: data.errors?.ico ?? ['Zadané IČO není platné.'],
-                };
-                return;
-            }
-
-            if (!response.ok || !data.subject) {
-                throw new Error(data.message ?? 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.');
-            }
+            const data = await lookupClientInAres(config.aresLookupUrl, config.csrf, ico);
+            registrationInput.value = data.ico;
 
             this.quickClientType = 'company';
             for (const field of [
@@ -244,6 +282,11 @@ Alpine.data('invoiceEditor', (config) => ({
             this.aresMessage = 'Údaje byly načteny z ARES. Před uložením je můžete upravit.';
             this.aresWarning = Array.isArray(data.warnings) ? data.warnings.join(' ') : '';
         } catch (error) {
+            if (error?.validation) {
+                this.quickClientErrors = { ...this.quickClientErrors, registration_number: [error.message] };
+
+                return;
+            }
             this.quickClientGeneralError = error instanceof Error
                 ? error.message
                 : 'ARES nyní není dostupný. Údaje můžete vyplnit ručně.';
@@ -319,6 +362,7 @@ Alpine.data('invoiceEditor', (config) => ({
         this.queuePreview();
     },
     applyDefaultBankAccount() {
+        this.items.forEach((item) => { item._catalogRequest++; item._catalogResults = []; });
         const select = this.$refs.bankAccountSelect;
         if (!select) return;
 

@@ -10,6 +10,7 @@ use App\Http\Requests\ManageClientRequest;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Business\Client;
+use App\Services\Business\ClientBillingOverview;
 use App\Services\Business\ClientService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -61,11 +62,13 @@ class ClientController extends Controller
             ->with('status', 'Klient byl vytvořen.');
     }
 
-    public function show(string $uuid, ClientService $service): View
+    public function show(string $uuid, ClientService $service, ClientBillingOverview $billing): View
     {
         Gate::authorize('view', Client::class);
 
-        return view('business.clients.show', ['client' => $service->find($uuid)]);
+        $client = $service->find($uuid);
+
+        return view('business.clients.show', ['client' => $client, ...$billing->forClient($client)]);
     }
 
     public function edit(string $uuid, ClientService $service): View

@@ -1,0 +1,1 @@
+<x-layouts.app title="Nová položka"><h1 class="mb-6 text-2xl font-bold">Nová položka</h1>@include('business.invoice-catalog._form',['action'=>route('invoice-catalog.store'),'method'=>'POST'])</x-layouts.app>

@@ -60,6 +60,7 @@ class InvoicePublicLinkTest extends TestCase
             ->assertDontSee('100 CZK')
             ->assertSee('Příliš žluťoučký klient')->assertDontSee('Živý klient změněn')
             ->assertSee('Neplátce DPH')->assertSee('Bezpečná služba')
+            ->assertSee('Děkujeme za spolupráci.')
             ->assertDontSee('Auditní historie')->assertDontSee('business_1')->assertDontSee($invoice->uuid);
         $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.public_link_created')->count());
         $audit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.public_link_created')->sole();

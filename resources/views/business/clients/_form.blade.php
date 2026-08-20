@@ -10,7 +10,7 @@
     </div>
 @endif
 
-<form method="POST" action="{{ $action }}" class="space-y-6">
+<form method="POST" action="{{ $action }}" class="space-y-6" x-data="aresClientForm({url:@js(route('clients.ares.lookup')),csrf:@js(csrf_token())})" x-ref="form">
     @csrf
     @if ($method !== 'POST') @method($method) @endif
 
@@ -39,9 +39,12 @@
 
     <section class="card">
         <h2 class="mb-5 text-lg font-bold">2. Identifikační údaje</h2>
+        <div x-cloak x-show="message" x-text="message" class="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800"></div>
+        <div x-cloak x-show="warning" x-text="warning" class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"></div>
+        <div x-cloak x-show="error" x-text="error" class="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"></div>
         <div class="grid gap-5 md:grid-cols-2">
             @foreach(['registration_number' => 'IČO', 'tax_id' => 'DIČ', 'vat_id' => 'IČ DPH', 'contact_person' => 'Kontaktní osoba'] as $field => $label)
-                <div><label for="{{ $field }}">{{ $label }}</label><input id="{{ $field }}" name="{{ $field }}" maxlength="{{ $field === 'contact_person' ? 255 : 32 }}" value="{{ old($field, $client->{$field}) }}" @error($field) aria-invalid="true" @enderror>@error($field)<p class="field-error">{{ $message }}</p>@enderror</div>
+                <div><label for="{{ $field }}">{{ $label }}</label><div class="flex gap-2"><input id="{{ $field }}" name="{{ $field }}" maxlength="{{ $field === 'contact_person' ? 255 : 32 }}" value="{{ old($field, $client->{$field}) }}" @error($field) aria-invalid="true" @enderror>@if($field==='registration_number')<button type="button" class="button-secondary shrink-0" :disabled="loading" @click="lookup" x-text="loading?'Načítám…':'Načíst z ARES'"></button>@endif</div>@error($field)<p class="field-error">{{ $message }}</p>@enderror</div>
             @endforeach
         </div>
     </section>

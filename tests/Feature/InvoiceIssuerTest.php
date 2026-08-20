@@ -21,6 +21,7 @@ use App\Models\Business\Invoice;
 use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\VatRate;
 use App\Models\User;
+use App\Services\Business\InvoiceDocumentViewModelFactory;
 use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceIssuer;
@@ -198,6 +199,45 @@ class InvoiceIssuerTest extends TestCase
         $this->assertSame('issued', $issued->status->value);
         $this->assertSame('non_payer', $issued->issuedRevision->vatSnapshots->sole()->tax_type->value);
         $this->assertSame('0.0000', $issued->issuedRevision->vat_total);
+    }
+
+    public function test_issue_derives_missing_variable_symbol_without_overwriting_manual_value(): void
+    {
+        $this->activate(BusinessConnection::Business1);
+        [$client, $account, $rate] = $this->sources();
+        $this->sequence(default: true);
+
+        $automaticPayload = $this->payload($client, $account, $rate);
+        $automaticPayload['variable_symbol'] = null;
+        $automatic = app(InvoiceDraftService::class)->create($automaticPayload);
+        $originalRevisionId = $automatic->current_revision_id;
+
+        $this->assertNull($automatic->variable_symbol);
+        $this->assertNull($automatic->currentRevision->variable_symbol);
+
+        $issuedAutomatic = app(InvoiceIssuer::class)->issue($automatic->uuid, 1, (string) Str::uuid());
+
+        $this->assertSame('FV-202600001', $issuedAutomatic->document_number);
+        $this->assertSame('202600001', $issuedAutomatic->variable_symbol);
+        $this->assertSame('202600001', $issuedAutomatic->issuedRevision->variable_symbol);
+        $this->assertNotSame($originalRevisionId, $issuedAutomatic->issued_revision_id);
+        $this->assertSame(2, $issuedAutomatic->revisions()->count());
+        $this->assertNull($issuedAutomatic->revisions()->whereKey($originalRevisionId)->sole()->variable_symbol);
+        $document = app(InvoiceDocumentViewModelFactory::class)->make($issuedAutomatic)->toArray();
+        $this->assertSame('202600001', $document['variable_symbol']);
+        $this->assertTrue($document['qr']['available']);
+        $this->assertStringContainsString('X-VS:202600001', $document['qr']['payload']);
+
+        $manualPayload = $this->payload($client, $account, $rate);
+        $manualPayload['variable_symbol'] = '1234567890';
+        $manual = app(InvoiceDraftService::class)->create($manualPayload);
+        $manualRevisionId = $manual->current_revision_id;
+        $issuedManual = app(InvoiceIssuer::class)->issue($manual->uuid, 1, (string) Str::uuid());
+
+        $this->assertSame('1234567890', $issuedManual->variable_symbol);
+        $this->assertSame('1234567890', $issuedManual->issuedRevision->variable_symbol);
+        $this->assertSame($manualRevisionId, $issuedManual->issued_revision_id);
+        $this->assertSame(1, $issuedManual->revisions()->count());
     }
 
     public function test_readiness_and_audit_failure_leave_draft_numbering_untouched(): void

@@ -429,7 +429,7 @@
                 </div>
 
                 <div class="md:col-span-2">
-                    <label for="invoice_outro">Text za položkami</label>
+                    <label for="invoice_outro">Text ve spodní části faktury</label>
                     <textarea
                         id="invoice_outro"
                         name="invoice_outro"

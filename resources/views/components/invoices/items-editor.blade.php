@@ -3,17 +3,11 @@
 <section id="invoice-items" class="card" @error('items') aria-invalid="true" tabindex="-1" @enderror>
     <div>
         <h2 class="text-lg font-bold">3. Položky</h2>
-        <p class="mt-1 text-sm text-slate-600">Jednotková cena je bez DPH.</p>
+        @if($isVatPayer)<p class="mt-1 text-sm text-slate-600">Jednotková cena je bez DPH.</p>@endif
     </div>
     @error('items')<p class="field-error" role="alert">{{ $message }}</p>@enderror
 
-    <div class="invoice-items-table invoice-items-table--{{ $isVatPayer ? 'vat' : 'non-vat' }} mt-5 overflow-x-auto">
-        <div class="invoice-items-header" aria-hidden="true">
-            <span></span><span>Počet</span><span>MJ</span><span>Popis</span><span>Cena za MJ</span><span>Sleva</span>
-            @if($isVatPayer)<span>DPH</span>@endif
-            <span class="text-right">Celkem</span><span></span>
-        </div>
-
+    <div class="invoice-items-table invoice-items-table--{{ $isVatPayer ? 'vat' : 'non-vat' }} mt-5">
         <div class="divide-y divide-slate-200">
         <template x-for="(item,index) in items" :key="item._editorKey">
             <div
@@ -26,7 +20,7 @@
                 @drop.prevent="dropItem(index)"
             >
                 <input type="hidden" :name="`items[${index}][position]`" :value="index+1">
-                <div class="hidden lg:flex lg:justify-center">
+                <div class="hidden xl:flex xl:justify-center">
                     <button
                         type="button"
                         class="inline-flex h-10 w-8 cursor-grab items-center justify-center rounded-md text-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 active:cursor-grabbing"
@@ -40,28 +34,31 @@
                     >⠿</button>
                 </div>
                 <div>
-                    <label class="text-xs lg:sr-only" :for="`item-${index}-quantity`">Počet *</label>
+                    <label class="text-xs xl:sr-only" :for="`item-${index}-quantity`">Počet *</label>
                     <input :id="`item-${index}-quantity`" :name="`items[${index}][quantity]`" x-model="item.quantity" inputmode="decimal" required :aria-invalid="hasFieldError(index,'quantity') ? 'true' : null" :aria-describedby="hasFieldError(index,'quantity') ? `item-${index}-quantity-error` : null">
                     <p class="field-error" :id="`item-${index}-quantity-error`" x-show="fieldError(index,'quantity')" x-text="fieldError(index,'quantity')"></p>
                     <p class="field-error" x-show="fieldError(index,'position')" x-text="fieldError(index,'position')"></p>
                 </div>
                 <div>
-                    <label class="text-xs lg:sr-only" :for="`item-${index}-unit`">MJ</label>
+                    <label class="text-xs xl:sr-only" :for="`item-${index}-unit`">MJ</label>
                     <input :id="`item-${index}-unit`" :name="`items[${index}][unit]`" x-model="item.unit" maxlength="32" :aria-invalid="hasFieldError(index,'unit') ? 'true' : null" :aria-describedby="hasFieldError(index,'unit') ? `item-${index}-unit-error` : null">
                     <p class="field-error" :id="`item-${index}-unit-error`" x-show="fieldError(index,'unit')" x-text="fieldError(index,'unit')"></p>
                 </div>
-                <div class="col-span-2 lg:col-span-1">
-                    <label class="text-xs lg:sr-only" :for="`item-${index}-description`">Popis *</label>
-                    <input :id="`item-${index}-description`" :name="`items[${index}][description]`" x-model="item.description" maxlength="255" required :aria-invalid="hasFieldError(index,'description') ? 'true' : null" :aria-describedby="hasFieldError(index,'description') ? `item-${index}-description-error` : null">
+                <div class="relative col-span-2 xl:col-span-1">
+                    <label class="text-xs" :for="`item-${index}-description`">Popis *</label>
+                    <textarea rows="3" :id="`item-${index}-description`" :name="`items[${index}][description]`" x-model="item.description" @input.debounce.300ms="searchCatalog(index)" @focus="searchCatalog(index)" maxlength="255" required placeholder="Popis nebo vyberte z položek…" :aria-invalid="hasFieldError(index,'description') ? 'true' : null" :aria-describedby="hasFieldError(index,'description') ? `item-${index}-description-error` : null"></textarea>
+                    <div x-cloak x-show="item._catalogResults?.length" class="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
+                        <template x-for="catalogItem in item._catalogResults" :key="catalogItem.uuid"><button type="button" class="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-50" @click="applyCatalogItem(index,catalogItem)" x-text="catalogItem.label"></button></template>
+                    </div>
                     <p class="field-error" :id="`item-${index}-description-error`" x-show="fieldError(index,'description')" x-text="fieldError(index,'description')"></p>
                 </div>
                 <div>
-                    <label class="text-xs lg:sr-only" :for="`item-${index}-price`">Cena za MJ *</label>
+                    <label class="text-xs xl:sr-only" :for="`item-${index}-price`">Cena za MJ *</label>
                     <input :id="`item-${index}-price`" :name="`items[${index}][unit_price]`" x-model="item.unit_price" inputmode="decimal" required :aria-invalid="hasFieldError(index,'unit_price') ? 'true' : null" :aria-describedby="hasFieldError(index,'unit_price') ? `item-${index}-price-error` : null">
                     <p class="field-error" :id="`item-${index}-price-error`" x-show="fieldError(index,'unit_price')" x-text="fieldError(index,'unit_price')"></p>
                 </div>
-                <div class="col-span-2 lg:col-span-1">
-                    <label class="text-xs lg:sr-only" :for="`item-${index}-discount-type`">Sleva</label>
+                <div class="col-span-2 xl:col-span-1">
+                    <label class="text-xs xl:sr-only" :for="`item-${index}-discount-type`">Sleva</label>
                     <div class="flex gap-2">
                         <select class="min-w-0" :class="item.discount_type === 'none' ? 'w-full' : 'w-3/5'" :id="`item-${index}-discount-type`" :name="`items[${index}][discount_type]`" x-model="item.discount_type" :aria-invalid="hasFieldError(index,'discount_type') ? 'true' : null" :aria-describedby="hasFieldError(index,'discount_type') ? `item-${index}-discount-type-error` : null">
                             @foreach($discountTypes as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
@@ -73,7 +70,7 @@
                 </div>
                 @if($isVatPayer)
                     <div>
-                        <label class="text-xs lg:sr-only" :for="`item-${index}-vat`">DPH *</label>
+                        <label class="text-xs xl:sr-only" :for="`item-${index}-vat`">DPH *</label>
                         <select :id="`item-${index}-vat`" :name="`items[${index}][vat_rate_uuid]`" x-model="item.vat_rate_uuid" required :aria-invalid="hasFieldError(index,'vat_rate_uuid') ? 'true' : null" :aria-describedby="hasFieldError(index,'vat_rate_uuid') ? `item-${index}-vat-error` : null">
                             <option value="">Vyberte</option>
                             @foreach($vatRates as $rate)<option value="{{ $rate->uuid }}">{{ $rate->name }}@if($rate->percentage !== null) · {{ \App\Domain\Invoices\InvoiceDecimal::formatDecimal($rate->percentage) }} % @endif</option>@endforeach
@@ -82,7 +79,7 @@
                     </div>
                 @endif
                 <div class="flex min-h-10 flex-col justify-center whitespace-nowrap pl-2 text-right">
-                    <span class="text-xs font-medium text-slate-500 lg:sr-only">Celkem</span>
+                    <span class="text-xs font-medium text-slate-500 xl:sr-only">Celkem</span>
                     <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(index+1) ?? '—'}${previewLineTotalDisplay(index+1) == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
                     <span class="text-xs text-slate-400" x-show="loading">aktualizuji…</span>
                 </div>

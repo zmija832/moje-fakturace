@@ -34,7 +34,7 @@ class StoreInvoiceDraftRequest extends FormRequest
             'taxable_supply_on' => ['required', 'date_format:Y-m-d'],
             'due_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:issued_on'],
             'payment_method' => ['required', Rule::enum(DefaultPaymentMethod::class)],
-            'variable_symbol' => ['nullable', 'string', 'max:20', 'regex:/^[0-9]+$/'],
+            'variable_symbol' => ['nullable', 'string', 'max:10', 'regex:/^[0-9]+$/'],
             'note' => ['nullable', 'string', 'max:5000'],
             'invoice_discount_type' => ['nullable', Rule::enum(InvoiceDiscountType::class)],
             'invoice_discount_value' => ['nullable', 'string', 'max:32'],
@@ -209,6 +209,8 @@ class StoreInvoiceDraftRequest extends FormRequest
         return [
             'customer_uuid.required' => 'Vyberte odběratele.',
             'customer_uuid.uuid' => 'Vybraný odběratel není platný.',
+            'variable_symbol.max' => 'Variabilní symbol může mít nejvýše 10 číslic.',
+            'variable_symbol.regex' => 'Variabilní symbol smí obsahovat pouze číslice.',
             'items.*.vat_rate_uuid.required' => 'Vyberte sazbu DPH.',
             'items.*.vat_rate_uuid.uuid' => 'Vybraná sazba DPH není platná.',
         ];

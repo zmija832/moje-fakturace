@@ -434,7 +434,9 @@ class ClientsHttpTest extends TestCase
         [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
         $this->actingAs($user)->withSession($this->businessSession($business))
             ->get(route('clients.create'))->assertOk()->assertSee('name="_token"', false)
-            ->assertSee('Dodací adresa')->assertSee('Výchozí nastavení fakturace');
+            ->assertSee('Dodací adresa')->assertSee('Výchozí nastavení fakturace')
+            ->assertSee('Načíst z ARES')
+            ->assertSee('aresClientForm', false);
     }
 
     /** @return array{User, Business} */

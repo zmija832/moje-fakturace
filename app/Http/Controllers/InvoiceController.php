@@ -40,6 +40,7 @@ use App\Services\Business\InvoiceQrPaymentService;
 use App\Services\Business\InvoiceReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -58,10 +59,18 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function create(InvoiceFormOptions $options): View
+    public function create(Request $request, InvoiceFormOptions $options): View
     {
         Gate::authorize('create', Invoice::class);
-        $defaults = $options->defaults();
+        $client = null;
+        if ($request->filled('client')) {
+            $client = $options->activeClient((string) $request->query('client'));
+        }
+        $defaults = $options->defaults($client);
+        if ($client !== null) {
+            $defaults['customer_uuid'] = $client->uuid;
+            $defaults['bank_account_uuid'] = $options->defaultBankAccountUuid($defaults['currency']);
+        }
 
         return view('business.invoices.create', [
             ...$options->forDate($defaults['taxable_supply_on']),

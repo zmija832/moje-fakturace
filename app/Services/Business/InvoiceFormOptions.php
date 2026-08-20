@@ -94,6 +94,17 @@ class InvoiceFormOptions
             ->orderBy('display_name')->limit(200)->get();
     }
 
+    public function activeClient(string $uuid): ?Client
+    {
+        $this->connectionResolver->resolve();
+
+        return Client::query()
+            ->where('uuid', $uuid)
+            ->whereNull('archived_at')
+            ->where('is_active', true)
+            ->first();
+    }
+
     /** @return array<string, mixed> */
     public function defaults(?Client $client = null): array
     {

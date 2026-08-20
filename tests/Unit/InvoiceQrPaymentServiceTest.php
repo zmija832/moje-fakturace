@@ -23,7 +23,7 @@ class InvoiceQrPaymentServiceTest extends TestCase
         $invoice->forceFill(['id' => 1, 'uuid' => '11111111-1111-4111-8111-111111111111', 'status' => InvoiceStatus::Issued->value, 'issued_revision_id' => 7, 'document_number' => 'FV-202600001']);
         $revision = new InvoiceRevision;
         $revision->setDateFormat('Y-m-d H:i:s');
-        $revision->forceFill(['id' => 7, 'payment_method' => DefaultPaymentMethod::BankTransfer->value, 'currency' => 'CZK', 'grand_total' => '1234.5600', 'variable_symbol' => '20260001', 'due_on' => CarbonImmutable::parse('2026-08-16')]);
+        $revision->forceFill(['id' => 7, 'payment_method' => DefaultPaymentMethod::BankTransfer->value, 'currency' => 'CZK', 'grand_total' => '1234.5600', 'variable_symbol' => '1234567890', 'due_on' => CarbonImmutable::parse('2026-08-16')]);
         $account = new InvoiceBankAccountSnapshot;
         $account->forceFill(['iban' => 'CZ6508000000192000145399', 'bic' => 'GIBACZPX']);
         $revision->setRelation('bankAccountSnapshot', $account);
@@ -31,7 +31,7 @@ class InvoiceQrPaymentServiceTest extends TestCase
         $result = (new InvoiceQrPaymentService)->create($invoice, $revision);
 
         $this->assertTrue($result->available);
-        $this->assertSame('SPD*1.0*ACC:CZ6508000000192000145399+GIBACZPX*AM:1234.56*CC:CZK*DT:20260816*MSG:Faktura%20FV-202600001*X-VS:20260001', $result->payload);
+        $this->assertSame('SPD*1.0*ACC:CZ6508000000192000145399+GIBACZPX*AM:1234.56*CC:CZK*DT:20260816*MSG:Faktura%20FV-202600001*X-VS:1234567890', $result->payload);
         $this->assertStringStartsWith('data:image/svg+xml;base64,', $result->svgDataUri);
     }
 

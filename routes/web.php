@@ -13,6 +13,7 @@ use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
 use App\Http\Controllers\InvoiceAutomationSettingController;
+use App\Http\Controllers\InvoiceCatalogController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
 use App\Http\Controllers\InvoiceEmailSettingController;
@@ -150,6 +151,14 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('business-audit.show');
 
         Route::get('/faktury', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('/polozky/hledat', [InvoiceCatalogController::class, 'search'])->middleware('throttle:60,1')->name('invoice-catalog.search');
+        Route::get('/polozky', [InvoiceCatalogController::class, 'index'])->name('invoice-catalog.index');
+        Route::get('/polozky/nova', [InvoiceCatalogController::class, 'create'])->name('invoice-catalog.create');
+        Route::post('/polozky', [InvoiceCatalogController::class, 'store'])->name('invoice-catalog.store');
+        Route::get('/polozky/{uuid}/upravit', [InvoiceCatalogController::class, 'edit'])->whereUuid('uuid')->name('invoice-catalog.edit');
+        Route::put('/polozky/{uuid}', [InvoiceCatalogController::class, 'update'])->whereUuid('uuid')->name('invoice-catalog.update');
+        Route::patch('/polozky/{uuid}/aktivovat', [InvoiceCatalogController::class, 'activate'])->whereUuid('uuid')->name('invoice-catalog.activate');
+        Route::patch('/polozky/{uuid}/deaktivovat', [InvoiceCatalogController::class, 'deactivate'])->whereUuid('uuid')->name('invoice-catalog.deactivate');
         Route::get('/faktury/nova', [InvoiceController::class, 'create'])->name('invoices.create');
         Route::post('/faktury/nahled-vypoctu', [InvoiceController::class, 'preview'])
             ->middleware('throttle:60,1')->name('invoices.preview');

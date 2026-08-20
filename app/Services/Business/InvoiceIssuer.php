@@ -8,6 +8,7 @@ use App\Domain\Invoices\Exceptions\InvoiceIssueIdempotencyConflict;
 use App\Domain\Invoices\Exceptions\InvoiceIssueSequenceUnavailable;
 use App\Domain\Invoices\Exceptions\InvoiceIssueVersionConflict;
 use App\Domain\Invoices\Exceptions\InvoiceNotDraft;
+use App\Domain\Invoices\InvoiceVariableSymbol;
 use App\Enums\BusinessAuditableType;
 use App\Enums\BusinessAuditEvent;
 use App\Enums\DocumentType;
@@ -16,6 +17,7 @@ use App\Models\Business\DocumentNumberAllocation;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\DocumentSequenceDefault;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceRevision;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -28,6 +30,7 @@ class InvoiceIssuer
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly DocumentNumberAllocator $numberAllocator,
         private readonly InvoiceIssueReadinessValidator $readinessValidator,
+        private readonly InvoiceRevisionFactory $revisionFactory,
         private readonly BusinessAuditSanitizer $auditSanitizer,
         private readonly BusinessAuditWriter $auditWriter,
         private readonly InvoicePublicLinkService $publicLinks,
@@ -101,10 +104,17 @@ class InvoiceIssuer
             $correlationUuid,
             $invoice->uuid,
         );
+        if ($revision->variable_symbol === null) {
+            $revision = $this->revisionFactory->persistForAutomaticVariableSymbol(
+                $invoice,
+                $revision,
+                InvoiceVariableSymbol::fromDocumentNumber($allocation->formatted_number),
+            );
+        }
         $newVersion = $invoice->version + 1;
         $issuedAt = now();
 
-        $this->persistIssue($invoice, $revision->id, $allocation, $correlationUuid, $newVersion, $issuedAt);
+        $this->persistIssue($invoice, $revision, $allocation, $correlationUuid, $newVersion, $issuedAt);
         $invoice = Invoice::query()->whereKey($invoice->id)->firstOrFail();
         $this->auditWriter->write(
             BusinessAuditEvent::InvoiceIssued,
@@ -112,7 +122,7 @@ class InvoiceIssuer
             $invoice->uuid,
             ['status' => InvoiceStatus::Draft->value, 'version' => $newVersion - 1],
             $this->auditSanitizer->issuedInvoice($invoice, $allocation),
-            ['status', 'document_number', 'document_number_allocation_id', 'issued_revision_id', 'issued_at', 'version'],
+            ['status', 'document_number', 'document_number_allocation_id', 'current_revision_id', 'issued_revision_id', 'variable_symbol', 'issued_at', 'version'],
             BusinessAuditableType::DocumentNumberAllocation,
             $allocation->correlation_uuid,
         );
@@ -170,7 +180,7 @@ class InvoiceIssuer
         }
     }
 
-    private function persistIssue(Invoice $invoice, int $revisionId, DocumentNumberAllocation $allocation, string $correlationUuid, int $version, DateTimeInterface $issuedAt): void
+    private function persistIssue(Invoice $invoice, InvoiceRevision $revision, DocumentNumberAllocation $allocation, string $correlationUuid, int $version, DateTimeInterface $issuedAt): void
     {
         $updated = Invoice::query()
             ->whereKey($invoice->id)
@@ -181,7 +191,9 @@ class InvoiceIssuer
                 'document_number' => $allocation->formatted_number,
                 'document_sequence_id' => $allocation->document_sequence_id,
                 'document_number_allocation_id' => $allocation->id,
-                'issued_revision_id' => $revisionId,
+                'current_revision_id' => $revision->id,
+                'issued_revision_id' => $revision->id,
+                'variable_symbol' => $revision->variable_symbol,
                 'issued_at' => $issuedAt,
                 'issue_correlation_uuid' => $correlationUuid,
                 'version' => $version,

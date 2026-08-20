@@ -125,6 +125,23 @@ class InvoiceRevisionFactory
         return $this->persistPrepared($invoice, $revisionNumber, $prepared);
     }
 
+    public function persistForAutomaticVariableSymbol(
+        Invoice $invoice,
+        InvoiceRevision $source,
+        string $variableSymbol,
+    ): InvoiceRevision {
+        $this->requireBusinessTransaction();
+
+        if ($invoice->status !== InvoiceStatus::Draft || (int) $source->invoice_id !== (int) $invoice->id) {
+            throw new LogicException('Automatický variabilní symbol lze doplnit pouze do aktuální revize konceptu.');
+        }
+
+        $prepared = $this->payloadFromRevision($source);
+        $prepared['header']['variable_symbol'] = $variableSymbol;
+
+        return $this->persistPrepared($invoice, $source->revision_number + 1, $prepared);
+    }
+
     /** @param array<string, mixed> $prepared */
     private function persistPrepared(Invoice $invoice, int $revisionNumber, array $prepared): InvoiceRevision
     {

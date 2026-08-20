@@ -181,6 +181,8 @@ class InvoiceAutomationTest extends TestCase
         $this->assertSame('issued', $run->refresh()->status);
         $this->assertSame('issued', $invoice->status->value);
         $this->assertNotNull($invoice->document_number);
+        $this->assertSame(preg_replace('/\D+/', '', $invoice->document_number), $invoice->variable_symbol);
+        $this->assertSame($invoice->variable_symbol, $invoice->issuedRevision->variable_symbol);
         $this->assertSame(1, $invoice->documents()->count());
         $this->assertSame(1, InvoicePublicLink::query()->active()->where('invoice_id', $invoice->id)->count());
         $this->assertSame($invoice->current_revision_id, $invoice->issued_revision_id);

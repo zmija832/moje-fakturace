@@ -12,9 +12,11 @@ use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\DocumentSequenceDefault;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceCatalogItem;
 use App\Models\Business\VatRate;
 use App\Models\Business\VatRateDefault;
 use App\Models\User;
+use App\Services\Business\BusinessDate;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceIssuer;
 use Illuminate\Support\Facades\DB;
@@ -97,6 +99,7 @@ class InvoicesHttpTest extends TestCase
         $createResponse = $this->get(route('invoices.create'));
         $createResponse->assertOk()->assertSee('Nová faktura')
             ->assertSee('name="_token"', false)->assertSee('Rozpis výpočtu')
+            ->assertSee('name="variable_symbol" inputmode="numeric" maxlength="10"', false)
             ->assertSee('Uložit jako koncept')->assertSee('Vytvořit fakturu')
             ->assertSee('aria-label="Vytvořit nového klienta"', false)
             ->assertSee('Načíst z ARES')
@@ -108,8 +111,9 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('Přesunout položku ${index+1}', false)
             ->assertSee('draggable="true"', false)
             ->assertSee('invoice-items-table--vat', false)
-            ->assertSee('class="invoice-items-header"', false)
+            ->assertDontSee('class="invoice-items-header"', false)
             ->assertSee('class="invoice-item-row"', false)
+            ->assertSee('<textarea rows="3"', false)
             ->assertSee('@change="applyDefaultBankAccount"', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
             ->assertDontSee('business_id')->assertDontSee('business_1');
@@ -155,6 +159,27 @@ class InvoicesHttpTest extends TestCase
         $stale = $this->payload($client, $account, $rate, ['note' => 'Přepsat', 'version' => 1, 'correlation_uuid' => (string) Str::uuid()]);
         $this->put(route('invoices.update', $invoice->uuid), $stale)->assertSessionHas('error');
         $this->assertSame('Nová bezpečná poznámka', $invoice->fresh()->currentRevision->note);
+    }
+
+    public function test_invoice_variable_symbol_accepts_ten_digits_and_rejects_eleven(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, $account, $rate] = $this->sources();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $this->post(route('invoices.store'), $this->payload($client, $account, $rate, [
+            'variable_symbol' => '1234567890',
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame('1234567890', Invoice::query()->sole()->currentRevision->variable_symbol);
+
+        $this->from(route('invoices.create'))->post(route('invoices.store'), $this->payload($client, $account, $rate, [
+            'variable_symbol' => '12345678901',
+        ]))->assertRedirect(route('invoices.create'))->assertSessionHasErrors('variable_symbol');
+
+        $this->assertSame(1, Invoice::query()->count());
     }
 
     public function test_preview_calculates_without_customer_but_store_remains_strict(): void
@@ -322,6 +347,7 @@ class InvoicesHttpTest extends TestCase
         $create = $this->get(route('invoices.create'))->assertOk();
         $create->assertSee('invoice-items-table--non-vat', false)
             ->assertDontSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertDontSee('Jednotková cena je bez DPH.')
             ->assertDontSee('id="ns-vat"', false)
             ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
 
@@ -347,6 +373,7 @@ class InvoicesHttpTest extends TestCase
 
         $edit = $this->get(route('invoices.edit', $invoice->uuid))->assertOk();
         $edit->assertDontSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertDontSee('Jednotková cena je bez DPH.')
             ->assertDontSee('id="ns-vat"', false)
             ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
 
@@ -382,6 +409,7 @@ class InvoicesHttpTest extends TestCase
 
         $response = $this->get(route('invoices.create'))->assertOk()
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
+            ->assertSee('Jednotková cena je bez DPH.')
             ->assertSee('id="ns-vat"', false)
             ->assertSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
         $this->assertStringNotContainsString($systemRateUuid, $response->getContent());
@@ -583,6 +611,8 @@ class InvoicesHttpTest extends TestCase
 
         $this->post(route('invoices.duplicate', $source->uuid))->assertSessionHas('status');
         $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
+        $this->assertNull($duplicate->variable_symbol);
+        $this->assertNull($duplicate->currentRevision->variable_symbol);
         $this->get(route('invoices.edit', $duplicate->uuid))->assertOk()
             ->assertDontSee('name="items[0][vat_rate_uuid]"', false)
             ->assertDontSee('Sazba DPH');
@@ -594,6 +624,104 @@ class InvoicesHttpTest extends TestCase
             ->assertJsonPath('summaries.0.tax_type', 'non_payer')
             ->assertJsonPath('items.0.line_total_amount', $duplicate->currentRevision->items->sole()->line_total_amount)
             ->assertJsonPath('totals.grand_total', $duplicate->currentRevision->grand_total);
+
+        app(ActiveBusinessContext::class)->set($business);
+        $issuedDuplicate = app(InvoiceIssuer::class)->issue($duplicate->uuid, 1, (string) Str::uuid());
+        $this->assertSame('202600002', $issuedDuplicate->variable_symbol);
+        $this->assertNotSame($source->variable_symbol, $issuedDuplicate->variable_symbol);
+    }
+
+    public function test_catalog_is_tenant_scoped_authorized_and_only_prefills_invoice_values(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $rate] = $this->sources();
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+
+        $this->post(route('invoice-catalog.store'), [
+            'name' => 'Grafické práce',
+            'unit_price' => '650,50',
+            'unit' => 'hod',
+            'currency' => 'CZK',
+            'vat_rate_uuid' => $rate->uuid,
+            'is_active' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $item = InvoiceCatalogItem::query()->sole();
+        $this->assertSame('650.5000', $item->unit_price);
+        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice_catalog_item.created')->count());
+        $this->getJson(route('invoice-catalog.search', ['currency' => 'CZK', 'q' => 'graf']))
+            ->assertOk()
+            ->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.name', 'Grafické práce')
+            ->assertJsonPath('items.0.unit_price', '650.5')
+            ->assertJsonMissingPath('items.0.invoice_catalog_item_uuid');
+        $this->getJson(route('invoice-catalog.search', ['currency' => 'EUR', 'q' => 'graf']))
+            ->assertOk()->assertJsonCount(0, 'items');
+
+        [$viewer] = $this->membership('viewer', BusinessConnection::Business1, $business);
+        $this->actingAs($viewer)->withSession($this->businessSession($business));
+        $this->get(route('invoice-catalog.index'))->assertOk()->assertSee('Grafické práce')->assertDontSee('Upravit');
+        $this->put(route('invoice-catalog.update', $item->uuid), [
+            'name' => 'Podvržená změna', 'unit_price' => '1', 'unit' => 'ks', 'currency' => 'CZK',
+        ])->assertForbidden();
+
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+        $this->patch(route('invoice-catalog.deactivate', $item->uuid))->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice_catalog_item.deactivated')->count());
+        $this->getJson(route('invoice-catalog.search', ['currency' => 'CZK', 'q' => 'graf']))
+            ->assertOk()->assertJsonCount(0, 'items');
+        $this->assertSame(0, DB::connection('business_2')->table('invoice_catalog_items')->count());
+
+        $create = $this->get(route('invoices.create'))->assertOk();
+        $create->assertSee('catalogSearchUrl', false)
+            ->assertSee('vyberte z položek', false)
+            ->assertDontSee('invoice_catalog_item_uuid', false);
+    }
+
+    public function test_client_detail_and_new_invoice_use_client_defaults_without_changing_existing_invoice(): void
+    {
+        [$admin, $business] = $this->membership('admin', BusinessConnection::Business1);
+        app(ActiveBusinessContext::class)->set($business);
+        [$client, , $rate] = $this->sources('Výchozí EUR klient');
+        $client->forceFill([
+            'default_currency' => 'EUR',
+            'default_due_days' => 7,
+            'default_payment_method' => 'cash',
+        ])->save();
+        $eurAccount = new BankAccount;
+        $eurAccount->forceFill([
+            'name' => 'EUR účet', 'iban' => 'DE89370400440532013000', 'bic' => 'COBADEFFXXX',
+            'currency' => 'EUR', 'is_active' => true, 'sort_order' => 0,
+        ])->save();
+        $eurDefault = new BankAccountDefault;
+        $eurDefault->forceFill(['currency' => 'EUR', 'bank_account_id' => $eurAccount->id])->save();
+        $payload = $this->payload($client, $eurAccount, $rate, [
+            'currency' => 'EUR',
+            'payment_method' => 'bank_transfer',
+        ]);
+        $draft = app(InvoiceDraftService::class)->create($payload);
+        $this->sequence(default: true);
+        $issued = app(InvoiceIssuer::class)->issue($draft->uuid, 1, (string) Str::uuid());
+        $expectedDue = app(BusinessDate::class)->today()->addDays(7)->format('Y-m-d');
+        app(ActiveBusinessContext::class)->clear();
+
+        $this->actingAs($admin)->withSession($this->businessSession($business));
+        $create = $this->get(route('invoices.create', ['client' => $client->uuid]))->assertOk();
+        $this->assertMatchesRegularExpression('/<option value="'.preg_quote($client->uuid, '/').'"[^>]*selected/', $create->getContent());
+        $this->assertMatchesRegularExpression('/<option value="EUR"[^>]*selected/', $create->getContent());
+        $this->assertMatchesRegularExpression('/<option value="cash"[^>]*selected/', $create->getContent());
+        $this->assertMatchesRegularExpression('/<option value="'.preg_quote($eurAccount->uuid, '/').'"[^>]*selected/', $create->getContent());
+        $create->assertSee('value="'.$expectedDue.'"', false);
+
+        $this->get(route('clients.show', $client->uuid))->assertOk()
+            ->assertSee('Historie faktur')
+            ->assertSee($issued->document_number)
+            ->assertSee('Výchozí EUR klient')
+            ->assertSee('100 EUR');
+        $this->assertSame('EUR', $issued->currency);
+        $this->assertSame('bank_transfer', $issued->payment_method->value);
     }
 
     /** @return array{User,Business} */
