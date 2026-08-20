@@ -26,7 +26,7 @@ class InvoiceEmailTemplateRenderer
             '{invoice_number}' => (string) $invoice->document_number,
             '{customer_name}' => (string) $model['customer']['name'],
             '{supplier_name}' => (string) $model['supplier']['name'],
-            '{amount}' => $model['totals']['grand_total'].' '.$model['currency'],
+            '{amount}' => $model['totals']['grand_total'].' '.$model['currency_label'],
             '{due_date}' => (string) $model['due_on'],
             '{web_invoice_url}' => $publicUrl ?? '',
         ];

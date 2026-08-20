@@ -53,6 +53,7 @@ class InvoicePreviewService
             'invoice_discount' => $calculation['invoice_discount'],
             'totals' => $calculation['totals'],
             'display' => [
+                'currency' => InvoiceDecimal::currencyLabel($currency),
                 'items' => array_map(static fn (array $item): array => [
                     'position' => $item['position'],
                     'line_total_amount' => InvoiceDecimal::formatAmount($item['line_total_amount']),

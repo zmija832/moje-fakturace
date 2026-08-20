@@ -11,7 +11,7 @@
 
 @if ($account->exists && $account->defaultAssignment)
     <div class="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900" role="status">
-        Tento účet je výchozí pro měnu {{ $account->defaultAssignment->currency }}.
+        Tento účet je výchozí pro měnu {{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($account->defaultAssignment->currency) }}.
         Jeho měnu nelze změnit, dokud nenastavíte jiný výchozí účet.
     </div>
 @endif

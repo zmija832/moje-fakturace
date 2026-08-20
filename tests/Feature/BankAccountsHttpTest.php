@@ -178,7 +178,7 @@ class BankAccountsHttpTest extends TestCase
             ->get(route('bank-accounts.index'))
             ->assertOk()
             ->assertSee('Aktuální účet')
-            ->assertSee('Výchozí pro CZK')
+            ->assertSee('Výchozí pro Kč')
             ->assertSee('Archivované účty')
             ->assertSee('Historický účet');
     }

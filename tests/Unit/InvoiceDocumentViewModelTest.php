@@ -114,6 +114,8 @@ class InvoiceDocumentViewModelTest extends TestCase
         $this->assertSame('Žluťoučký dodavatel s.r.o.', $document['supplier']['name']);
         $this->assertSame('90', $document['totals']['tax_base_total']);
         $this->assertSame('90', $document['totals']['grand_total']);
+        $this->assertSame('CZK', $document['currency']);
+        $this->assertSame('Kč', $document['currency_label']);
         $this->assertSame('1', $document['items'][0]['quantity']);
         $this->assertSame('100', $document['items'][0]['unit_price']);
         $this->assertSame('Neplátce DPH', $document['items'][0]['tax_label']);

@@ -7,6 +7,8 @@ use App\Enums\InvoiceReminderOrigin;
 use App\Mail\AutomationMail;
 use App\Models\Business;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceDocument;
+use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\InvoiceReminder;
 use App\Models\User;
 use App\Services\Business\BusinessDate;
@@ -14,11 +16,15 @@ use App\Services\Business\InvoiceArchiveService;
 use App\Services\Business\InvoiceAutomationSettingsService;
 use App\Services\Business\InvoiceCancellationService;
 use App\Services\Business\InvoicePaymentService;
+use App\Services\Business\InvoicePdfGenerator;
+use App\Services\Business\InvoicePublicLinkService;
 use App\Services\Business\InvoiceReminderPreferenceService;
 use App\Services\Business\InvoiceReminderService;
 use Carbon\CarbonImmutable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
@@ -27,6 +33,12 @@ use Tests\TestCase;
 class InvoiceReminderReliabilityTest extends TestCase
 {
     use CreatesInvoiceDeliveryFixtures;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake(InvoicePdfGenerator::DISK);
+    }
 
     protected function tearDown(): void
     {
@@ -62,7 +74,7 @@ class InvoiceReminderReliabilityTest extends TestCase
         $this->assertSame(1, $reminder->level);
         $this->assertSame('prepared', $reminder->status);
         $this->assertSame('2026-08-19', $reminder->scheduled_on->format('Y-m-d'));
-        $this->assertStringContainsString('100 CZK', $reminder->body_text);
+        $this->assertStringContainsString('100 Kč', $reminder->body_text);
         $this->assertStringNotContainsString('100.0000', $reminder->body_text);
     }
 
@@ -118,6 +130,81 @@ class InvoiceReminderReliabilityTest extends TestCase
         $this->assertSame(0, $service->runDue(CarbonImmutable::parse('2026-08-25'))['processed']);
         $this->assertSame(1, $reminder->refresh()->send_attempts);
         Mail::assertSent(AutomationMail::class, 1);
+    }
+
+    public function test_sent_reminder_contains_public_url_and_attaches_current_pdf_without_regeneration(): void
+    {
+        Mail::fake();
+        [$invoice, $service] = $this->environment('send', secondDay: null);
+        $link = InvoicePublicLink::query()->active()->where('invoice_id', $invoice->id)->sole();
+        $url = app(InvoicePublicLinkService::class)->url($link);
+        $this->assertNotNull($url);
+
+        $reminder = $service->prepare($invoice, 1, CarbonImmutable::parse('2026-08-17'), true);
+        $document = InvoiceDocument::query()->where('invoice_id', $invoice->id)->sole();
+
+        $this->assertSame('sent', $reminder->status);
+        $this->assertSame('application/pdf', $document->mime_type);
+        $this->assertStringEndsWith('.pdf', $document->original_filename);
+        Storage::disk(InvoicePdfGenerator::DISK)->assertExists($document->storage_path);
+        $this->assertStringContainsString($url, $reminder->body_text);
+        $this->assertStringContainsString('100 Kč', $reminder->body_text);
+        Mail::assertSent(AutomationMail::class, function (AutomationMail $mail) use ($document, $url): bool {
+            $attachment = Attachment::fromStorageDisk($document->storage_disk, $document->storage_path)
+                ->as($document->original_filename)
+                ->withMime('application/pdf');
+
+            return $mail->hasAttachment($attachment)
+                && $mail->webInvoiceUrl === $url
+                && str_contains($mail->bodyText, $url)
+                && str_contains($mail->render(), 'href="'.$url.'"');
+        });
+
+        $this->assertSame(1, InvoicePublicLink::query()->where('invoice_id', $invoice->id)->count());
+        $this->assertSame(1, InvoiceDocument::query()->where('invoice_id', $invoice->id)->count());
+        $service->send($reminder->refresh(), InvoiceReminderOrigin::Manual);
+        $this->assertSame(1, InvoiceDocument::query()->where('invoice_id', $invoice->id)->count());
+        Mail::assertSent(AutomationMail::class, 1);
+    }
+
+    public function test_smtp_failure_preserves_assets_and_retry_uses_same_reminder_link_and_pdf(): void
+    {
+        [$invoice, $service] = $this->environment('send', secondDay: null);
+        $reminder = $service->prepare($invoice, 1, CarbonImmutable::parse('2026-08-17'), false);
+
+        $deliveryAttempt = 0;
+        Mail::shouldReceive('to')->twice()->with($reminder->recipient_email)->andReturnSelf();
+        Mail::shouldReceive('send')->twice()->andReturnUsing(function () use (&$deliveryAttempt): void {
+            $deliveryAttempt++;
+            if ($deliveryAttempt === 1) {
+                throw new \RuntimeException('SMTP unavailable');
+            }
+        });
+
+        try {
+            $service->send($reminder, InvoiceReminderOrigin::Manual);
+            $this->fail('SMTP failure must be propagated after the reminder is marked as failed.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('SMTP unavailable', $exception->getMessage());
+        }
+
+        $failed = $reminder->refresh();
+        $link = InvoicePublicLink::query()->active()->where('invoice_id', $invoice->id)->sole();
+        $document = InvoiceDocument::query()->where('invoice_id', $invoice->id)->sole();
+        $url = app(InvoicePublicLinkService::class)->url($link);
+        $this->assertSame('failed', $failed->status);
+        $this->assertSame(1, $failed->send_attempts);
+        $this->assertNotNull($url);
+        $this->assertStringContainsString($url, $failed->body_text);
+        Storage::disk(InvoicePdfGenerator::DISK)->assertExists($document->storage_path);
+
+        $sent = $service->send($failed, InvoiceReminderOrigin::Manual);
+
+        $this->assertSame('sent', $sent->status);
+        $this->assertSame(2, $sent->send_attempts);
+        $this->assertSame($link->uuid, InvoicePublicLink::query()->active()->where('invoice_id', $invoice->id)->sole()->uuid);
+        $this->assertSame($document->uuid, InvoiceDocument::query()->where('invoice_id', $invoice->id)->sole()->uuid);
+        $this->assertSame(2, $deliveryAttempt);
     }
 
     public function test_prepared_reminder_in_prepare_mode_is_not_sent(): void

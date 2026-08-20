@@ -62,6 +62,8 @@ class InvoiceDeliveryTest extends TestCase
         $print = view('business.invoices.print', ['document' => $before, 'archival' => true])->render();
         $this->assertStringContainsString('Neplátce DPH', $print);
         $this->assertStringContainsString('Jednotková cena', $print);
+        $this->assertStringContainsString('100 Kč', $print);
+        $this->assertStringNotContainsString('100 CZK', $print);
         $this->assertSame(1, substr_count($print, 'Neplátce DPH'));
         $this->assertStringNotContainsString('Souhrn DPH', $print);
         $this->assertStringNotContainsString('Nulová sazba', $print);

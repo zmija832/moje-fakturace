@@ -10,7 +10,7 @@ final class CompanySettingOptions
     ];
 
     public const CURRENCIES = [
-        'CZK' => 'CZK',
+        'CZK' => 'Kč',
         'EUR' => 'EUR',
     ];
 

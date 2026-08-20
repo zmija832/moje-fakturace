@@ -24,7 +24,7 @@
             <section class="mt-6 grid gap-4 md:grid-cols-2">
                 @foreach($overview['currencies'] as $currency)
                     <article class="card">
-                        <h2 class="text-lg font-bold">Úhrady v {{ $currency->currency }}</h2>
+                        <h2 class="text-lg font-bold">Úhrady v {{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($currency->currency) }}</h2>
                         <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
                             <div><dt class="text-slate-500">Neuhrazeno celkem · Zbývá uhradit</dt><dd class="font-semibold">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney((string) $currency->outstanding_total, $currency->currency) }}</dd></div>
                             <div><dt class="text-slate-500">Po splatnosti</dt><dd class="font-semibold text-red-700">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney((string) $currency->overdue_total, $currency->currency) }} ({{ $currency->overdue_count }})</dd></div>

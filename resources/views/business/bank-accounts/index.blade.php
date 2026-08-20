@@ -59,11 +59,11 @@
                                     @endif
                                 </td>
                                 <td class="px-5 py-4 align-top">
-                                    <p class="font-semibold">{{ $account->currency }}</p>
+                                    <p class="font-semibold">{{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($account->currency) }}</p>
                                     <div class="mt-2 flex flex-wrap gap-2">
                                         @if ($account->defaultAssignment)
                                             <span class="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
-                                                Výchozí pro {{ $account->defaultAssignment->currency }}
+                                                Výchozí pro {{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($account->defaultAssignment->currency) }}
                                             </span>
                                         @endif
                                         <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700' }}">
@@ -86,7 +86,7 @@
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <h2 class="font-bold">{{ $account->name }}</h2>
-                                <p class="mt-1 text-sm font-semibold">{{ $account->currency }}</p>
+                                <p class="mt-1 text-sm font-semibold">{{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($account->currency) }}</p>
                             </div>
                             <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700' }}">
                                 {{ $account->is_active ? 'Aktivní' : 'Neaktivní' }}
@@ -107,7 +107,7 @@
 
                         @if ($account->defaultAssignment)
                             <p class="mt-3 inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
-                                Výchozí pro {{ $account->defaultAssignment->currency }}
+                                Výchozí pro {{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($account->defaultAssignment->currency) }}
                             </p>
                         @endif
 
@@ -135,7 +135,7 @@
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <h3 class="font-semibold text-slate-800">{{ $account->name }}</h3>
-                                <p class="mt-1 text-sm">{{ $account->currency }}</p>
+                                <p class="mt-1 text-sm">{{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($account->currency) }}</p>
                             </div>
                             <span class="rounded-full bg-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700">
                                 Archivovaný

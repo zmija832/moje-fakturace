@@ -140,7 +140,7 @@ class InvoicePublicLinkService
     private function issuedInvoice(Invoice $invoice): Invoice
     {
         $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
-        if ($locked->status !== InvoiceStatus::Issued || $locked->issued_revision_id === null) {
+        if ($locked->status !== InvoiceStatus::Issued || $locked->issued_revision_id === null || $locked->archived_at !== null) {
             throw ValidationException::withMessages(['invoice' => 'Webfakturu lze vytvořit pouze pro vystavenou fakturu.']);
         }
 

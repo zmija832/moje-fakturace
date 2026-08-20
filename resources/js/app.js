@@ -339,6 +339,9 @@ Alpine.data('invoiceEditor', (config) => ({
     previewGrandTotalDisplay() {
         return this.preview?.display?.totals?.grand_total;
     },
+    previewCurrencyDisplay() {
+        return this.preview?.display?.currency ?? this.currency;
+    },
     async refreshPreview(force = false) {
         if (!this.$refs.form) return;
 

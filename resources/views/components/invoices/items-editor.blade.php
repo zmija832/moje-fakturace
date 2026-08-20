@@ -83,7 +83,7 @@
                 @endif
                 <div class="flex min-h-10 flex-col justify-center whitespace-nowrap pl-2 text-right">
                     <span class="text-xs font-medium text-slate-500 lg:sr-only">Celkem</span>
-                    <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(index+1) ?? '—'}${previewLineTotalDisplay(index+1) == null ? '' : ` ${currency}`}`">—</output>
+                    <output class="font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(index+1) ?? '—'}${previewLineTotalDisplay(index+1) == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
                     <span class="text-xs text-slate-400" x-show="loading">aktualizuji…</span>
                 </div>
                 <div class="flex items-start justify-end">
@@ -98,7 +98,7 @@
         <button class="button-secondary self-start" type="button" @click="addItem">Přidat položku</button>
         <div class="text-right" aria-live="polite">
             <span class="text-sm font-semibold text-slate-600">Celkem faktura</span>
-            <output class="ml-3 whitespace-nowrap text-xl font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${currency}`}`">—</output>
+            <output class="ml-3 whitespace-nowrap text-xl font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
             <span class="ml-2 text-xs text-slate-400" x-show="loading">aktualizuji…</span>
         </div>
     </div>

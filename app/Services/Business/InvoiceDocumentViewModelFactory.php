@@ -35,6 +35,7 @@ class InvoiceDocumentViewModelFactory
             'variable_symbol' => $revision->variable_symbol,
             'payment_method' => $revision->payment_method->label(),
             'currency' => $revision->currency,
+            'currency_label' => InvoiceDecimal::currencyLabel($revision->currency),
             'is_non_payer' => $isNonPayer,
             'supplier' => $this->supplier($revision),
             'customer' => $this->customer($revision),

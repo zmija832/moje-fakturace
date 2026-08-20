@@ -162,7 +162,14 @@ final class InvoiceDecimal
 
     public static function formatMoney(mixed $value, string $currency): string
     {
-        return self::formatAmount($value).' '.strtoupper(trim($currency));
+        return self::formatAmount($value).' '.self::currencyLabel($currency);
+    }
+
+    public static function currencyLabel(string $currency): string
+    {
+        $currency = strtoupper(trim($currency));
+
+        return $currency === 'CZK' ? 'Kč' : $currency;
     }
 
     public static function formatAmount(mixed $value): string

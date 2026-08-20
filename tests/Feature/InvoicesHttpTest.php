@@ -122,6 +122,7 @@ class InvoicesHttpTest extends TestCase
             ->assertOk()
             ->assertJsonPath('totals.grand_total', '100.0000')
             ->assertJsonPath('display.items.0.line_total_amount', '100')
+            ->assertJsonPath('display.currency', 'Kč')
             ->assertJsonPath('display.totals.grand_total', '100');
         $this->assertSame($before, $this->counts());
 

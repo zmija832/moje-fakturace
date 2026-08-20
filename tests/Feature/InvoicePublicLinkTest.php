@@ -56,6 +56,8 @@ class InvoicePublicLinkTest extends TestCase
 
         $this->get($url)->assertOk()
             ->assertSee('Faktura '.$invoice->document_number)
+            ->assertSee('100 Kč')
+            ->assertDontSee('100 CZK')
             ->assertSee('Příliš žluťoučký klient')->assertDontSee('Živý klient změněn')
             ->assertSee('Neplátce DPH')->assertSee('Bezpečná služba')
             ->assertDontSee('Auditní historie')->assertDontSee('business_1')->assertDontSee($invoice->uuid);

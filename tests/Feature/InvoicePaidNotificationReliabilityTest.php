@@ -70,8 +70,8 @@ class InvoicePaidNotificationReliabilityTest extends TestCase
 
         $rendered = app(AutomationTemplateRenderer::class)->paid($invoice, '{amount}', 'Přijato {amount}.', '2026-08-19');
 
-        $this->assertSame('100 CZK', $rendered['subject']);
-        $this->assertSame('Přijato 100 CZK.', $rendered['body']);
+        $this->assertSame('100 Kč', $rendered['subject']);
+        $this->assertSame('Přijato 100 Kč.', $rendered['body']);
         $this->assertStringNotContainsString('.0000', $rendered['body']);
     }
 

@@ -14,10 +14,21 @@ class AutomationTemplateRenderer
 
     public function __construct(private readonly InvoicePublicLinkService $links) {}
 
-    /** @return array{subject:string,body:string,recipient:?string} */
+    /** @return array{subject:string,body:string,recipient:?string,web_invoice_url:string} */
     public function reminder(Invoice $invoice, string $subject, string $body, string $remaining, int $days): array
     {
-        return $this->render($invoice, $subject, $body, ['{remaining_amount}' => InvoiceDecimal::formatMoney($remaining, $invoice->currency), '{days_overdue}' => (string) $days, '{web_invoice_url}' => $this->links->activeUrlForInvoice($invoice) ?? ''], self::REMINDER_PLACEHOLDERS);
+        $link = $this->links->create($invoice);
+        $url = $this->links->url($link);
+        if ($url === null) {
+            throw ValidationException::withMessages(['web_invoice_url' => 'Veřejný odkaz faktury nelze bezpečně vytvořit.']);
+        }
+        $rendered = $this->render($invoice, $subject, $body, ['{remaining_amount}' => InvoiceDecimal::formatMoney($remaining, $invoice->currency), '{days_overdue}' => (string) $days, '{web_invoice_url}' => $url], self::REMINDER_PLACEHOLDERS);
+        if (! str_contains($rendered['body'], $url)) {
+            $rendered['body'] = trim($rendered['body'])."\n\nWebfaktura: {$url}";
+        }
+        $rendered['web_invoice_url'] = $url;
+
+        return $rendered;
     }
 
     /** @return array{subject:string,body:string,recipient:?string} */

@@ -18,6 +18,7 @@ use App\Models\Business\CompanySetting;
 use App\Models\Business\DocumentSequence;
 use App\Models\Business\DocumentSequenceDefault;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\VatRate;
 use App\Models\User;
 use App\Services\Business\InvoiceDraftEditor;
@@ -81,12 +82,14 @@ class InvoiceIssuerTest extends TestCase
         $this->assertSame($invoice->uuid, $issued->numberAllocation->document_uuid);
         $this->assertSame($correlation, $issued->numberAllocation->correlation_uuid);
         $this->assertSame(2, $sequence->fresh()->next_number);
+        $this->assertSame(1, InvoicePublicLink::query()->active()->where('invoice_id', $issued->id)->count());
 
         $again = app(InvoiceIssuer::class)->issue($invoice->uuid, 1, $correlation);
         $this->assertSame($issued->document_number, $again->document_number);
         $this->assertSame($issued->issued_at->format('c'), $again->issued_at->format('c'));
         $this->assertSame(1, DB::connection('business_1')->table('document_number_allocations')->count());
         $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.issued')->count());
+        $this->assertSame(1, InvoicePublicLink::query()->where('invoice_id', $issued->id)->count());
 
         $audit = DB::connection('business_1')->table('audit_logs')->where('event', 'invoice.issued')->first();
         $serialized = (string) $audit->new_values.(string) $audit->metadata;

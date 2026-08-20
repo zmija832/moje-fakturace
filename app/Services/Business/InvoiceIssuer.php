@@ -30,6 +30,7 @@ class InvoiceIssuer
         private readonly InvoiceIssueReadinessValidator $readinessValidator,
         private readonly BusinessAuditSanitizer $auditSanitizer,
         private readonly BusinessAuditWriter $auditWriter,
+        private readonly InvoicePublicLinkService $publicLinks,
     ) {}
 
     public function issue(
@@ -43,12 +44,17 @@ class InvoiceIssuer
 
         try {
             return DB::connection($connection)->transaction(
-                fn (): Invoice => $this->issueLocked(
-                    $invoiceUuid,
-                    $expectedVersion,
-                    $correlationUuid,
-                    $documentSequenceUuid,
-                ),
+                function () use ($invoiceUuid, $expectedVersion, $correlationUuid, $documentSequenceUuid): Invoice {
+                    $invoice = $this->issueLocked(
+                        $invoiceUuid,
+                        $expectedVersion,
+                        $correlationUuid,
+                        $documentSequenceUuid,
+                    );
+                    $this->publicLinks->create($invoice);
+
+                    return $invoice;
+                },
                 3,
             );
         } catch (InvoiceNotDraft|InvoiceIssueVersionConflict|InvoiceIssueIdempotencyConflict $exception) {

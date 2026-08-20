@@ -11,10 +11,12 @@ use App\Enums\InvoiceReminderOrigin;
 use App\Enums\InvoiceStatus;
 use App\Mail\AutomationMail;
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceDocument;
 use App\Models\Business\InvoiceReminder;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -31,6 +33,7 @@ class InvoiceReminderService
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly BusinessDate $businessDate,
         private readonly BusinessAuditWriter $auditWriter,
+        private readonly InvoicePdfGenerator $pdfGenerator,
     ) {}
 
     /** @return array{processed:int,failed:int} */
@@ -174,6 +177,12 @@ class InvoiceReminderService
         InvoiceReminder $reminder,
         InvoiceReminderOrigin $origin = InvoiceReminderOrigin::Automatic,
     ): InvoiceReminder {
+        $reminder = $reminder->refresh();
+        if ($reminder->status === 'sent') {
+            return $reminder;
+        }
+
+        [$document, $webInvoiceUrl] = $this->deliveryAssets($reminder, $origin);
         $claim = $this->claim($reminder, $origin);
         if ($claim === null) {
             return $reminder->refresh();
@@ -191,6 +200,8 @@ class InvoiceReminderService
                 $claimed->body_text,
                 $email->sender_name,
                 $email->reply_to,
+                $document,
+                $webInvoiceUrl,
             ));
 
             return $this->finishClaim($claimed, $token, 'sent', $origin);
@@ -205,6 +216,52 @@ class InvoiceReminderService
             );
             throw $exception;
         }
+    }
+
+    /** @return array{InvoiceDocument,string} */
+    private function deliveryAssets(InvoiceReminder $reminder, InvoiceReminderOrigin $origin): array
+    {
+        $invoice = Invoice::query()->whereKey($reminder->invoice_id)->first();
+        if ($invoice === null) {
+            throw ValidationException::withMessages(['invoice' => 'Faktura již neexistuje.']);
+        }
+        $invoice->load([
+            'issuedRevision.customerSnapshot',
+            'issuedRevision.supplierSnapshot',
+            'payments',
+            'reminderOverride',
+        ]);
+        $summary = $this->assertEligible($invoice, $origin);
+        $setting = $this->settings->current();
+        $rendered = $this->renderer->reminder(
+            $invoice,
+            $setting->{"reminder_subject_{$reminder->level}"},
+            $setting->{"reminder_body_{$reminder->level}"},
+            $summary->remainingTotal,
+            $this->businessDate->daysBetween($invoice->due_on, $reminder->scheduled_on),
+        );
+        $webInvoiceUrl = $rendered['web_invoice_url'];
+        $document = $this->pdfGenerator->generate($invoice->uuid, (string) Str::uuid());
+        if ((int) $document->invoice_revision_id !== (int) $invoice->issued_revision_id
+            || $document->storage_disk !== InvoicePdfGenerator::DISK
+            || $document->mime_type !== 'application/pdf'
+            || ! Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path)) {
+            throw ValidationException::withMessages(['pdf' => 'Aktuální PDF faktury není bezpečně dostupné.']);
+        }
+        $connection = $this->connectionResolver->resolve()->connectionName();
+        DB::connection($connection)->transaction(function () use ($reminder, $rendered): void {
+            $locked = InvoiceReminder::query()->whereKey($reminder->id)->lockForUpdate()->firstOrFail();
+            if ($locked->status === 'sent') {
+                return;
+            }
+            $locked->forceFill([
+                'recipient_email' => $rendered['recipient'],
+                'subject' => $rendered['subject'],
+                'body_text' => $rendered['body'],
+            ])->save();
+        }, 3);
+
+        return [$document, $webInvoiceUrl];
     }
 
     /** @return null|array{InvoiceReminder,string} */

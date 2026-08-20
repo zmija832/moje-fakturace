@@ -6,9 +6,11 @@ use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Domain\BusinessContext\Exceptions\MissingBusinessContext;
 use App\Enums\BusinessConnection;
 use App\Mail\AutomationMail;
+use App\Mail\InvoiceIssuedMail;
 use App\Models\Business\BankAccount;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoicePaidNotification;
+use App\Models\Business\InvoicePublicLink;
 use App\Models\Business\InvoiceReminder;
 use App\Models\Business\RecurringInvoiceRun;
 use App\Models\Business\RecurringInvoiceTemplate;
@@ -167,6 +169,7 @@ class InvoiceAutomationTest extends TestCase
 
     public function test_auto_issue_uses_existing_issuer_allocator_and_pdf_generator(): void
     {
+        Mail::fake();
         Storage::fake('invoice_documents');
         [$admin,$business] = $this->deliveryMembership();
         app(ActiveBusinessContext::class)->set($business);
@@ -179,7 +182,32 @@ class InvoiceAutomationTest extends TestCase
         $this->assertSame('issued', $invoice->status->value);
         $this->assertNotNull($invoice->document_number);
         $this->assertSame(1, $invoice->documents()->count());
+        $this->assertSame(1, InvoicePublicLink::query()->active()->where('invoice_id', $invoice->id)->count());
         $this->assertSame($invoice->current_revision_id, $invoice->issued_revision_id);
+        Mail::assertNothingSent();
+    }
+
+    public function test_auto_issue_with_auto_send_uses_existing_invoice_mail_workflow(): void
+    {
+        Mail::fake();
+        Storage::fake('invoice_documents');
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, $client, $account] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $template = app(RecurringInvoiceService::class)->create($this->templatePayload($client->uuid, $account->uuid, [
+            'mode' => 'auto_issue',
+            'auto_send' => true,
+        ]));
+
+        $run = app(RecurringInvoiceRunner::class)->run($template);
+        $invoice = Invoice::query()->where('uuid', $run->invoice_uuid)->firstOrFail();
+
+        $this->assertSame('sent', $run->refresh()->status);
+        $this->assertSame('issued', $invoice->status->value);
+        $this->assertSame(1, $invoice->documents()->count());
+        $this->assertSame(1, InvoicePublicLink::query()->active()->where('invoice_id', $invoice->id)->count());
+        Mail::assertSent(InvoiceIssuedMail::class, 1);
     }
 
     public function test_full_payment_creates_configured_notifications_only_once_and_reversal_does_not_repeat(): void

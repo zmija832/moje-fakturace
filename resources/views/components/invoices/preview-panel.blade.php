@@ -11,7 +11,7 @@
             <div><dt class="text-slate-500">Slevy</dt><dd class="font-semibold" x-text="preview?.display?.totals?.discount_total ?? '—'"></dd></div>
             <div><dt class="text-slate-500">Základ</dt><dd class="font-semibold" x-text="preview?.display?.totals?.tax_base_total ?? '—'"></dd></div>
             <div><dt class="text-slate-500">DPH</dt><dd class="font-semibold" x-text="preview?.display?.totals?.vat_total ?? '—'"></dd></div>
-            <div><dt class="text-slate-500">Celkem</dt><dd class="font-bold" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${currency}`}`"></dd></div>
+            <div><dt class="text-slate-500">Celkem</dt><dd class="font-bold" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${previewCurrencyDisplay()}`}`"></dd></div>
         </dl>
     </section>
 @else
