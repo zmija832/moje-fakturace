@@ -1,6 +1,7 @@
 import Alpine from 'alpinejs';
 import { applyInvoiceCatalogSelection } from './invoice-catalog-selection';
 import { buildInvoicePreviewFormData } from './invoice-preview-payload';
+import { applyInvoicePreviewResponse, setInvoiceItemsPreviewUpdating } from './invoice-preview-state';
 
 async function lookupClientInAres(url, csrf, ico) {
     const normalized = String(ico ?? '').replace(/\s+/g, '');
@@ -69,6 +70,8 @@ Alpine.data('invoiceEditor', (config) => ({
             item._editorKey = this.editorItemKey();
             item._catalogResults = [];
             item._catalogRequest = 0;
+            item._previewLineTotal = null;
+            item._previewUpdating = false;
         });
 
         if (Object.keys(this.errors).length === 0) {
@@ -95,6 +98,7 @@ Alpine.data('invoiceEditor', (config) => ({
         this.items.push({
             _editorKey: this.editorItemKey(),
             _catalogResults: [], _catalogRequest: 0,
+            _previewLineTotal: null, _previewUpdating: false,
             description: '', quantity: '1', unit: 'ks', unit_price: '0',
             discount_type: 'none', discount_value: '0',
             ...(config.isVatPayer ? { vat_rate_uuid: config.defaultVatRateUuid ?? '' } : {}),
@@ -105,7 +109,6 @@ Alpine.data('invoiceEditor', (config) => ({
         if (this.items.length > 1) {
             this.items.splice(index, 1);
             this.removeItemErrors(index);
-            this.removePreviewItem(index);
             this.queuePreview();
         }
     },
@@ -136,7 +139,6 @@ Alpine.data('invoiceEditor', (config) => ({
         const [item] = this.items.splice(source, 1);
         this.items.splice(target, 0, item);
         this.moveItemErrors(source, target);
-        this.reorderPreviewItems(source, target);
         this.queuePreview();
     },
     moveItemErrors(source, target) {
@@ -171,28 +173,6 @@ Alpine.data('invoiceEditor', (config) => ({
             remapped[`items.${index > removedIndex ? index - 1 : index}.${match[2]}`] = messages;
         }
         this.errors = remapped;
-    },
-    reorderPreviewItems(source, target) {
-        if (!Array.isArray(this.preview?.items)) return;
-
-        const previewItems = [...this.preview.items].sort((left, right) => Number(left.position) - Number(right.position));
-        const [item] = previewItems.splice(source, 1);
-        if (!item) return;
-        previewItems.splice(target, 0, item);
-        this.preview = {
-            ...this.preview,
-            items: previewItems.map((previewItem, index) => ({ ...previewItem, position: index + 1 })),
-        };
-    },
-    removePreviewItem(index) {
-        if (!Array.isArray(this.preview?.items)) return;
-
-        this.preview = {
-            ...this.preview,
-            items: this.preview.items
-                .filter((previewItem) => Number(previewItem.position) !== index + 1)
-                .map((previewItem, previewIndex) => ({ ...previewItem, position: previewIndex + 1 })),
-        };
     },
     fieldError(index, field) {
         return this.errors[`items.${index}.${field}`]?.[0] ?? '';
@@ -372,13 +352,15 @@ Alpine.data('invoiceEditor', (config) => ({
     },
     queuePreview(delay = 400, force = false) {
         window.clearTimeout(this.previewTimer);
+        this.previewController?.abort();
+        this.previewController = null;
+        this.previewRequestId += 1;
         this.loading = true;
+        setInvoiceItemsPreviewUpdating(this.items, true);
         this.previewTimer = window.setTimeout(() => this.refreshPreview(force), delay);
     },
-    previewLineTotalDisplay(position) {
-        const item = this.preview?.display?.items?.find((previewItem) => Number(previewItem.position) === Number(position));
-
-        return item?.line_total_amount;
+    previewLineTotalDisplay(item) {
+        return item?._previewLineTotal ?? null;
     },
     previewGrandTotalDisplay() {
         return this.preview?.display?.totals?.grand_total;
@@ -394,6 +376,7 @@ Alpine.data('invoiceEditor', (config) => ({
         const signature = JSON.stringify(Array.from(body.entries(), ([key, value]) => [key, String(value)]));
         if (!force && signature === this.lastPreviewSignature) {
             this.loading = false;
+            setInvoiceItemsPreviewUpdating(this.items, false);
 
             return;
         }
@@ -435,7 +418,7 @@ Alpine.data('invoiceEditor', (config) => ({
             }
 
             if (!response.ok) throw new Error(this.previewHttpError(response.status, data));
-            if (requestId !== this.previewRequestId) return;
+            if (!applyInvoicePreviewResponse(this.items, data, requestId, this.previewRequestId)) return;
             this.preview = data;
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -445,7 +428,10 @@ Alpine.data('invoiceEditor', (config) => ({
                 ? error.message
                 : 'Náhled nyní nelze vypočítat.';
         } finally {
-            if (requestId === this.previewRequestId) this.loading = false;
+            if (requestId === this.previewRequestId) {
+                this.loading = false;
+                setInvoiceItemsPreviewUpdating(this.items, false);
+            }
         }
     },
     previewFormData() {

@@ -105,7 +105,7 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('Načíst z ARES')
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
             ->assertSee('Celkem')
-            ->assertSee('previewLineTotalDisplay(index+1)', false)
+            ->assertSee('previewLineTotalDisplay(item)', false)
             ->assertSee('Celkem faktura')
             ->assertSee('previewGrandTotalDisplay()', false)
             ->assertSee('Přesunout položku ${index+1}', false)

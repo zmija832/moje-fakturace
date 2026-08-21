@@ -74,8 +74,8 @@
                     @endif
                     <div class="invoice-item-total" aria-live="polite">
                         <span class="text-xs font-medium text-slate-700">Celkem</span>
-                        <output class="block whitespace-nowrap text-right font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(index+1) ?? '—'}${previewLineTotalDisplay(index+1) == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
-                        <span class="block text-right text-xs text-slate-400" x-show="loading">aktualizuji…</span>
+                        <output class="block whitespace-nowrap text-right font-bold tabular-nums" :class="item._previewUpdating ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(item) ?? '—'}${previewLineTotalDisplay(item) == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
+                        <span class="block text-right text-xs text-slate-400" x-show="item._previewUpdating">aktualizuji…</span>
                     </div>
                 </div>
             </div>
