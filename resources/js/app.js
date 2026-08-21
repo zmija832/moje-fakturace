@@ -1,7 +1,8 @@
 import Alpine from 'alpinejs';
-import { applyInvoiceCatalogSelectionLifecycle } from './invoice-catalog-selection';
+import { applyInvoiceCatalogSelection } from './invoice-catalog-selection';
 import { buildInvoicePreviewFormData } from './invoice-preview-payload';
-import { applyInvoicePreviewResponse, setInvoiceItemsPreviewUpdating } from './invoice-preview-state';
+import { createInvoicePreviewPipeline } from './invoice-preview-pipeline';
+import { applyInvoicePreviewResponse } from './invoice-preview-state';
 
 async function lookupClientInAres(url, csrf, ico) {
     const normalized = String(ico ?? '').replace(/\s+/g, '');
@@ -49,10 +50,7 @@ Alpine.data('invoiceEditor', (config) => ({
     preview: null,
     previewError: '',
     loading: false,
-    previewTimer: null,
-    previewController: null,
-    previewRequestId: 0,
-    lastPreviewSignature: null,
+    previewPipeline: null,
     nextEditorKey: 0,
     draggedItemIndex: null,
     errors: config.errors ?? {},
@@ -71,7 +69,18 @@ Alpine.data('invoiceEditor', (config) => ({
             item._catalogResults = [];
             item._catalogRequest = 0;
             item._previewLineTotal = null;
-            item._previewUpdating = false;
+        });
+
+        this.previewPipeline = createInvoicePreviewPipeline({
+            buildBody: () => this.previewFormData(),
+            send: (body, signal) => this.sendPreviewRequest(body, signal),
+            apply: (data) => {
+                applyInvoicePreviewResponse(this.items, data);
+                this.preview = data;
+                this.previewError = '';
+            },
+            fail: () => { this.previewError = 'Náhled nyní nelze vypočítat.'; },
+            loading: (loading) => { this.loading = loading; },
         });
 
         if (Object.keys(this.errors).length === 0) {
@@ -91,14 +100,13 @@ Alpine.data('invoiceEditor', (config) => ({
         }));
     },
     destroy() {
-        window.clearTimeout(this.previewTimer);
-        this.previewController?.abort();
+        this.previewPipeline?.destroy();
     },
     addItem() {
         this.items.push({
             _editorKey: this.editorItemKey(),
             _catalogResults: [], _catalogRequest: 0,
-            _previewLineTotal: null, _previewUpdating: false,
+            _previewLineTotal: null,
             description: '', quantity: '1', unit: 'ks', unit_price: '0',
             discount_type: 'none', discount_value: '0',
             ...(config.isVatPayer ? { vat_rate_uuid: config.defaultVatRateUuid ?? '' } : {}),
@@ -196,14 +204,14 @@ Alpine.data('invoiceEditor', (config) => ({
         const item = this.items[index];
         if (!item || catalogItem.currency !== this.currency) return;
 
-        await applyInvoiceCatalogSelectionLifecycle({
-            items: this.items,
-            index,
-            catalogItem,
-            isVatPayer: config.isVatPayer,
-            nextTick: () => this.$nextTick(),
-            queuePreview: () => this.queuePreview(),
-        });
+        const selectedItem = applyInvoiceCatalogSelection(item, catalogItem, config.isVatPayer);
+        if (!selectedItem) return;
+
+        selectedItem._catalogRequest = (item._catalogRequest ?? 0) + 1;
+        selectedItem._catalogResults = [];
+        this.items.splice(index, 1, selectedItem);
+        await this.$nextTick();
+        this.queuePreview();
     },
     hasFieldError(index, field) {
         return this.fieldError(index, field) !== '';
@@ -317,8 +325,6 @@ Alpine.data('invoiceEditor', (config) => ({
             this.quickClientType = 'company';
             this.quickClientOpen = false;
             this.quickClientSuccess = 'Klient byl vytvořen a vybrán.';
-            await this.$nextTick();
-            await this.refreshPreview();
         } catch (error) {
             this.quickClientGeneralError = error instanceof Error
                 ? error.message
@@ -342,7 +348,7 @@ Alpine.data('invoiceEditor', (config) => ({
             date.setUTCDate(date.getUTCDate() + Number(option.dataset.dueDays));
             due.value = date.toISOString().slice(0, 10);
         }
-        this.queuePreview();
+        this.$nextTick(() => this.queuePreview());
     },
     applyDefaultBankAccount() {
         this.items.forEach((item) => { item._catalogRequest++; item._catalogResults = []; });
@@ -353,22 +359,8 @@ Alpine.data('invoiceEditor', (config) => ({
         const option = Array.from(select.options).find((candidate) => candidate.value === defaultUuid && !candidate.disabled);
         select.value = option?.value ?? '';
     },
-    invalidatePreview() {
-        window.clearTimeout(this.previewTimer);
-        this.previewController?.abort();
-        this.previewController = null;
-        this.previewRequestId += 1;
-        this.loading = true;
-        setInvoiceItemsPreviewUpdating(this.items, true);
-
-        return this.previewRequestId;
-    },
-    schedulePreview(delay = 400, force = false) {
-        this.previewTimer = window.setTimeout(() => this.refreshPreview(force), delay);
-    },
-    queuePreview(delay = 400, force = false) {
-        this.invalidatePreview();
-        this.schedulePreview(delay, force);
+    queuePreview(delay = 250) {
+        this.previewPipeline?.queue(delay);
     },
     previewLineTotalDisplay(item) {
         return item?._previewLineTotal ?? null;
@@ -379,84 +371,35 @@ Alpine.data('invoiceEditor', (config) => ({
     previewCurrencyDisplay() {
         return this.preview?.display?.currency ?? this.currency;
     },
-    async refreshPreview(force = false) {
-        if (!this.$refs.form) return;
+    refreshPreview() {
+        return this.previewPipeline?.refresh();
+    },
+    async sendPreviewRequest(body, signal) {
+        const response = await fetch(config.previewUrl, {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'X-CSRF-TOKEN': config.csrf },
+            body,
+            signal,
+        });
 
-        window.clearTimeout(this.previewTimer);
-        const body = this.previewFormData();
-        const signature = JSON.stringify(Array.from(body.entries(), ([key, value]) => [key, String(value)]));
-        if (!force && signature === this.lastPreviewSignature) {
-            this.loading = false;
-            setInvoiceItemsPreviewUpdating(this.items, false);
-
-            return;
+        if (response.redirected || (response.status >= 300 && response.status < 400)) {
+            throw new Error('Preview redirect is not allowed.');
         }
 
-        this.previewController?.abort();
-        const controller = new AbortController();
-        const requestId = ++this.previewRequestId;
-        this.previewController = controller;
-        this.loading = true;
-        this.previewError = '';
-        try {
-            const response = await fetch(config.previewUrl, {
-                method: 'POST',
-                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': config.csrf },
-                body,
-                signal: controller.signal,
-            });
-
-            if (response.redirected || (response.status >= 300 && response.status < 400)) {
-                throw new Error('Relace vypršela nebo je nutné se znovu přihlásit. Obnovte stránku.');
-            }
-
-            const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-            const isJson = contentType.includes('application/json') || contentType.includes('+json');
-            if (!isJson) {
-                if (!response.ok) throw new Error(this.previewHttpError(response.status, {}));
-
-                throw new Error(response.status >= 500
-                    ? 'Server nyní nemůže náhled vypočítat. Zkuste to prosím znovu.'
-                    : 'Server vrátil neočekávanou odpověď. Obnovte stránku a zkuste to znovu.');
-            }
-
-            let data;
-            try {
-                data = await response.json();
-            } catch {
-                throw new Error('Server vrátil neplatnou odpověď. Zkuste to prosím znovu.');
-            }
-
-            if (!response.ok) throw new Error(this.previewHttpError(response.status, data));
-            if (!applyInvoicePreviewResponse(this.items, data, requestId, this.previewRequestId)) return;
-            this.lastPreviewSignature = signature;
-            this.preview = data;
-        } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') return;
-            if (requestId !== this.previewRequestId) return;
-
-            this.previewError = error instanceof Error
-                ? error.message
-                : 'Náhled nyní nelze vypočítat.';
-        } finally {
-            if (requestId === this.previewRequestId) {
-                this.loading = false;
-                setInvoiceItemsPreviewUpdating(this.items, false);
-            }
+        const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+        if (!contentType.includes('application/json') && !contentType.includes('+json')) {
+            throw new Error('Preview response is not JSON.');
         }
+
+        const data = await response.json().catch(() => {
+            throw new Error('Preview response contains invalid JSON.');
+        });
+        if (!response.ok) throw new Error('Preview request failed.');
+
+        return data;
     },
     previewFormData() {
         return buildInvoicePreviewFormData(this.$refs.form, config.isVatPayer);
-    },
-    previewHttpError(status, data) {
-        if (status === 401 || status === 403) return 'Pro výpočet náhledu nemáte oprávnění nebo vypršela relace.';
-        if (status === 419) return 'Relace vypršela. Obnovte stránku a zkuste to znovu.';
-        if (status === 422) return Object.values(data?.errors ?? {}).flat()[0]
-            ?? 'Náhled nelze vypočítat, dokud neopravíte zadané hodnoty.';
-        if (status === 429) return 'Náhled se přepočítává příliš často. Chvíli počkejte a zkuste to znovu.';
-        if (status >= 500) return 'Server nyní nemůže náhled vypočítat. Zkuste to prosím znovu.';
-
-        return 'Náhled nyní nelze vypočítat.';
     },
 }));
 

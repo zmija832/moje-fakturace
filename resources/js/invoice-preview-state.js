@@ -1,12 +1,4 @@
-export function setInvoiceItemsPreviewUpdating(items, updating) {
-    items.forEach((item) => {
-        item._previewUpdating = updating;
-    });
-}
-
-export function applyInvoicePreviewResponse(items, response, requestId, currentRequestId) {
-    if (requestId !== currentRequestId) return false;
-
+export function applyInvoicePreviewResponse(items, response) {
     const totalsByPosition = new Map();
     const displayItems = Array.isArray(response?.display?.items) ? response.display.items : [];
 
@@ -21,5 +13,4 @@ export function applyInvoicePreviewResponse(items, response, requestId, currentR
         item._previewLineTotal = totalsByPosition.get(index + 1) ?? null;
     });
 
-    return true;
 }

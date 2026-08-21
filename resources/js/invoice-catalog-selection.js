@@ -15,25 +15,3 @@ export function applyInvoiceCatalogSelection(item, catalogItem, isVatPayer) {
 
     return selectedItem;
 }
-
-export async function applyInvoiceCatalogSelectionLifecycle({
-    items,
-    index,
-    catalogItem,
-    isVatPayer,
-    nextTick,
-    queuePreview,
-}) {
-    const item = items[index];
-    const selectedItem = applyInvoiceCatalogSelection(item, catalogItem, isVatPayer);
-    if (!selectedItem) return false;
-
-    selectedItem._catalogRequest = (item._catalogRequest ?? 0) + 1;
-    selectedItem._catalogResults = [];
-    items.splice(index, 1, selectedItem);
-
-    await nextTick();
-    queuePreview();
-
-    return true;
-}

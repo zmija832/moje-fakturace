@@ -582,10 +582,12 @@ class InvoicesHttpTest extends TestCase
         $edit->assertSee('name="_method" value="PUT"', false);
         $edit->assertSee('První položka')->assertSee('Druhá položka');
         $javascript = file_get_contents(resource_path('js/app.js'));
-        $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0, true))', $javascript);
+        $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0))', $javascript);
         $this->assertStringNotContainsString('this.$refs.form?.checkValidity()', $javascript);
-        $this->assertStringContainsString('const body = this.previewFormData()', $javascript);
+        $this->assertStringContainsString('buildBody: () => this.previewFormData()', $javascript);
         $this->assertStringContainsString('buildInvoicePreviewFormData(this.$refs.form, config.isVatPayer)', $javascript);
+        $this->assertStringContainsString("await this.\$nextTick();\n        this.queuePreview();", $javascript);
+        $this->assertStringNotContainsString('lastPreviewSignature', $javascript);
 
         $previewPayload = $this->payload($client, $account, $rate, [
             'issued_on' => $duplicate->issued_on->format('Y-m-d'),

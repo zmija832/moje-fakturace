@@ -74,8 +74,7 @@
                     @endif
                     <div class="invoice-item-total" aria-live="polite">
                         <span class="text-xs font-medium text-slate-700">Celkem</span>
-                        <output class="block whitespace-nowrap text-right font-bold tabular-nums" :class="item._previewUpdating ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewLineTotalDisplay(item) ?? '—'}${previewLineTotalDisplay(item) == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
-                        <span class="block text-right text-xs text-slate-400" x-show="item._previewUpdating">aktualizuji…</span>
+                        <output class="block whitespace-nowrap text-right font-bold tabular-nums text-slate-900" x-text="`${previewLineTotalDisplay(item) ?? '—'}${previewLineTotalDisplay(item) == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
                     </div>
                 </div>
             </div>
@@ -88,7 +87,7 @@
         <div class="text-right" aria-live="polite">
             <span class="text-sm font-semibold text-slate-600">Celkem faktura</span>
             <output class="ml-3 whitespace-nowrap text-xl font-bold tabular-nums" :class="loading ? 'text-slate-500' : 'text-slate-900'" x-text="`${previewGrandTotalDisplay() ?? '—'}${previewGrandTotalDisplay() == null ? '' : ` ${previewCurrencyDisplay()}`}`">—</output>
-            <span class="ml-2 text-xs text-slate-400" x-show="loading">aktualizuji…</span>
+            <span class="ml-2 text-xs text-slate-400" x-show="loading">Přepočítávám…</span>
         </div>
     </div>
     <x-invoices.noscript-item :vat-rates="$vatRates" :discount-types="$discountTypes" :is-vat-payer="$isVatPayer" />
