@@ -196,11 +196,13 @@ Alpine.data('invoiceEditor', (config) => ({
         const item = this.items[index];
         if (!item || catalogItem.currency !== this.currency) return;
 
-        applyInvoiceCatalogSelection(item, catalogItem, config.isVatPayer, () => {
-            this.$nextTick(() => this.queuePreview(0, true));
-        });
-        item._catalogRequest++;
-        item._catalogResults = [];
+        const selectedItem = applyInvoiceCatalogSelection(item, catalogItem, config.isVatPayer);
+        if (!selectedItem) return;
+
+        selectedItem._catalogRequest = (item._catalogRequest ?? 0) + 1;
+        selectedItem._catalogResults = [];
+        this.items.splice(index, 1, selectedItem);
+        this.$nextTick(() => this.queuePreview(0, true));
     },
     hasFieldError(index, field) {
         return this.fieldError(index, field) !== '';

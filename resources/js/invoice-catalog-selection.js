@@ -1,16 +1,17 @@
-export function applyInvoiceCatalogSelection(item, catalogItem, isVatPayer, schedulePreview) {
-    if (!item || !catalogItem || catalogItem.currency == null) return false;
+export function applyInvoiceCatalogSelection(item, catalogItem, isVatPayer) {
+    if (!item || !catalogItem || catalogItem.currency == null) return null;
 
-    item.description = catalogItem.name;
-    item.unit = catalogItem.unit;
+    const selectedItem = {
+        ...item,
+        description: catalogItem.name,
+        unit: catalogItem.unit,
+    };
 
     if (catalogItem.unit_price !== null && catalogItem.unit_price !== undefined && catalogItem.unit_price !== '') {
-        item.unit_price = catalogItem.unit_price;
+        selectedItem.unit_price = catalogItem.unit_price;
     }
 
-    if (isVatPayer && catalogItem.vat_rate_uuid) item.vat_rate_uuid = catalogItem.vat_rate_uuid;
+    if (isVatPayer && catalogItem.vat_rate_uuid) selectedItem.vat_rate_uuid = catalogItem.vat_rate_uuid;
 
-    schedulePreview();
-
-    return true;
+    return selectedItem;
 }
