@@ -21,23 +21,19 @@ export async function applyInvoiceCatalogSelectionLifecycle({
     index,
     catalogItem,
     isVatPayer,
-    invalidatePreview,
-    isPreviewCurrent,
     nextTick,
-    schedulePreview,
+    queuePreview,
 }) {
     const item = items[index];
     const selectedItem = applyInvoiceCatalogSelection(item, catalogItem, isVatPayer);
     if (!selectedItem) return false;
 
-    const previewGeneration = invalidatePreview();
     selectedItem._catalogRequest = (item._catalogRequest ?? 0) + 1;
     selectedItem._catalogResults = [];
     items.splice(index, 1, selectedItem);
 
     await nextTick();
-    if (!isPreviewCurrent(previewGeneration)) return true;
-    schedulePreview();
+    queuePreview();
 
     return true;
 }

@@ -65,16 +65,12 @@ function renderItemControls(formElement, items, index) {
     }
 }
 
-test('catalog lifecycle invalidates the old request and creates a new POST only after DOM update', async () => {
+test('catalog lifecycle queues the normal preview path only after DOM update', async () => {
     const items = [invoiceItem('first')];
     const invoiceForm = form(items);
     invoiceForm.elements.forEach((control) => { control.form = invoiceForm; });
-    const requests = [{
-        id: 1,
-        body: buildInvoicePreviewFormData(invoiceForm, false),
-    }];
     const events = [];
-    let currentRequestId = 1;
+    let requestBody = null;
 
     await applyInvoiceCatalogSelectionLifecycle({
         items,
@@ -87,37 +83,163 @@ test('catalog lifecycle invalidates the old request and creates a new POST only 
             vat_rate_uuid: null,
         },
         isVatPayer: false,
-        invalidatePreview: () => {
-            events.push('invalidate-old-preview');
-            currentRequestId += 1;
-
-            return currentRequestId;
-        },
-        isPreviewCurrent: (generation) => generation === currentRequestId,
         nextTick: async () => {
             events.push('alpine-next-tick');
             renderItemControls(invoiceForm, items, 0);
         },
-        schedulePreview: () => {
-            events.push('build-and-fetch-new-preview');
+        queuePreview: () => {
+            events.push('queue-normal-preview');
             assert.equal(invoiceForm.elements.namedItem('items[0][description]').value, 'Samolepka vlastní motiv -barva');
             assert.equal(invoiceForm.elements.namedItem('items[0][unit_price]').value, '100');
             assert.equal(invoiceForm.elements.namedItem('items[0][description]').form, invoiceForm);
-            currentRequestId += 1;
-            requests.push({
-                id: currentRequestId,
-                body: buildInvoicePreviewFormData(invoiceForm, false),
-            });
+            requestBody = buildInvoicePreviewFormData(invoiceForm, false);
         },
     });
 
-    assert.deepEqual(events, ['invalidate-old-preview', 'alpine-next-tick', 'build-and-fetch-new-preview']);
-    assert.equal(requests[0].body.get('items[0][description]'), '');
-    assert.equal(requests[0].body.get('items[0][unit_price]'), '0');
-    assert.notEqual(requests[0].id, currentRequestId);
-    assert.equal(requests[1].id, currentRequestId);
-    assert.equal(requests[1].body.get('items[0][description]'), 'Samolepka vlastní motiv -barva');
-    assert.equal(requests[1].body.get('items[0][unit_price]'), '100');
+    assert.deepEqual(events, ['alpine-next-tick', 'queue-normal-preview']);
+    assert.equal(requestBody.get('items[0][description]'), 'Samolepka vlastní motiv -barva');
+    assert.equal(requestBody.get('items[0][unit_price]'), '100');
+});
+
+test('catalog response is not left one preview behind when a form event follows the DOM update', async () => {
+    const items = [invoiceItem('first')];
+    const invoiceForm = form(items);
+    invoiceForm.elements.forEach((control) => { control.form = invoiceForm; });
+    const trace = [];
+    let generation = 0;
+    let lastSignature = null;
+    let previewQueued = false;
+
+    const invalidate = (origin) => {
+        generation += 1;
+        setInvoiceItemsPreviewUpdating(items, true);
+        trace.push({ event: 'invalidate', origin, generation });
+
+        return generation;
+    };
+    const startPreview = (origin, force, totals) => {
+        const body = buildInvoicePreviewFormData(invoiceForm, false);
+        const signature = JSON.stringify(Array.from(body.entries()));
+        trace.push({ event: 'refresh', origin, generation, force, signature });
+        if (!force && signature === lastSignature) {
+            setInvoiceItemsPreviewUpdating(items, false);
+            trace.push({ event: 'skip-same-signature', origin, generation });
+
+            return null;
+        }
+
+        lastSignature = signature;
+        const requestId = ++generation;
+        trace.push({ event: 'request', origin, requestId });
+
+        return { requestId, totals };
+    };
+    const finishPreview = ({ requestId, totals }, origin) => {
+        const applied = applyInvoicePreviewResponse(items, {
+            display: {
+                items: totals.map((lineTotal, index) => ({ position: index + 1, line_total_amount: lineTotal })),
+                totals: { grand_total: totals.reduce((sum, amount) => sum + Number(amount), 0).toString() },
+            },
+        }, requestId, generation);
+        trace.push({ event: applied ? 'apply' : 'discard-stale', origin, requestId, generation });
+        if (requestId === generation) setInvoiceItemsPreviewUpdating(items, false);
+
+        return applied;
+    };
+
+    await applyInvoiceCatalogSelectionLifecycle({
+        items,
+        index: 0,
+        catalogItem: { name: 'Katalog 400', unit: 'ks', unit_price: '400', currency: 'CZK' },
+        isVatPayer: false,
+        nextTick: async () => renderItemControls(invoiceForm, items, 0),
+        queuePreview: () => {
+            invalidate('catalog-normal-path');
+            previewQueued = true;
+        },
+    });
+
+    // A form-wide input/change event is coalesced into the same debounced normal preview.
+    invalidate('form-event');
+    assert.equal(previewQueued, true);
+    const request = startPreview('coalesced-normal-preview', false, ['400']);
+    assert.notEqual(request, null);
+    assert.equal(finishPreview(request, 'coalesced-normal-preview'), true);
+
+    assert.equal(items[0]._previewLineTotal, '400', JSON.stringify(trace));
+    assert.equal(items[0]._previewUpdating, false, JSON.stringify(trace));
+});
+
+test('catalog totals are applied immediately for 400 and 100 before a manual third row reaches 833', async () => {
+    const items = [invoiceItem('first')];
+    let invoiceForm = form(items);
+    let generation = 0;
+    let previewQueued = false;
+    let invoiceTotal = null;
+
+    const render = () => {
+        invoiceForm = form(items);
+        invoiceForm.elements.forEach((control) => { control.form = invoiceForm; });
+    };
+    const selectCatalog = async (index, name, price) => {
+        await applyInvoiceCatalogSelectionLifecycle({
+            items,
+            index,
+            catalogItem: { name, unit: 'ks', unit_price: price, currency: 'CZK' },
+            isVatPayer: false,
+            nextTick: async () => render(),
+            queuePreview: () => {
+                generation += 1;
+                previewQueued = true;
+                setInvoiceItemsPreviewUpdating(items, true);
+            },
+        });
+    };
+    const finishServerPreview = (lineTotals, grandTotal) => {
+        assert.equal(previewQueued, true);
+        const body = buildInvoicePreviewFormData(invoiceForm, false);
+        const indexes = [...body.keys()]
+            .map((name) => name.match(/^items\[(\d+)]\[position]$/)?.[1])
+            .filter((index) => index !== undefined);
+        assert.equal(indexes.length, items.length);
+        const requestId = generation;
+        assert.equal(applyInvoicePreviewResponse(items, {
+            display: {
+                items: lineTotals.map((amount, index) => ({ position: index + 1, line_total_amount: amount })),
+                totals: { grand_total: grandTotal },
+            },
+        }, requestId, generation), true);
+        invoiceTotal = grandTotal;
+        setInvoiceItemsPreviewUpdating(items, false);
+        previewQueued = false;
+
+        return body;
+    };
+
+    await selectCatalog(0, 'Katalog 400', '400');
+    let body = finishServerPreview(['400'], '400');
+    assert.equal(body.get('items[0][unit_price]'), '400');
+    assert.deepEqual(items.map((item) => item._previewLineTotal), ['400']);
+    assert.equal(invoiceTotal, '400');
+
+    items.push(invoiceItem('second'));
+    await selectCatalog(1, 'Katalog 100', '100');
+    body = finishServerPreview(['400', '100'], '500');
+    assert.equal(body.get('items[1][unit_price]'), '100');
+    assert.deepEqual(items.map((item) => item._previewLineTotal), ['400', '100']);
+    assert.equal(invoiceTotal, '500');
+
+    items.push(invoiceItem('third'));
+    items[2].unit_price = '333';
+    render();
+    generation += 1;
+    previewQueued = true;
+    setInvoiceItemsPreviewUpdating(items, true);
+    body = finishServerPreview(['400', '100', '333'], '833');
+    assert.equal(body.get('items[2][unit_price]'), '333');
+    assert.deepEqual(items.map((item) => item._previewLineTotal), ['400', '100', '333']);
+    assert.equal(invoiceTotal, '833');
+    assert.deepEqual(items.map((item) => item._previewUpdating), [false, false, false]);
 });
 
 test('catalog selection updates the same item state used by preview payload and rendered total', () => {
@@ -199,20 +321,17 @@ test('manual price edit and rapid second catalog selection are reflected by the 
     assert.equal(body.get('items[0][unit_price]'), '325');
 });
 
-test('two catalog selections waiting for DOM update schedule preview only for the newest generation', async () => {
+test('two catalog selections waiting for DOM update coalesce on the normal preview queue', async () => {
     const items = [invoiceItem('first')];
     const ticks = [];
-    const scheduled = [];
-    let generation = 0;
+    let queuedState = null;
     const lifecycle = (name, price) => applyInvoiceCatalogSelectionLifecycle({
         items,
         index: 0,
         catalogItem: { name, unit: 'ks', unit_price: price, currency: 'CZK', vat_rate_uuid: null },
         isVatPayer: false,
-        invalidatePreview: () => { generation += 1; return generation; },
-        isPreviewCurrent: (candidate) => candidate === generation,
         nextTick: () => new Promise((resolve) => ticks.push(resolve)),
-        schedulePreview: () => scheduled.push({ name: items[0].description, price: items[0].unit_price }),
+        queuePreview: () => { queuedState = { name: items[0].description, price: items[0].unit_price }; },
     });
 
     const first = lifecycle('První výběr', '100');
@@ -222,7 +341,7 @@ test('two catalog selections waiting for DOM update schedule preview only for th
     ticks[1]();
     await second;
 
-    assert.deepEqual(scheduled, [{ name: 'Druhý výběr', price: '200' }]);
+    assert.deepEqual(queuedState, { name: 'Druhý výběr', price: '200' });
 });
 
 test('payer catalog selection updates VAT in the same preview state', () => {

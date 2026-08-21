@@ -201,10 +201,8 @@ Alpine.data('invoiceEditor', (config) => ({
             index,
             catalogItem,
             isVatPayer: config.isVatPayer,
-            invalidatePreview: () => this.invalidatePreview(),
-            isPreviewCurrent: (generation) => generation === this.previewRequestId,
             nextTick: () => this.$nextTick(),
-            schedulePreview: () => this.schedulePreview(0, true),
+            queuePreview: () => this.queuePreview(),
         });
     },
     hasFieldError(index, field) {
@@ -394,7 +392,6 @@ Alpine.data('invoiceEditor', (config) => ({
             return;
         }
 
-        this.lastPreviewSignature = signature;
         this.previewController?.abort();
         const controller = new AbortController();
         const requestId = ++this.previewRequestId;
@@ -432,6 +429,7 @@ Alpine.data('invoiceEditor', (config) => ({
 
             if (!response.ok) throw new Error(this.previewHttpError(response.status, data));
             if (!applyInvoicePreviewResponse(this.items, data, requestId, this.previewRequestId)) return;
+            this.lastPreviewSignature = signature;
             this.preview = data;
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') return;
