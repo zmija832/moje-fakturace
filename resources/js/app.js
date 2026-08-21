@@ -437,7 +437,7 @@ Alpine.data('invoiceEditor', (config) => ({
         }
     },
     previewFormData() {
-        return buildInvoicePreviewFormData(this.$refs.form, this.items, config.isVatPayer);
+        return buildInvoicePreviewFormData(this.$refs.form, config.isVatPayer);
     },
     previewHttpError(status, data) {
         if (status === 401 || status === 403) return 'Pro výpočet náhledu nemáte oprávnění nebo vypršela relace.';

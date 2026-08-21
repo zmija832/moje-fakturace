@@ -585,7 +585,7 @@ class InvoicesHttpTest extends TestCase
         $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0, true))', $javascript);
         $this->assertStringNotContainsString('this.$refs.form?.checkValidity()', $javascript);
         $this->assertStringContainsString('const body = this.previewFormData()', $javascript);
-        $this->assertStringContainsString('buildInvoicePreviewFormData(this.$refs.form, this.items, config.isVatPayer)', $javascript);
+        $this->assertStringContainsString('buildInvoicePreviewFormData(this.$refs.form, config.isVatPayer)', $javascript);
 
         $previewPayload = $this->payload($client, $account, $rate, [
             'issued_on' => $duplicate->issued_on->format('Y-m-d'),

@@ -5,16 +5,34 @@ import { applyInvoiceCatalogSelection } from '../../resources/js/invoice-catalog
 import { buildInvoicePreviewFormData } from '../../resources/js/invoice-preview-payload.js';
 import { applyInvoicePreviewResponse, setInvoiceItemsPreviewUpdating } from '../../resources/js/invoice-preview-state.js';
 
-function form() {
-    const controls = new Map(Object.entries({
-        currency: { value: 'CZK' },
-        taxable_supply_on: { value: '2026-08-21' },
-        payment_method: { value: 'bank_transfer' },
-        invoice_discount_type: { value: 'none' },
-        invoice_discount_value: { value: '0' },
-    }));
+function form(items) {
+    const controls = Object.entries({
+        currency: 'CZK',
+        taxable_supply_on: '2026-08-21',
+        payment_method: 'bank_transfer',
+        invoice_discount_type: 'none',
+        invoice_discount_value: '0',
+    }).map(([name, value]) => ({ name, value }));
 
-    return { elements: { namedItem: (name) => controls.get(name) ?? null } };
+    items.forEach((item, index) => {
+        const prefix = `items[${index}]`;
+        for (const [field, value] of Object.entries({
+            position: index + 1,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            unit_price: item.unit_price,
+            discount_type: item.discount_type,
+            discount_value: item.discount_value,
+            ...(item.vat_rate_uuid === undefined ? {} : { vat_rate_uuid: item.vat_rate_uuid }),
+        })) {
+            controls.push({ name: `${prefix}[${field}]`, value: String(value ?? '') });
+        }
+    });
+
+    controls.namedItem = (name) => controls.find((control) => control.name === name) ?? null;
+
+    return { elements: controls };
 }
 
 function invoiceItem(key, overrides = {}) {
@@ -50,7 +68,7 @@ test('catalog selection updates the same item state used by preview payload and 
         vat_rate_uuid: null,
     });
 
-    const body = buildInvoicePreviewFormData(form(), items, false);
+    const body = buildInvoicePreviewFormData(form(items), false);
     assert.equal(body.get('items[0][description]'), 'Samolepka vlastní motiv -barva');
     assert.equal(body.get('items[0][unit]'), 'ks');
     assert.equal(body.get('items[0][unit_price]'), '100');
@@ -77,7 +95,7 @@ test('catalog item without price preserves the current invoice item price', () =
         vat_rate_uuid: null,
     });
 
-    const body = buildInvoicePreviewFormData(form(), items, false);
+    const body = buildInvoicePreviewFormData(form(items), false);
     assert.equal(body.get('items[0][description]'), 'Individuální práce');
     assert.equal(body.get('items[0][unit]'), 'hod');
     assert.equal(body.get('items[0][unit_price]'), '275');
@@ -93,7 +111,7 @@ test('selection in the last of multiple items updates only that authoritative st
         name: 'Poslední položka', unit: 'bal', unit_price: '100', currency: 'CZK', vat_rate_uuid: null,
     });
 
-    const body = buildInvoicePreviewFormData(form(), items, false);
+    const body = buildInvoicePreviewFormData(form(items), false);
     assert.equal(body.get('items[0][description]'), 'První');
     assert.equal(body.get('items[0][unit_price]'), '50');
     assert.equal(body.get('items[2][description]'), 'Poslední položka');
@@ -110,12 +128,12 @@ test('manual price edit and rapid second catalog selection are reflected by the 
         name: 'Druhý výběr', unit: 'hod', unit_price: '200', currency: 'CZK', vat_rate_uuid: null,
     });
 
-    let body = buildInvoicePreviewFormData(form(), items, false);
+    let body = buildInvoicePreviewFormData(form(items), false);
     assert.equal(body.get('items[0][description]'), 'Druhý výběr');
     assert.equal(body.get('items[0][unit_price]'), '200');
 
     items[0].unit_price = '325';
-    body = buildInvoicePreviewFormData(form(), items, false);
+    body = buildInvoicePreviewFormData(form(items), false);
     assert.equal(body.get('items[0][unit_price]'), '325');
 });
 
@@ -125,6 +143,6 @@ test('payer catalog selection updates VAT in the same preview state', () => {
         name: 'Plátcovská položka', unit: 'ks', unit_price: '100', currency: 'CZK', vat_rate_uuid: 'new-rate',
     }, true);
 
-    const body = buildInvoicePreviewFormData(form(), items, true);
+    const body = buildInvoicePreviewFormData(form(items), true);
     assert.equal(body.get('items[0][vat_rate_uuid]'), 'new-rate');
 });
