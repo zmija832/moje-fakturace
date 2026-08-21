@@ -113,6 +113,8 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('invoice-items-table--vat', false)
             ->assertDontSee('class="invoice-items-header"', false)
             ->assertSee('class="invoice-item-row"', false)
+            ->assertSee('class="invoice-item-pricing"', false)
+            ->assertSee('class="invoice-item-description relative"', false)
             ->assertSee('<textarea rows="3"', false)
             ->assertSee('@change="applyDefaultBankAccount"', false)
             ->assertSee('name="country_code"', false)->assertDontSee('name="is_active"', false)
@@ -348,6 +350,7 @@ class InvoicesHttpTest extends TestCase
         $create->assertSee('invoice-items-table--non-vat', false)
             ->assertDontSee('name="items[0][vat_rate_uuid]"', false)
             ->assertDontSee('Jednotková cena je bez DPH.')
+            ->assertDontSee('Při změně DUZP server při uložení znovu ověří časovou platnost každé sazby DPH.')
             ->assertDontSee('id="ns-vat"', false)
             ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
 
@@ -374,6 +377,7 @@ class InvoicesHttpTest extends TestCase
         $edit = $this->get(route('invoices.edit', $invoice->uuid))->assertOk();
         $edit->assertDontSee('name="items[0][vat_rate_uuid]"', false)
             ->assertDontSee('Jednotková cena je bez DPH.')
+            ->assertDontSee('Při změně DUZP server při uložení znovu ověří časovou platnost každé sazby DPH.')
             ->assertDontSee('id="ns-vat"', false)
             ->assertDontSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
 
@@ -410,6 +414,7 @@ class InvoicesHttpTest extends TestCase
         $response = $this->get(route('invoices.create'))->assertOk()
             ->assertSee('name="items[0][vat_rate_uuid]"', false)
             ->assertSee('Jednotková cena je bez DPH.')
+            ->assertSee('Při změně DUZP server při uložení znovu ověří časovou platnost každé sazby DPH.')
             ->assertSee('id="ns-vat"', false)
             ->assertSee('Pro zvolené DUZP není nastavena výchozí sazba DPH. Vyberte ji ručně.');
         $this->assertStringNotContainsString($systemRateUuid, $response->getContent());
@@ -577,7 +582,7 @@ class InvoicesHttpTest extends TestCase
         $edit->assertSee('name="_method" value="PUT"', false);
         $edit->assertSee('První položka')->assertSee('Druhá položka');
         $javascript = file_get_contents(resource_path('js/app.js'));
-        $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0))', $javascript);
+        $this->assertStringContainsString('this.$nextTick(() => this.queuePreview(0, true))', $javascript);
         $this->assertStringNotContainsString('this.$refs.form?.checkValidity()', $javascript);
         $this->assertStringContainsString('const body = this.previewFormData()', $javascript);
         $this->assertStringContainsString('buildInvoicePreviewFormData(this.$refs.form, this.items, config.isVatPayer)', $javascript);
@@ -660,9 +665,27 @@ class InvoicesHttpTest extends TestCase
         $this->getJson(route('invoice-catalog.search', ['currency' => 'EUR', 'q' => 'graf']))
             ->assertOk()->assertJsonCount(0, 'items');
 
+        $this->post(route('invoice-catalog.store'), [
+            'name' => 'Individuální konzultace',
+            'unit_price' => '',
+            'unit' => 'hod',
+            'currency' => 'CZK',
+            'vat_rate_uuid' => $rate->uuid,
+            'is_active' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $withoutPrice = InvoiceCatalogItem::query()->where('name', 'Individuální konzultace')->sole();
+        $this->assertNull($withoutPrice->unit_price);
+        $this->getJson(route('invoice-catalog.search', ['currency' => 'CZK', 'q' => 'individuální']))
+            ->assertOk()
+            ->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.unit_price', null)
+            ->assertJsonPath('items.0.label', 'Individuální konzultace — cena dle faktury / hod');
+
         [$viewer] = $this->membership('viewer', BusinessConnection::Business1, $business);
         $this->actingAs($viewer)->withSession($this->businessSession($business));
-        $this->get(route('invoice-catalog.index'))->assertOk()->assertSee('Grafické práce')->assertDontSee('Upravit');
+        $this->get(route('invoice-catalog.index'))->assertOk()
+            ->assertSee('Grafické práce')->assertSee('Individuální konzultace')->assertSee('—')->assertDontSee('Upravit');
         $this->put(route('invoice-catalog.update', $item->uuid), [
             'name' => 'Podvržená změna', 'unit_price' => '1', 'unit' => 'ks', 'currency' => 'CZK',
         ])->assertForbidden();

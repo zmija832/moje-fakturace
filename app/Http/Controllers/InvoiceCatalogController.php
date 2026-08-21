@@ -77,9 +77,11 @@ class InvoiceCatalogController extends Controller
 
         return response()->json(['items' => $items->map(fn (InvoiceCatalogItem $item): array => [
             'uuid' => $item->uuid, 'name' => $item->name,
-            'unit_price' => InvoiceDecimal::formatInput($item->unit_price), 'unit' => $item->unit,
+            'unit_price' => $item->unit_price === null ? null : InvoiceDecimal::formatInput($item->unit_price), 'unit' => $item->unit,
             'currency' => $item->currency, 'vat_rate_uuid' => $item->vat_rate_uuid,
-            'label' => $item->name.' — '.InvoiceDecimal::formatMoney($item->unit_price, $item->currency).' / '.$item->unit,
+            'label' => $item->name.' — '.($item->unit_price === null
+                ? 'cena dle faktury'
+                : InvoiceDecimal::formatMoney($item->unit_price, $item->currency)).' / '.$item->unit,
         ])->values()]);
     }
 

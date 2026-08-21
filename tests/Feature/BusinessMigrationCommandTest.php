@@ -62,6 +62,12 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_account_defaults'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('clients'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('invoice_catalog_items'));
+        foreach (['business_1', 'business_2'] as $connection) {
+            $unitPrice = collect(Schema::connection($connection)->getColumns('invoice_catalog_items'))
+                ->firstWhere('name', 'unit_price');
+            $this->assertNotNull($unitPrice);
+            $this->assertTrue((bool) $unitPrice['nullable']);
+        }
         foreach (['document_sequences', 'document_sequence_defaults', 'document_number_allocations'] as $table) {
             $this->assertTrue(Schema::connection('business_1')->hasTable($table));
             $this->assertTrue(Schema::connection('business_2')->hasTable($table));

@@ -1,4 +1,5 @@
 import Alpine from 'alpinejs';
+import { applyInvoiceCatalogSelection } from './invoice-catalog-selection';
 import { buildInvoicePreviewFormData } from './invoice-preview-payload';
 
 async function lookupClientInAres(url, csrf, ico) {
@@ -214,13 +215,12 @@ Alpine.data('invoiceEditor', (config) => ({
     applyCatalogItem(index, catalogItem) {
         const item = this.items[index];
         if (!item || catalogItem.currency !== this.currency) return;
-        item.description = catalogItem.name;
-        item.unit_price = catalogItem.unit_price;
-        item.unit = catalogItem.unit;
-        if (config.isVatPayer && catalogItem.vat_rate_uuid) item.vat_rate_uuid = catalogItem.vat_rate_uuid;
+
+        applyInvoiceCatalogSelection(item, catalogItem, config.isVatPayer, () => {
+            this.$nextTick(() => this.queuePreview(0, true));
+        });
         item._catalogRequest++;
         item._catalogResults = [];
-        this.queuePreview(0);
     },
     hasFieldError(index, field) {
         return this.fieldError(index, field) !== '';
@@ -370,10 +370,10 @@ Alpine.data('invoiceEditor', (config) => ({
         const option = Array.from(select.options).find((candidate) => candidate.value === defaultUuid && !candidate.disabled);
         select.value = option?.value ?? '';
     },
-    queuePreview(delay = 400) {
+    queuePreview(delay = 400, force = false) {
         window.clearTimeout(this.previewTimer);
         this.loading = true;
-        this.previewTimer = window.setTimeout(() => this.refreshPreview(), delay);
+        this.previewTimer = window.setTimeout(() => this.refreshPreview(force), delay);
     },
     previewLineTotalDisplay(position) {
         const item = this.preview?.display?.items?.find((previewItem) => Number(previewItem.position) === Number(position));

@@ -115,7 +115,9 @@ class InvoiceCatalogService
                 ? new InvoiceCatalogItem
                 : InvoiceCatalogItem::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
             $before = $item->exists ? $this->sanitizer->snapshot(BusinessAuditableType::InvoiceCatalogItem, $item) : null;
-            $input['unit_price'] = InvoiceDecimal::database($input['unit_price']);
+            $input['unit_price'] = ($input['unit_price'] ?? null) === null
+                ? null
+                : InvoiceDecimal::database($input['unit_price']);
             $input['vat_rate_uuid'] = $this->validatedVatRate($input['vat_rate_uuid'] ?? null);
             $item->fill($input);
             $changed = $item->exists ? $this->sanitizer->changedFields(BusinessAuditableType::InvoiceCatalogItem, $item) : [];
