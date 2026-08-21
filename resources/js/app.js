@@ -1,5 +1,5 @@
 import Alpine from 'alpinejs';
-import { applyInvoiceCatalogSelection } from './invoice-catalog-selection';
+import { applyInvoiceCatalogSelectionLifecycle } from './invoice-catalog-selection';
 import { buildInvoicePreviewFormData } from './invoice-preview-payload';
 import { applyInvoicePreviewResponse, setInvoiceItemsPreviewUpdating } from './invoice-preview-state';
 
@@ -192,17 +192,20 @@ Alpine.data('invoiceEditor', (config) => ({
             if (requestId === item._catalogRequest) item._catalogResults = [];
         }
     },
-    applyCatalogItem(index, catalogItem) {
+    async applyCatalogItem(index, catalogItem) {
         const item = this.items[index];
         if (!item || catalogItem.currency !== this.currency) return;
 
-        const selectedItem = applyInvoiceCatalogSelection(item, catalogItem, config.isVatPayer);
-        if (!selectedItem) return;
-
-        selectedItem._catalogRequest = (item._catalogRequest ?? 0) + 1;
-        selectedItem._catalogResults = [];
-        this.items.splice(index, 1, selectedItem);
-        this.$nextTick(() => this.queuePreview(0, true));
+        await applyInvoiceCatalogSelectionLifecycle({
+            items: this.items,
+            index,
+            catalogItem,
+            isVatPayer: config.isVatPayer,
+            invalidatePreview: () => this.invalidatePreview(),
+            isPreviewCurrent: (generation) => generation === this.previewRequestId,
+            nextTick: () => this.$nextTick(),
+            schedulePreview: () => this.schedulePreview(0, true),
+        });
     },
     hasFieldError(index, field) {
         return this.fieldError(index, field) !== '';
@@ -352,14 +355,22 @@ Alpine.data('invoiceEditor', (config) => ({
         const option = Array.from(select.options).find((candidate) => candidate.value === defaultUuid && !candidate.disabled);
         select.value = option?.value ?? '';
     },
-    queuePreview(delay = 400, force = false) {
+    invalidatePreview() {
         window.clearTimeout(this.previewTimer);
         this.previewController?.abort();
         this.previewController = null;
         this.previewRequestId += 1;
         this.loading = true;
         setInvoiceItemsPreviewUpdating(this.items, true);
+
+        return this.previewRequestId;
+    },
+    schedulePreview(delay = 400, force = false) {
         this.previewTimer = window.setTimeout(() => this.refreshPreview(force), delay);
+    },
+    queuePreview(delay = 400, force = false) {
+        this.invalidatePreview();
+        this.schedulePreview(delay, force);
     },
     previewLineTotalDisplay(item) {
         return item?._previewLineTotal ?? null;

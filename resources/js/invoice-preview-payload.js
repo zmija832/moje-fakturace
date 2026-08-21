@@ -17,6 +17,9 @@ const PREVIEW_ITEM_FIELDS = [
 
 function controlValue(form, name) {
     const control = form.elements.namedItem(name);
+    if (control?.form && control.form !== form) {
+        throw new Error(`Preview control ${name} does not belong to the active invoice form.`);
+    }
 
     return control && 'value' in control ? String(control.value ?? '') : '';
 }
