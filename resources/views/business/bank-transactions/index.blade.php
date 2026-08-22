@@ -21,7 +21,16 @@
                     <td class="p-3 whitespace-nowrap text-right font-semibold">{{ \App\Domain\Invoices\InvoiceDecimal::formatMoney($transaction->amount, $transaction->currency) }}</td>
                     <td class="p-3">{{ $transaction->variable_symbol ?: '—' }}</td>
                     <td class="p-3"><div>{{ $transaction->counterparty_name ?: '—' }}</div>@if($transaction->message)<div class="mt-1 max-w-md text-xs text-slate-500">{{ $transaction->message }}</div>@endif</td>
-                    <td class="p-3">{{ ['unmatched'=>'Nespárovaná','matched'=>'Spárovaná','ignored'=>'Ignorovaná'][$transaction->status] }}</td>
+                    <td class="p-3">
+                        <div>{{ ['unmatched'=>'Nespárovaná','matched'=>'Spárovaná','ignored'=>'Ignorovaná'][$transaction->status] }}</div>
+                        @if($transaction->status === 'unmatched')
+                            @if($transaction->unmatched_reason)
+                                <div class="mt-1 text-xs font-medium text-amber-700" title="{{ $transaction->unmatched_reason->description() }}">{{ $transaction->unmatched_reason->label() }}</div>
+                            @else
+                                <div class="mt-1 text-xs text-slate-500" title="Důvod se doplní při příštím pokusu o automatické spárování.">Důvod zatím nebyl vyhodnocen</div>
+                            @endif
+                        @endif
+                    </td>
                     <td class="p-3">
                         @if($transaction->status === 'matched' && $transaction->invoice)<a class="text-blue-700 underline" href="{{ route('invoices.show', $transaction->invoice->uuid) }}">{{ $transaction->invoice->document_number }}</a>
                         @elseif($transaction->status === 'unmatched' && $canManage)

@@ -2,7 +2,9 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Banking\BankTransactionMatchResult;
 use App\Domain\Invoices\InvoiceDecimal;
+use App\Enums\BankTransactionUnmatchedReason;
 use App\Enums\BusinessAuditableType;
 use App\Enums\BusinessAuditEvent;
 use App\Enums\DefaultPaymentMethod;
@@ -21,22 +23,58 @@ final class BankTransactionMatcher
         private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
-    public function matchAutomatically(BankTransaction $transaction): bool
+    public function matchAutomatically(BankTransaction $transaction): BankTransactionMatchResult
     {
-        if ($transaction->status !== 'unmatched' || ! preg_match('/^[0-9]{1,10}$/', (string) $transaction->variable_symbol)) {
-            return false;
+        if ($transaction->status !== 'unmatched') {
+            return BankTransactionMatchResult::skipped();
         }
 
-        $candidates = $this->candidateQuery($transaction)->get()
+        if (blank($transaction->variable_symbol)) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::MissingVariableSymbol);
+        }
+
+        if (! preg_match('/^[0-9]{1,10}$/', (string) $transaction->variable_symbol)) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::InvalidVariableSymbol);
+        }
+
+        $sameVariableSymbol = Invoice::query()->where('variable_symbol', $transaction->variable_symbol);
+        if (! (clone $sameVariableSymbol)->exists()) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::NoInvoiceCandidate);
+        }
+
+        $eligible = (clone $sameVariableSymbol)
+            ->where('status', InvoiceStatus::Issued->value)
+            ->whereNull('archived_at');
+        if (! (clone $eligible)->exists()) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::InvoiceNotEligible);
+        }
+
+        $sameCurrency = (clone $eligible)->where('currency', $transaction->currency);
+        if (! (clone $sameCurrency)->exists()) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::CurrencyMismatch);
+        }
+
+        $sameAccount = (clone $sameCurrency)
+            ->whereHas('issuedRevision.bankAccountSnapshot', fn ($query) => $query->where('source_bank_account_uuid', $transaction->bankAccount->uuid));
+        if (! (clone $sameAccount)->exists()) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::BankAccountMismatch);
+        }
+
+        $candidates = $sameAccount
+            ->with(['issuedRevision:id,invoice_id,grand_total', 'payments.originalPayment'])
+            ->get()
             ->filter(fn (Invoice $invoice): bool => $this->hasOutstandingBalance($invoice))
             ->take(2);
-        if ($candidates->count() !== 1) {
-            return false;
+        if ($candidates->isEmpty()) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::InvoiceAlreadyPaid);
+        }
+        if ($candidates->count() > 1) {
+            return $this->unmatched($transaction, BankTransactionUnmatchedReason::MultipleInvoiceCandidates);
         }
 
         $this->apply($transaction, $candidates->firstOrFail(), 'automatic');
 
-        return true;
+        return BankTransactionMatchResult::matched();
     }
 
     public function matchManually(string $transactionUuid, string $invoiceUuid): BankTransaction
@@ -51,17 +89,6 @@ final class BankTransactionMatcher
         $this->apply($transaction, $invoice, 'manual');
 
         return $transaction->refresh()->load(['invoice', 'payment']);
-    }
-
-    private function candidateQuery(BankTransaction $transaction)
-    {
-        return Invoice::query()
-            ->with(['issuedRevision:id,invoice_id,grand_total', 'payments.originalPayment'])
-            ->where('status', InvoiceStatus::Issued->value)
-            ->whereNull('archived_at')
-            ->where('currency', $transaction->currency)
-            ->where('variable_symbol', $transaction->variable_symbol)
-            ->whereHas('issuedRevision.bankAccountSnapshot', fn ($query) => $query->where('source_bank_account_uuid', $transaction->bankAccount->uuid));
     }
 
     private function isEligible(BankTransaction $transaction, Invoice $invoice): bool
@@ -114,6 +141,7 @@ final class BankTransactionMatcher
 
                 DB::connection($locked->getConnectionName())->table('bank_transactions')->where('id', $locked->id)->update([
                     'status' => 'matched',
+                    'unmatched_reason' => null,
                     'matched_invoice_id' => $lockedInvoice->id,
                     'invoice_payment_id' => $payment->id,
                     'matched_at' => now(),
@@ -140,5 +168,23 @@ final class BankTransactionMatcher
                 );
             },
         );
+    }
+
+    private function unmatched(BankTransaction $transaction, BankTransactionUnmatchedReason $reason): BankTransactionMatchResult
+    {
+        $connection = $transaction->getConnectionName();
+        DB::connection($connection)->transaction(function () use ($transaction, $reason): void {
+            DB::connection($transaction->getConnectionName())
+                ->table('bank_transactions')
+                ->where('id', $transaction->id)
+                ->where('status', 'unmatched')
+                ->lockForUpdate()
+                ->update([
+                    'unmatched_reason' => $reason->value,
+                    'updated_at' => now(),
+                ]);
+        }, 3);
+
+        return BankTransactionMatchResult::unmatched($reason);
     }
 }

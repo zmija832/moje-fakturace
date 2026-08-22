@@ -48,6 +48,7 @@ class BankTransactionController extends Controller
             $transaction = BankTransaction::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
             abort_unless($transaction->status === 'unmatched', 422);
             $transaction->status = 'ignored';
+            $transaction->unmatched_reason = null;
             $transaction->save();
             $auditWriter->write(BusinessAuditEvent::BankTransactionIgnored, BusinessAuditableType::BankTransaction, $transaction->uuid, ['status' => 'unmatched'], ['status' => 'ignored'], ['status']);
         }, 3);

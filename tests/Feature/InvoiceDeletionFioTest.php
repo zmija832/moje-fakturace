@@ -214,5 +214,6 @@ class InvoiceDeletionFioTest extends TestCase
         $this->assertNull($transaction->matched_invoice_id);
         $this->assertNull($transaction->invoice_payment_id);
         $this->assertNull($transaction->matched_at);
+        $this->assertNull($transaction->unmatched_reason);
     }
 }

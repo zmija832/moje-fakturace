@@ -2,6 +2,7 @@
 
 namespace App\Models\Business;
 
+use App\Enums\BankTransactionUnmatchedReason;
 use App\Models\Concerns\HasServerGeneratedUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,6 +32,7 @@ class BankTransaction extends BusinessModel
         return [
             'booked_on' => 'date',
             'amount' => 'decimal:4',
+            'unmatched_reason' => BankTransactionUnmatchedReason::class,
             'imported_at' => 'immutable_datetime',
             'matched_at' => 'immutable_datetime',
         ];

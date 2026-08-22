@@ -78,7 +78,7 @@ final class FioBankSyncService
                         continue;
                     }
 
-                    if ($this->matcher->matchAutomatically($transaction->load('bankAccount'))) {
+                    if ($this->matcher->matchAutomatically($transaction->load('bankAccount'))->matched) {
                         $stats['matched']++;
                     } else {
                         $stats['unmatched']++;

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
+use App\Enums\BankTransactionUnmatchedReason;
 use App\Enums\BusinessConnection;
 use App\Events\InvoicePaymentChanged;
 use App\Mail\AutomationMail;
@@ -25,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
 use Tests\Concerns\InteractsWithBusinessDatabases;
@@ -87,6 +89,7 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame(1, InvoicePayment::query()->count());
         $transaction = BankTransaction::query()->firstOrFail();
         $this->assertSame('matched', $transaction->status);
+        $this->assertNull($transaction->unmatched_reason);
         $this->assertSame($invoice->id, $transaction->matched_invoice_id);
         $this->assertSame('future_bank_import', $transaction->payment->source->value);
         Event::assertDispatched(InvoicePaymentChanged::class, 1);
@@ -135,6 +138,7 @@ class FioBankPaymentIntegrationTest extends TestCase
         $transaction = BankTransaction::query()->sole();
         $this->assertSame(['new' => 1, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 1], $this->matchingStats($first));
         $this->assertSame('unmatched', $transaction->status);
+        $this->assertSame(BankTransactionUnmatchedReason::NoInvoiceCandidate, $transaction->unmatched_reason);
         $this->assertSame(0, InvoicePayment::query()->count());
 
         app(InvoiceDraftEditor::class)->update(
@@ -151,6 +155,7 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame(['new' => 0, 'duplicates' => 1, 'matched' => 1, 'unmatched' => 0], $this->matchingStats($second));
         $this->assertSame(1, BankTransaction::query()->count());
         $this->assertSame('matched', $transaction->status);
+        $this->assertNull($transaction->unmatched_reason);
         $this->assertSame($invoice->id, $transaction->matched_invoice_id);
         $this->assertSame($payment->id, $transaction->invoice_payment_id);
 
@@ -205,6 +210,7 @@ class FioBankPaymentIntegrationTest extends TestCase
 
         $this->assertSame(['new' => 0, 'duplicates' => 1, 'matched' => 0, 'unmatched' => 1], $this->matchingStats($repeated));
         $this->assertSame('unmatched', BankTransaction::query()->sole()->status);
+        $this->assertSame(BankTransactionUnmatchedReason::MultipleInvoiceCandidates, BankTransaction::query()->sole()->unmatched_reason);
         $this->assertSame(0, InvoicePayment::query()->count());
     }
 
@@ -228,6 +234,8 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame(2, $repeated['unmatched']);
         $this->assertSame(0, InvoicePayment::query()->count());
         $this->assertSame(2, BankTransaction::query()->where('status', 'unmatched')->count());
+        $this->assertSame(BankTransactionUnmatchedReason::MissingVariableSymbol, BankTransaction::query()->where('external_transaction_id', '900002')->sole()->unmatched_reason);
+        $this->assertSame(BankTransactionUnmatchedReason::CurrencyMismatch, BankTransaction::query()->where('external_transaction_id', '900003')->sole()->unmatched_reason);
     }
 
     public function test_manual_match_and_ignore_are_idempotent_domain_operations(): void
@@ -236,14 +244,16 @@ class FioBankPaymentIntegrationTest extends TestCase
         app(ActiveBusinessContext::class)->set($business);
         [$invoice, , $account] = $this->createIssuedInvoice();
         $this->actingAs($admin);
-        $first = $this->bankTransaction($account->id, 'manual-1', '25');
-        $second = $this->bankTransaction($account->id, 'ignore-1', '5');
+        $first = $this->bankTransaction($account->id, 'manual-1', '25', '20260001', BankTransactionUnmatchedReason::NoInvoiceCandidate);
+        $second = $this->bankTransaction($account->id, 'ignore-1', '5', '20260001', BankTransactionUnmatchedReason::NoInvoiceCandidate);
 
         app(BankTransactionMatcher::class)->matchManually($first->uuid, $invoice->uuid);
         $this->withSession($this->deliveryBusinessSession($business))->patch(route('bank-transactions.ignore', $second->uuid))->assertRedirect();
 
         $this->assertSame('matched', $first->fresh()->status);
+        $this->assertNull($first->fresh()->unmatched_reason);
         $this->assertSame('ignored', $second->fresh()->status);
+        $this->assertNull($second->fresh()->unmatched_reason);
         $this->assertSame(1, InvoicePayment::query()->count());
     }
 
@@ -304,6 +314,8 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame(2, $result['unmatched']);
         $this->assertSame('unmatched', BankTransaction::query()->where('external_transaction_id', 'paid-excluded')->sole()->status);
         $this->assertSame('unmatched', BankTransaction::query()->where('external_transaction_id', 'overpaid-excluded')->sole()->status);
+        $this->assertSame(BankTransactionUnmatchedReason::InvoiceAlreadyPaid, BankTransaction::query()->where('external_transaction_id', 'paid-excluded')->sole()->unmatched_reason);
+        $this->assertSame(BankTransactionUnmatchedReason::InvoiceAlreadyPaid, BankTransaction::query()->where('external_transaction_id', 'overpaid-excluded')->sole()->unmatched_reason);
         $this->assertSame(2, InvoicePayment::query()->count());
     }
 
@@ -383,10 +395,95 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame(0, FioBankAccountSetting::query()->count());
     }
 
-    private function bankTransaction(int $accountId, string $id, string $amount): BankTransaction
+    public function test_invalid_variable_symbol_and_ineligible_invoice_receive_exact_reasons(): void
     {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $account] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $invalid = $this->bankTransaction($account->id, 'invalid-vs', '10', 'ABC');
+        $draft = $this->bankTransaction($account->id, 'draft-vs', '10');
+
+        $matcher = app(BankTransactionMatcher::class);
+        $matcher->matchAutomatically($invalid);
+        $matcher->matchAutomatically($draft);
+
+        $this->assertSame(BankTransactionUnmatchedReason::InvalidVariableSymbol, $invalid->fresh()->unmatched_reason);
+        $this->assertSame(BankTransactionUnmatchedReason::InvoiceNotEligible, $draft->fresh()->unmatched_reason);
+    }
+
+    public function test_wrong_issued_bank_account_receives_exact_reason(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $invoiceAccount] = $this->createIssuedInvoice();
+        $this->actingAs($admin);
+        $otherAccount = new BankAccount;
+        $otherAccount->forceFill([
+            'name' => 'Jiný účet', 'iban' => 'CZ1200000000000000000002',
+            'currency' => 'CZK', 'is_active' => true, 'sort_order' => 1,
+        ])->save();
+        $transaction = $this->bankTransaction($otherAccount->id, 'wrong-account', '10');
+
+        app(BankTransactionMatcher::class)->matchAutomatically($transaction->load('bankAccount'));
+
+        $this->assertNotSame($invoiceAccount->uuid, $otherAccount->uuid);
+        $this->assertSame(BankTransactionUnmatchedReason::BankAccountMismatch, $transaction->fresh()->unmatched_reason);
+    }
+
+    public function test_reason_diagnosis_is_tenant_local(): void
+    {
+        [$admin, $businessOne] = $this->deliveryMembership();
+        [, $businessTwo] = $this->deliveryMembership('admin', BusinessConnection::Business2);
+        app(ActiveBusinessContext::class)->set($businessOne);
+        [, , $accountOne] = $this->createIssuedInvoice(false);
+        $transaction = $this->bankTransaction($accountOne->id, 'tenant-local-reason', '10', '998877');
+
+        app(ActiveBusinessContext::class)->set($businessTwo);
+        [$draft, $client, $accountTwo, $rate] = $this->createIssuedInvoice(false);
+        app(InvoiceDraftEditor::class)->update($draft->uuid, 1, (string) Str::uuid(), $this->invoicePayload($client->uuid, $accountTwo->uuid, $rate->uuid, '998877'));
+        app(InvoiceIssuer::class)->issue($draft->uuid, 2, (string) Str::uuid());
+
+        app(ActiveBusinessContext::class)->set($businessOne);
+        $this->actingAs($admin);
+        app(BankTransactionMatcher::class)->matchAutomatically($transaction->load('bankAccount'));
+
+        $this->assertSame(BankTransactionUnmatchedReason::NoInvoiceCandidate, $transaction->fresh()->unmatched_reason);
+        $this->assertSame(0, InvoicePayment::query()->count());
+    }
+
+    public function test_unmatched_reason_is_rendered_with_human_label_and_detail(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $account] = $this->createIssuedInvoice(false);
+        $transaction = $this->bankTransaction($account->id, 'render-reason', '10', null);
+        app(BankTransactionMatcher::class)->matchAutomatically($transaction->load('bankAccount'));
+        app(ActiveBusinessContext::class)->clear();
+
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business))
+            ->get(route('bank-transactions.index'))
+            ->assertOk()
+            ->assertSee('Chybí variabilní symbol')
+            ->assertSee('Platba neobsahuje variabilní symbol, podle kterého by bylo možné najít fakturu.');
+    }
+
+    public function test_unmatched_reason_column_exists_in_both_business_schemas(): void
+    {
+        $this->assertTrue(Schema::connection('business_1')->hasColumn('bank_transactions', 'unmatched_reason'));
+        $this->assertTrue(Schema::connection('business_2')->hasColumn('bank_transactions', 'unmatched_reason'));
+        $this->assertFalse(Schema::connection('central')->hasTable('bank_transactions'));
+    }
+
+    private function bankTransaction(
+        int $accountId,
+        string $id,
+        string $amount,
+        ?string $variableSymbol = '20260001',
+        ?BankTransactionUnmatchedReason $reason = null,
+    ): BankTransaction {
         $transaction = new BankTransaction;
-        $transaction->forceFill(['bank_account_id' => $accountId, 'source' => 'fio', 'external_transaction_id' => $id, 'booked_on' => '2026-08-21', 'amount' => $amount, 'currency' => 'CZK', 'variable_symbol' => '20260001', 'status' => 'unmatched', 'imported_at' => now()])->save();
+        $transaction->forceFill(['bank_account_id' => $accountId, 'source' => 'fio', 'external_transaction_id' => $id, 'booked_on' => '2026-08-21', 'amount' => $amount, 'currency' => 'CZK', 'variable_symbol' => $variableSymbol, 'status' => 'unmatched', 'unmatched_reason' => $reason, 'imported_at' => now()])->save();
 
         return $transaction->load('bankAccount');
     }

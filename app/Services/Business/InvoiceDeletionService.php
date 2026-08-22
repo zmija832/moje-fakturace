@@ -119,6 +119,7 @@ class InvoiceDeletionService
                         ->whereIn('id', $bankTransactions)
                         ->update([
                             'status' => 'unmatched',
+                            'unmatched_reason' => null,
                             'matched_invoice_id' => null,
                             'invoice_payment_id' => null,
                             'matched_at' => null,
