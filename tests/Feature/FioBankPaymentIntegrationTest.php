@@ -17,6 +17,7 @@ use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentReader;
+use App\Services\Business\InvoicePaymentService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -236,6 +237,74 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame('110.0000', $summary->paidTotal);
         $this->assertSame('overpaid', $summary->status->value);
         $this->assertSame('10.0000', $summary->overpaymentTotal);
+    }
+
+    public function test_fully_paid_and_overpaid_invoices_are_not_automatic_match_candidates(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$paidInvoice, $client, $account, $rate] = $this->createIssuedInvoice();
+        $this->actingAs($admin);
+        $payments = app(InvoicePaymentService::class);
+        $payment = [
+            'currency' => 'CZK', 'paid_on' => '2026-08-21', 'payment_method' => 'bank_transfer',
+            'reference' => null, 'variable_symbol' => '20260001', 'note' => null,
+        ];
+        $payments->record($paidInvoice->uuid, (string) Str::uuid(), $payment + ['amount' => '100']);
+
+        $overpaidDraft = app(InvoiceDraftService::class)->create(
+            $this->invoicePayload($client->uuid, $account->uuid, $rate->uuid, '20260002'),
+        );
+        $overpaidInvoice = app(InvoiceIssuer::class)->issue($overpaidDraft->uuid, 1, (string) Str::uuid());
+        $payments->recordImported(
+            $overpaidInvoice->uuid,
+            (string) Str::uuid(),
+            'existing-overpayment',
+            $payment + ['amount' => '110', 'variable_symbol' => '20260002'],
+            static function (): void {},
+        );
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-paid-exclusion');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([
+            $this->movement('paid-excluded', '25', 'CZK', '20260001'),
+            $this->movement('overpaid-excluded', '25', 'CZK', '20260002'),
+        ], 'CZK', $account->iban), 200)]);
+        $result = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+
+        $this->assertSame(0, $result['matched']);
+        $this->assertSame(2, $result['unmatched']);
+        $this->assertSame('unmatched', BankTransaction::query()->where('external_transaction_id', 'paid-excluded')->sole()->status);
+        $this->assertSame('unmatched', BankTransaction::query()->where('external_transaction_id', 'overpaid-excluded')->sole()->status);
+        $this->assertSame(2, InvoicePayment::query()->count());
+    }
+
+    public function test_duplicate_variable_symbol_chooses_the_only_invoice_with_an_outstanding_balance(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$firstDraft, $client, $account, $rate] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $payload = $this->invoicePayload($client->uuid, $account->uuid, $rate->uuid, '12277');
+        app(InvoiceDraftEditor::class)->update($firstDraft->uuid, 1, (string) Str::uuid(), $payload);
+        $paidInvoice = app(InvoiceIssuer::class)->issue($firstDraft->uuid, 2, (string) Str::uuid());
+        $unpaidDraft = app(InvoiceDraftService::class)->create($payload);
+        $unpaidInvoice = app(InvoiceIssuer::class)->issue($unpaidDraft->uuid, 1, (string) Str::uuid());
+        app(InvoicePaymentService::class)->record($paidInvoice->uuid, (string) Str::uuid(), [
+            'amount' => '100', 'currency' => 'CZK', 'paid_on' => '2026-08-21',
+            'payment_method' => 'bank_transfer', 'variable_symbol' => '12277',
+        ]);
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-duplicate-vs-paid');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([
+            $this->movement('duplicate-vs-unpaid', '100', 'CZK', '12277'),
+        ], 'CZK', $account->iban), 200)]);
+
+        $result = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $transaction = BankTransaction::query()->where('external_transaction_id', 'duplicate-vs-unpaid')->sole();
+
+        $this->assertSame(1, $result['matched']);
+        $this->assertSame('matched', $transaction->status);
+        $this->assertSame($unpaidInvoice->id, $transaction->matched_invoice_id);
+        $this->assertSame('paid', app(InvoicePaymentReader::class)->summary($paidInvoice->fresh())->status->value);
+        $this->assertSame('paid', app(InvoicePaymentReader::class)->summary($unpaidInvoice->fresh())->status->value);
     }
 
     public function test_one_fio_account_failure_does_not_stop_another_account(): void

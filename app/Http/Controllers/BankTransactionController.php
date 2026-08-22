@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Domain\Invoices\InvoiceDecimal;
 use App\Enums\BusinessAuditableType;
 use App\Enums\BusinessAuditEvent;
 use App\Enums\InvoiceStatus;
@@ -12,6 +13,7 @@ use App\Models\Business\BankTransaction;
 use App\Models\Business\Invoice;
 use App\Services\Business\BankTransactionMatcher;
 use App\Services\Business\BusinessAuditWriter;
+use App\Services\Business\InvoicePaymentReader;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,12 +22,14 @@ use Illuminate\View\View;
 
 class BankTransactionController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, InvoicePaymentReader $paymentReader): View
     {
         Gate::authorize('viewAny', BankAccount::class);
         $status = in_array($request->query('status'), ['unmatched', 'matched', 'ignored'], true) ? $request->query('status') : 'unmatched';
         $transactions = BankTransaction::query()->with(['bankAccount', 'invoice', 'payment'])->where('status', $status)->latest('booked_on')->latest('id')->paginate(50)->withQueryString();
-        $invoices = Invoice::query()->with('issuedRevision.bankAccountSnapshot')->where('status', InvoiceStatus::Issued->value)->whereNull('archived_at')->latest('issued_on')->limit(300)->get();
+        $invoices = Invoice::query()->with(['issuedRevision.bankAccountSnapshot', 'payments.originalPayment'])
+            ->where('status', InvoiceStatus::Issued->value)->whereNull('archived_at')->latest('issued_on')->limit(300)->get()
+            ->filter(fn (Invoice $invoice): bool => InvoiceDecimal::compare($paymentReader->summary($invoice)->remainingTotal, '0') > 0);
 
         return view('business.bank-transactions.index', compact('transactions', 'invoices', 'status'));
     }

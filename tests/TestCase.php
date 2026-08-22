@@ -153,10 +153,15 @@ abstract class TestCase extends BaseTestCase
         ])) {
             return false;
         }
+        if (! Schema::connection($connection)->hasColumns('invoice_public_links', [
+            'first_viewed_at', 'last_viewed_at',
+        ])) {
+            return false;
+        }
 
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_22_000000_add_fio_bank_payment_integration')
+            ->where('migration', '2026_08_22_010000_add_web_invoice_view_timestamps')
             ->exists();
     }
 

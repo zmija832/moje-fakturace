@@ -7,6 +7,7 @@ use App\Enums\BusinessConnection;
 use App\Models\Business\InvoicePublicLink;
 use App\Services\Business\InvoicePdfGenerator;
 use App\Services\Business\InvoicePublicLinkService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -28,6 +29,7 @@ class InvoicePublicLinkTest extends TestCase
 
     protected function tearDown(): void
     {
+        CarbonImmutable::setTestNow();
         app(ActiveBusinessContext::class)->clear();
         parent::tearDown();
     }
@@ -85,6 +87,57 @@ class InvoicePublicLinkTest extends TestCase
             ->assertHeader('x-content-type-options', 'nosniff');
         $this->assertSame(1, DB::connection('business_1')->table('invoice_documents')->count());
         Storage::disk('invoice_documents')->assertExists($document->storage_path);
+    }
+
+    public function test_anonymous_view_tracks_first_and_last_view_but_authenticated_preview_does_not(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        $link = InvoicePublicLink::query()->active()->sole();
+        $url = app(InvoicePublicLinkService::class)->url($link);
+        app(ActiveBusinessContext::class)->clear();
+
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $this->get($url)->assertOk();
+        $this->assertNull(DB::connection('business_1')->table('invoice_public_links')->where('id', $link->id)->value('first_viewed_at'));
+
+        auth()->logout();
+        CarbonImmutable::setTestNow('2026-08-22 13:15:00');
+        $this->get($url)->assertOk();
+        $first = DB::connection('business_1')->table('invoice_public_links')->where('id', $link->id)->sole();
+        $this->assertSame('2026-08-22 13:15:00.000000', $first->first_viewed_at);
+        $this->assertSame($first->first_viewed_at, $first->last_viewed_at);
+
+        CarbonImmutable::setTestNow('2026-08-22 14:02:00');
+        $this->get($url)->assertOk();
+        $second = DB::connection('business_1')->table('invoice_public_links')->where('id', $link->id)->sole();
+        $this->assertSame($first->first_viewed_at, $second->first_viewed_at);
+        $this->assertSame('2026-08-22 14:02:00.000000', $second->last_viewed_at);
+
+        $this->get('/f/'.str_repeat('A', 43))->assertNotFound();
+        $unchanged = DB::connection('business_1')->table('invoice_public_links')->where('id', $link->id)->sole();
+        $this->assertSame($second->last_viewed_at, $unchanged->last_viewed_at);
+
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $this->get(route('invoices.index'))->assertOk()->assertSee('Webfaktura zobrazena zákazníkem');
+    }
+
+    public function test_unviewed_and_revoked_web_invoice_do_not_show_customer_view_indicator(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        $link = InvoicePublicLink::query()->active()->sole();
+        $url = app(InvoicePublicLinkService::class)->url($link);
+        app(ActiveBusinessContext::class)->clear();
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+
+        $this->get(route('invoices.index'))->assertOk()->assertDontSee('Webfaktura zobrazena zákazníkem');
+        $this->delete(route('invoices.public-link.revoke', $invoice->uuid))->assertRedirect();
+        auth()->logout();
+        $this->get($url)->assertNotFound();
+        $this->assertNull(DB::connection('business_1')->table('invoice_public_links')->where('id', $link->id)->value('first_viewed_at'));
     }
 
     public function test_revoke_and_regenerate_invalidate_old_tokens_and_are_audited(): void

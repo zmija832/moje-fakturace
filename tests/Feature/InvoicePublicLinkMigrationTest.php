@@ -21,7 +21,7 @@ class InvoicePublicLinkMigrationTest extends TestCase
     {
         foreach (['business_1', 'business_2'] as $connection) {
             $this->assertTrue(Schema::connection($connection)->hasTable('invoice_public_links'));
-            foreach (['uuid', 'invoice_id', 'token_hash', 'token_ciphertext', 'revoked_at'] as $column) {
+            foreach (['uuid', 'invoice_id', 'token_hash', 'token_ciphertext', 'first_viewed_at', 'last_viewed_at', 'revoked_at'] as $column) {
                 $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_public_links', $column));
             }
             $this->assertFalse(Schema::connection($connection)->hasColumn('invoice_public_links', 'business_id'));

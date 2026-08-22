@@ -110,6 +110,14 @@ class Invoice extends BusinessModel
         return $this->hasMany(InvoicePublicLink::class)->latest('id');
     }
 
+    public function customerViewedPublicLink(): ?InvoicePublicLink
+    {
+        return $this->publicLinks
+            ->whereNotNull('first_viewed_at')
+            ->sortByDesc('last_viewed_at')
+            ->first();
+    }
+
     public function reminderOverride(): HasOne
     {
         return $this->hasOne(InvoiceReminderOverride::class);

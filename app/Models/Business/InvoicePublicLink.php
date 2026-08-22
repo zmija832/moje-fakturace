@@ -16,8 +16,9 @@ class InvoicePublicLink extends BusinessModel
     protected static function booted(): void
     {
         static::updating(function (self $link): void {
-            $allowed = ['revoked_at', 'revoked_by_actor', 'updated_at'];
+            $allowed = ['revoked_at', 'revoked_by_actor', 'first_viewed_at', 'last_viewed_at', 'updated_at'];
             if ($link->getOriginal('revoked_at') !== null
+                || ($link->getOriginal('first_viewed_at') !== null && $link->isDirty('first_viewed_at'))
                 || array_diff(array_keys($link->getDirty()), $allowed) !== []) {
                 throw new LogicException('Veřejný odkaz faktury lze pouze odvolat.');
             }
@@ -39,6 +40,8 @@ class InvoicePublicLink extends BusinessModel
     {
         return [
             'token_ciphertext' => 'encrypted',
+            'first_viewed_at' => 'immutable_datetime',
+            'last_viewed_at' => 'immutable_datetime',
             'revoked_at' => 'immutable_datetime',
         ];
     }

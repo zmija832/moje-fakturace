@@ -8,14 +8,16 @@ use App\Models\Business\InvoicePublicLink;
 use App\Services\Business\InvoiceDocumentViewModelFactory;
 use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePdfGenerator;
+use App\Services\Business\InvoicePublicViewTracker;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class PublicInvoiceController extends Controller
 {
-    public function show(Request $request, InvoiceDocumentViewModelFactory $viewModels, InvoicePaymentReader $payments): View
+    public function show(Request $request, InvoiceDocumentViewModelFactory $viewModels, InvoicePaymentReader $payments, InvoicePublicViewTracker $views): Response
     {
         $link = $this->link($request);
         $invoice = $link->invoice;
@@ -24,12 +26,22 @@ class PublicInvoiceController extends Controller
             && $document->storage_disk === InvoicePdfGenerator::DISK
             && Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path);
 
-        return view('public.invoices.show', [
+        $response = response()->view('public.invoices.show', [
             'document' => $viewModels->make($invoice)->toArray(),
             'hasPdf' => $hasPdf,
             'pdfUrl' => $hasPdf ? route('public-invoices.pdf', ['token' => $request->route('token')]) : null,
             'paymentSummary' => $payments->summary($invoice),
         ]);
+
+        if ($request->user() === null) {
+            try {
+                $views->record($link);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $response;
     }
 
     public function pdf(Request $request): StreamedResponse

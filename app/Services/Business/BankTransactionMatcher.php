@@ -2,6 +2,7 @@
 
 namespace App\Services\Business;
 
+use App\Domain\Invoices\InvoiceDecimal;
 use App\Enums\BusinessAuditableType;
 use App\Enums\BusinessAuditEvent;
 use App\Enums\DefaultPaymentMethod;
@@ -16,6 +17,7 @@ final class BankTransactionMatcher
 {
     public function __construct(
         private readonly InvoicePaymentService $paymentService,
+        private readonly InvoicePaymentReader $paymentReader,
         private readonly BusinessAuditWriter $auditWriter,
     ) {}
 
@@ -25,7 +27,9 @@ final class BankTransactionMatcher
             return false;
         }
 
-        $candidates = $this->candidateQuery($transaction)->limit(2)->get();
+        $candidates = $this->candidateQuery($transaction)->get()
+            ->filter(fn (Invoice $invoice): bool => $this->hasOutstandingBalance($invoice))
+            ->take(2);
         if ($candidates->count() !== 1) {
             return false;
         }
@@ -52,6 +56,7 @@ final class BankTransactionMatcher
     private function candidateQuery(BankTransaction $transaction)
     {
         return Invoice::query()
+            ->with(['issuedRevision:id,invoice_id,grand_total', 'payments.originalPayment'])
             ->where('status', InvoiceStatus::Issued->value)
             ->whereNull('archived_at')
             ->where('currency', $transaction->currency)
@@ -64,13 +69,19 @@ final class BankTransactionMatcher
         if ($transaction->status !== 'unmatched'
             || $invoice->status !== InvoiceStatus::Issued
             || $invoice->archived_at !== null
-            || $invoice->currency !== $transaction->currency) {
+            || $invoice->currency !== $transaction->currency
+            || ! $this->hasOutstandingBalance($invoice)) {
             return false;
         }
 
         return $invoice->issuedRevision()
             ->whereHas('bankAccountSnapshot', fn ($query) => $query->where('source_bank_account_uuid', $transaction->bankAccount->uuid))
             ->exists();
+    }
+
+    private function hasOutstandingBalance(Invoice $invoice): bool
+    {
+        return InvoiceDecimal::compare($this->paymentReader->summary($invoice)->remainingTotal, '0') > 0;
     }
 
     private function apply(BankTransaction $transaction, Invoice $invoice, string $method): void

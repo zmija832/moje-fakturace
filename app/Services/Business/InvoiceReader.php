@@ -40,6 +40,7 @@ class InvoiceReader
             'issuedRevision:id,invoice_id,revision_number,grand_total',
             'issuedRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
             'documents:id,uuid,invoice_id,invoice_revision_id,storage_path,storage_disk,original_filename,mime_type,generated_at',
+            'publicLinks:id,invoice_id,first_viewed_at,last_viewed_at',
         ])->select('invoices.*')->selectRaw(
             "(SELECT COALESCE(SUM(CASE WHEN invoice_payments.payment_type = 'payment' THEN invoice_payments.amount ELSE -invoice_payments.amount END), 0) FROM invoice_payments WHERE invoice_payments.invoice_id = invoices.id) AS payment_paid_total",
         );
