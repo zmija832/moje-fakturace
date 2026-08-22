@@ -46,6 +46,8 @@ class BusinessAuditSanitizer
             BusinessAuditableType::RecurringInvoice => $this->recurringInvoice($this->expect($model, RecurringInvoiceTemplate::class)),
             BusinessAuditableType::InvoiceAutomationSettings => $this->automationSettings($this->expect($model, InvoiceAutomationSetting::class)),
             BusinessAuditableType::BankAccountDefault,
+            BusinessAuditableType::FioBankAccountSetting,
+            BusinessAuditableType::BankTransaction,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => throw new InvalidArgumentException('Default vazby používají explicitní bezpečný kontext.'),
         };
@@ -106,6 +108,8 @@ class BusinessAuditSanitizer
             BusinessAuditableType::RecurringInvoice => ['name', 'client_uuid', 'bank_account_uuid', 'currency', 'payment_method', 'due_days', 'interval_months', 'next_run_on', 'mode', 'auto_send', 'is_active', 'note', 'invoice_discount_type', 'invoice_discount_value'],
             BusinessAuditableType::InvoiceAutomationSettings => ['reminders_enabled', 'reminder_mode', 'reminder_day_1', 'reminder_day_2', 'reminder_day_3', 'notify_admin_when_paid', 'notify_customer_when_paid', 'paid_subject', 'paid_body'],
             BusinessAuditableType::BankAccountDefault,
+            BusinessAuditableType::FioBankAccountSetting,
+            BusinessAuditableType::BankTransaction,
             BusinessAuditableType::DocumentSequenceDefault,
             BusinessAuditableType::VatRateDefault => [],
         };

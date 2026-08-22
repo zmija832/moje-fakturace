@@ -6,12 +6,14 @@ use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\BankAccountController;
+use App\Http\Controllers\BankTransactionController;
 use App\Http\Controllers\BusinessAuditController;
 use App\Http\Controllers\BusinessSwitchController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentSequenceController;
+use App\Http\Controllers\FioBankAccountController;
 use App\Http\Controllers\InvoiceAutomationSettingController;
 use App\Http\Controllers\InvoiceCatalogController;
 use App\Http\Controllers\InvoiceController;
@@ -100,6 +102,13 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
         Route::patch('/nastaveni/bankovni-ucty/{uuid}/archivovat', [BankAccountController::class, 'archive'])
             ->whereUuid('uuid')
             ->name('bank-accounts.archive');
+        Route::put('/nastaveni/bankovni-ucty/{uuid}/fio', [FioBankAccountController::class, 'update'])->whereUuid('uuid')->name('bank-accounts.fio.update');
+        Route::post('/nastaveni/bankovni-ucty/{uuid}/fio/test', [FioBankAccountController::class, 'test'])->whereUuid('uuid')->name('bank-accounts.fio.test');
+        Route::post('/nastaveni/bankovni-ucty/{uuid}/fio/sync', [FioBankAccountController::class, 'sync'])->whereUuid('uuid')->name('bank-accounts.fio.sync');
+
+        Route::get('/bankovni-platby', [BankTransactionController::class, 'index'])->name('bank-transactions.index');
+        Route::post('/bankovni-platby/{uuid}/priradit', [BankTransactionController::class, 'match'])->whereUuid('uuid')->name('bank-transactions.match');
+        Route::patch('/bankovni-platby/{uuid}/ignorovat', [BankTransactionController::class, 'ignore'])->whereUuid('uuid')->name('bank-transactions.ignore');
 
         Route::get('/nastaveni/ciselne-rady', [DocumentSequenceController::class, 'index'])
             ->name('document-sequences.index');

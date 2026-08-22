@@ -132,6 +132,7 @@ abstract class TestCase extends BaseTestCase
             'audit_logs', 'vat_rates', 'invoices', 'invoice_revisions',
             'invoice_documents', 'invoice_email_deliveries', 'invoice_payments',
             'invoice_public_links',
+            'fio_bank_account_settings', 'bank_transactions',
             'recurring_invoice_templates', 'recurring_invoice_runs', 'invoice_automation_settings',
         ];
         $existingTables = collect(Schema::connection($connection)->getTables())
@@ -155,7 +156,7 @@ abstract class TestCase extends BaseTestCase
 
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_19_000000_add_invoice_automation')
+            ->where('migration', '2026_08_22_000000_add_fio_bank_payment_integration')
             ->exists();
     }
 

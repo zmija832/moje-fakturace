@@ -21,6 +21,7 @@ use App\Events\InvoicePaymentChanged;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoicePayment;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -39,12 +40,44 @@ class InvoicePaymentService
     /** @param array<string, mixed> $input */
     public function record(string $invoiceUuid, string $correlationUuid, array $input): InvoicePayment
     {
+        return $this->recordWithSource($invoiceUuid, $correlationUuid, $input, InvoicePaymentSource::Manual, null, false);
+    }
+
+    /** @param array<string, mixed> $input */
+    public function recordImported(
+        string $invoiceUuid,
+        string $correlationUuid,
+        string $externalId,
+        array $input,
+        Closure $afterRecord,
+    ): InvoicePayment {
+        return $this->recordWithSource(
+            $invoiceUuid,
+            $correlationUuid,
+            $input,
+            InvoicePaymentSource::FutureBankImport,
+            $externalId,
+            true,
+            $afterRecord,
+        );
+    }
+
+    /** @param array<string, mixed> $input */
+    private function recordWithSource(
+        string $invoiceUuid,
+        string $correlationUuid,
+        array $input,
+        InvoicePaymentSource $source,
+        ?string $externalId,
+        bool $allowOverpayment,
+        ?Closure $afterRecord = null,
+    ): InvoicePayment {
         $values = $this->validatePaymentInput($invoiceUuid, $correlationUuid, $input);
         $connection = $this->connectionResolver->resolve()->connectionName();
 
         try {
             [$payment, $event] = DB::connection($connection)->transaction(
-                fn (): array => $this->recordLocked($invoiceUuid, $correlationUuid, $values),
+                fn (): array => $this->recordLocked($invoiceUuid, $correlationUuid, $values, $source, $externalId, $allowOverpayment, $afterRecord),
                 3,
             );
         } catch (InvoicePaymentNotAllowed|InvoicePaymentIdempotencyConflict|ValidationException $exception) {
@@ -83,13 +116,24 @@ class InvoicePaymentService
     }
 
     /** @param array<string, mixed> $values @return array{InvoicePayment, ?InvoicePaymentEventSnapshot} */
-    private function recordLocked(string $invoiceUuid, string $correlationUuid, array $values): array
-    {
+    private function recordLocked(
+        string $invoiceUuid,
+        string $correlationUuid,
+        array $values,
+        InvoicePaymentSource $source,
+        ?string $externalId,
+        bool $allowOverpayment,
+        ?Closure $afterRecord,
+    ): array {
         $invoice = $this->issuedInvoice($invoiceUuid);
         $existing = InvoicePayment::query()->where('correlation_uuid', $correlationUuid)->lockForUpdate()->first();
         if ($existing !== null) {
             if ((int) $existing->invoice_id !== (int) $invoice->id || $existing->payment_type !== InvoicePaymentType::Payment) {
                 throw InvoicePaymentIdempotencyConflict::create();
+            }
+
+            if ($afterRecord !== null) {
+                $afterRecord($existing, $invoice);
             }
 
             return [$existing, null];
@@ -100,7 +144,7 @@ class InvoicePaymentService
 
         $before = $this->summary($invoice);
         if (InvoiceDecimal::compare($before->remainingTotal, '0') <= 0
-            || InvoiceDecimal::compare($values['amount'], $before->remainingTotal) > 0) {
+            || (! $allowOverpayment && InvoiceDecimal::compare($values['amount'], $before->remainingTotal) > 0)) {
             throw ValidationException::withMessages([
                 'amount' => 'Částka úhrady nesmí překročit zbývající částku faktury.',
             ]);
@@ -117,12 +161,16 @@ class InvoicePaymentService
             'reference' => $values['reference'],
             'variable_symbol' => $values['variable_symbol'],
             'note' => $values['note'],
-            'source' => InvoicePaymentSource::Manual->value,
-            'external_id' => null,
+            'source' => $source->value,
+            'external_id' => $externalId,
             'correlation_uuid' => $correlationUuid,
             'reverses_payment_id' => null,
             'created_by_actor' => $this->actor(),
         ])->save();
+
+        if ($afterRecord !== null) {
+            $afterRecord($payment, $invoice);
+        }
 
         return $this->finish($invoice, $payment, $before, BusinessAuditEvent::InvoicePaymentRecorded);
     }

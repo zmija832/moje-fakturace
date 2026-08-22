@@ -28,7 +28,7 @@ class BankAccountService
     public function all(): Collection
     {
         return BankAccount::query()
-            ->with('defaultAssignment')
+            ->with(['defaultAssignment', 'fioSetting'])
             ->orderByRaw('archived_at IS NOT NULL')
             ->orderBy('currency')
             ->orderBy('sort_order')
@@ -48,7 +48,7 @@ class BankAccountService
     public function findForEdit(string $uuid): BankAccount
     {
         return BankAccount::query()
-            ->with('defaultAssignment')
+            ->with(['defaultAssignment', 'fioSetting'])
             ->where('uuid', $uuid)
             ->whereNull('archived_at')
             ->firstOrFail();

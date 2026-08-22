@@ -4,6 +4,7 @@ namespace App\Models\Business;
 
 use App\Models\Concerns\HasServerGeneratedUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
@@ -25,6 +26,16 @@ class BankAccount extends BusinessModel
     public function defaultAssignment(): HasOne
     {
         return $this->hasOne(BankAccountDefault::class);
+    }
+
+    public function fioSetting(): HasOne
+    {
+        return $this->hasOne(FioBankAccountSetting::class);
+    }
+
+    public function bankTransactions(): HasMany
+    {
+        return $this->hasMany(BankTransaction::class);
     }
 
     public function domesticDisplay(): ?string

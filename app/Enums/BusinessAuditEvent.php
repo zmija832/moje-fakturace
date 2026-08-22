@@ -15,6 +15,12 @@ enum BusinessAuditEvent: string
     case BankAccountArchived = 'bank_account.archived';
     case BankAccountDefaultChanged = 'bank_account.default_changed';
     case BankAccountDefaultRemoved = 'bank_account.default_removed';
+    case FioIntegrationEnabled = 'fio_integration.enabled';
+    case FioIntegrationDisabled = 'fio_integration.disabled';
+    case FioTokenReplaced = 'fio_integration.token_replaced';
+    case BankTransactionAutomaticallyMatched = 'bank_transaction.automatically_matched';
+    case BankTransactionManuallyMatched = 'bank_transaction.manually_matched';
+    case BankTransactionIgnored = 'bank_transaction.ignored';
     case ClientCreated = 'client.created';
     case ClientUpdated = 'client.updated';
     case ClientActivated = 'client.activated';
@@ -88,6 +94,12 @@ enum BusinessAuditEvent: string
             self::BankAccountArchived => 'Archivován bankovní účet',
             self::BankAccountDefaultChanged => 'Změněn výchozí bankovní účet',
             self::BankAccountDefaultRemoved => 'Odstraněn výchozí bankovní účet',
+            self::FioIntegrationEnabled => 'Zapnuta Fio integrace',
+            self::FioIntegrationDisabled => 'Vypnuta Fio integrace',
+            self::FioTokenReplaced => 'Nahrazen Fio API token',
+            self::BankTransactionAutomaticallyMatched => 'Bankovní platba automaticky přiřazena',
+            self::BankTransactionManuallyMatched => 'Bankovní platba ručně přiřazena',
+            self::BankTransactionIgnored => 'Bankovní platba ignorována',
             self::ClientCreated => 'Vytvořen klient',
             self::ClientUpdated => 'Upraven klient',
             self::ClientActivated => 'Aktivován klient',

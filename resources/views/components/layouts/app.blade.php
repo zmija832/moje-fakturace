@@ -21,6 +21,7 @@
                 ['route' => 'invoice-email-settings.edit', 'active' => 'invoice-email-settings.*', 'label' => 'E-maily'],
                 ['route' => 'automation-settings.edit', 'active' => 'automation-settings.*', 'label' => 'Upomínky a automatizace'],
                 ['route' => 'bank-accounts.index', 'active' => 'bank-accounts.*', 'label' => 'Bankovní účty'],
+                ['route' => 'bank-transactions.index', 'active' => 'bank-transactions.*', 'label' => 'Bankovní platby'],
                 ['route' => 'document-sequences.index', 'active' => 'document-sequences.*', 'label' => 'Číselné řady'],
                 ['route' => 'vat-rates.index', 'active' => 'vat-rates.*', 'label' => 'Sazby DPH'],
                 ['route' => 'business-audit.index', 'active' => 'business-audit.*', 'label' => 'Audit změn'],

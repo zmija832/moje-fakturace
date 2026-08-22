@@ -8,6 +8,8 @@ enum BusinessAuditableType: string
     case InvoiceEmailSettings = 'invoice_email_settings';
     case BankAccount = 'bank_account';
     case BankAccountDefault = 'bank_account_default';
+    case FioBankAccountSetting = 'fio_bank_account_setting';
+    case BankTransaction = 'bank_transaction';
     case Client = 'client';
     case InvoiceCatalogItem = 'invoice_catalog_item';
     case DocumentSequence = 'document_sequence';
@@ -30,6 +32,8 @@ enum BusinessAuditableType: string
             self::InvoiceEmailSettings => 'Nastavení e-mailů',
             self::BankAccount => 'Bankovní účet',
             self::BankAccountDefault => 'Výchozí bankovní účet',
+            self::FioBankAccountSetting => 'Fio integrace bankovního účtu',
+            self::BankTransaction => 'Bankovní platba',
             self::Client => 'Klient',
             self::InvoiceCatalogItem => 'Položka katalogu',
             self::DocumentSequence => 'Číselná řada',

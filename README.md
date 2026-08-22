@@ -10,7 +10,7 @@ Je implementovaný revizní návrh vydané faktury, přesné výpočty, atomick�
 vystavení s číslem z tenant-local číselné řady, soukromé PDF s QR Platbou a
 synchronní odeslání vystavené faktury e-mailem a immutable ledger ručních plateb
 včetně částečných úhrad, přeplatků a storen. Pravidelné fakturace, automatické
-notifikace, bankovní import a exporty zatím nejsou implementované.
+notifikace a bezpečný import příchozích plateb z Fio API jsou implementované; exporty zatím nejsou implementované.
 
 ## Technický základ
 
@@ -601,3 +601,8 @@ přidat v některé z dalších etap.
 - před migrací ověřená samostatná záloha každé databáze.
 
 Produkční nasazení není součástí aktuální etapy.
+# Fio API a bankovní platby
+
+Fio synchronizace je tenant-local a nastavuje se samostatně u každého bankovního účtu. CZK a EUR účet proto používají vlastní API token a vlastní stav synchronizace. Token je uložen šifrovaně v business databázi, nepatří do repozitáře ani do logů a v administraci se nikdy nezobrazuje zpět.
+
+Synchronizaci lze bezpečně spustit příkazem `php artisan app:sync-bank-payments`; je také součástí existujícího `app:run-invoice-automation`, takže nasazení nevyžaduje druhý cron. Import používá překryvné období a DB unikátnost Fio movement ID. Automatické párování je konzervativní: vyžaduje právě jednu vystavenou, nearchivovanou fakturu se shodným variabilním symbolem, měnou a immutable snapshotem cílového bankovního účtu. Výsledek se zapisuje výhradně přes stávající payment ledger.

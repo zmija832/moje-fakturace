@@ -58,10 +58,14 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertTrue(Schema::connection('business_1')->hasTable('bank_account_defaults'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('clients'));
         $this->assertTrue(Schema::connection('business_1')->hasTable('invoice_catalog_items'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('fio_bank_account_settings'));
+        $this->assertTrue(Schema::connection('business_1')->hasTable('bank_transactions'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_accounts'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('bank_account_defaults'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('clients'));
         $this->assertTrue(Schema::connection('business_2')->hasTable('invoice_catalog_items'));
+        $this->assertTrue(Schema::connection('business_2')->hasTable('fio_bank_account_settings'));
+        $this->assertTrue(Schema::connection('business_2')->hasTable('bank_transactions'));
         foreach (['business_1', 'business_2'] as $connection) {
             $unitPrice = collect(Schema::connection($connection)->getColumns('invoice_catalog_items'))
                 ->firstWhere('name', 'unit_price');
@@ -93,6 +97,8 @@ class BusinessMigrationCommandTest extends TestCase
         $this->assertFalse(Schema::connection('central')->hasTable('bank_account_defaults'));
         $this->assertFalse(Schema::connection('central')->hasTable('clients'));
         $this->assertFalse(Schema::connection('central')->hasTable('invoice_catalog_items'));
+        $this->assertFalse(Schema::connection('central')->hasTable('fio_bank_account_settings'));
+        $this->assertFalse(Schema::connection('central')->hasTable('bank_transactions'));
         $this->assertSame('central', DB::getDefaultConnection());
     }
 
