@@ -13,10 +13,14 @@ use App\Services\Business\BankTransactionMatcher;
 use App\Services\Business\BusinessDate;
 use App\Services\Business\FioBankAccountSettingService;
 use App\Services\Business\FioBankSyncService;
+use App\Services\Business\InvoiceDraftEditor;
+use App\Services\Business\InvoiceDraftService;
+use App\Services\Business\InvoiceIssuer;
 use App\Services\Business\InvoicePaymentReader;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
 use Tests\Concerns\InteractsWithBusinessDatabases;
 use Tests\TestCase;
@@ -83,6 +87,96 @@ class FioBankPaymentIntegrationTest extends TestCase
         Event::assertDispatched(InvoicePaymentChanged::class, 1);
     }
 
+    public function test_existing_unmatched_movement_is_retried_after_eligible_invoice_is_issued(): void
+    {
+        Event::fake([InvoicePaymentChanged::class]);
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$draft, $client, $account, $rate] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-rematch-12277');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([
+            $this->movement('movement-12277', '100', 'CZK', '12277'),
+        ], 'CZK', $account->iban), 200)]);
+        $service = app(FioBankSyncService::class);
+
+        $first = $service->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $transaction = BankTransaction::query()->sole();
+        $this->assertSame(['new' => 1, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 1], $this->matchingStats($first));
+        $this->assertSame('unmatched', $transaction->status);
+        $this->assertSame(0, InvoicePayment::query()->count());
+
+        app(InvoiceDraftEditor::class)->update(
+            $draft->uuid,
+            1,
+            (string) Str::uuid(),
+            $this->invoicePayload($client->uuid, $account->uuid, $rate->uuid, '12277'),
+        );
+        $invoice = app(InvoiceIssuer::class)->issue($draft->uuid, 2, (string) Str::uuid());
+
+        $second = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $transaction = $transaction->fresh();
+        $payment = InvoicePayment::query()->sole();
+        $this->assertSame(['new' => 0, 'duplicates' => 1, 'matched' => 1, 'unmatched' => 0], $this->matchingStats($second));
+        $this->assertSame(1, BankTransaction::query()->count());
+        $this->assertSame('matched', $transaction->status);
+        $this->assertSame($invoice->id, $transaction->matched_invoice_id);
+        $this->assertSame($payment->id, $transaction->invoice_payment_id);
+
+        $third = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $this->assertSame(['new' => 0, 'duplicates' => 1, 'matched' => 0, 'unmatched' => 0], $this->matchingStats($third));
+        $this->assertSame(1, BankTransaction::query()->count());
+        $this->assertSame(1, InvoicePayment::query()->count());
+        Event::assertDispatched(InvoicePaymentChanged::class, 1);
+    }
+
+    public function test_existing_ignored_movement_is_not_retried(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $account] = $this->createIssuedInvoice();
+        $this->actingAs($admin);
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-ignored');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([
+            $this->movement('ignored-repeat', '25', 'CZK', null),
+        ], 'CZK', $account->iban), 200)]);
+        $service = app(FioBankSyncService::class);
+        $service->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $transaction = BankTransaction::query()->sole();
+        $this->withSession($this->deliveryBusinessSession($business))->patch(route('bank-transactions.ignore', $transaction->uuid))->assertRedirect();
+
+        $repeated = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+
+        $this->assertSame(['new' => 0, 'duplicates' => 1, 'matched' => 0, 'unmatched' => 0], $this->matchingStats($repeated));
+        $this->assertSame('ignored', $transaction->fresh()->status);
+        $this->assertSame(0, InvoicePayment::query()->count());
+    }
+
+    public function test_existing_unmatched_with_multiple_candidates_stays_unmatched(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$firstDraft, $client, $account, $rate] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $payload = $this->invoicePayload($client->uuid, $account->uuid, $rate->uuid, '12277');
+        app(InvoiceDraftEditor::class)->update($firstDraft->uuid, 1, (string) Str::uuid(), $payload);
+        app(InvoiceIssuer::class)->issue($firstDraft->uuid, 2, (string) Str::uuid());
+        $secondDraft = app(InvoiceDraftService::class)->create($payload);
+        app(InvoiceIssuer::class)->issue($secondDraft->uuid, 1, (string) Str::uuid());
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-ambiguous');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([
+            $this->movement('ambiguous-repeat', '100', 'CZK', '12277'),
+        ], 'CZK', $account->iban), 200)]);
+        $service = app(FioBankSyncService::class);
+
+        $service->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $repeated = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+
+        $this->assertSame(['new' => 0, 'duplicates' => 1, 'matched' => 0, 'unmatched' => 1], $this->matchingStats($repeated));
+        $this->assertSame('unmatched', BankTransaction::query()->sole()->status);
+        $this->assertSame(0, InvoicePayment::query()->count());
+    }
+
     public function test_missing_vs_wrong_currency_and_wrong_target_account_stay_unmatched(): void
     {
         [$admin, $business] = $this->deliveryMembership();
@@ -96,8 +190,11 @@ class FioBankPaymentIntegrationTest extends TestCase
         ], 'CZK', $account->iban), 200)]);
 
         $result = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $repeated = app(FioBankSyncService::class)->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
 
         $this->assertSame(2, $result['unmatched']);
+        $this->assertSame(2, $repeated['duplicates']);
+        $this->assertSame(2, $repeated['unmatched']);
         $this->assertSame(0, InvoicePayment::query()->count());
         $this->assertSame(2, BankTransaction::query()->where('status', 'unmatched')->count());
     }
@@ -193,6 +290,32 @@ class FioBankPaymentIntegrationTest extends TestCase
         $transaction->forceFill(['bank_account_id' => $accountId, 'source' => 'fio', 'external_transaction_id' => $id, 'booked_on' => '2026-08-21', 'amount' => $amount, 'currency' => 'CZK', 'variable_symbol' => '20260001', 'status' => 'unmatched', 'imported_at' => now()])->save();
 
         return $transaction->load('bankAccount');
+    }
+
+    /** @return array<string, mixed> */
+    private function invoicePayload(string $clientUuid, string $accountUuid, string $rateUuid, string $variableSymbol): array
+    {
+        return [
+            'customer_uuid' => $clientUuid, 'bank_account_uuid' => $accountUuid, 'currency' => 'CZK',
+            'issued_on' => '2026-08-02', 'taxable_supply_on' => '2026-08-02', 'due_on' => '2026-08-16',
+            'payment_method' => 'bank_transfer', 'variable_symbol' => $variableSymbol, 'note' => null,
+            'invoice_discount_type' => 'none', 'invoice_discount_value' => '0',
+            'items' => [[
+                'position' => 1, 'description' => 'Bezpečná služba', 'quantity' => '1', 'unit' => 'ks',
+                'unit_price' => '100', 'discount_type' => 'none', 'discount_value' => '0', 'vat_rate_uuid' => $rateUuid,
+            ]],
+        ];
+    }
+
+    /** @param array<string, int|string> $stats @return array{new: int, duplicates: int, matched: int, unmatched: int} */
+    private function matchingStats(array $stats): array
+    {
+        return [
+            'new' => (int) $stats['new'],
+            'duplicates' => (int) $stats['duplicates'],
+            'matched' => (int) $stats['matched'],
+            'unmatched' => (int) $stats['unmatched'],
+        ];
     }
 
     /** @param list<array<string, mixed>> $movements */

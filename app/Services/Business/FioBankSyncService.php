@@ -70,10 +70,14 @@ final class FioBankSyncService
                     [$transaction, $created] = $this->import($setting->bankAccount, $row);
                     if (! $created) {
                         $stats['duplicates']++;
+                    } else {
+                        $stats['new']++;
+                    }
 
+                    if ($transaction->status !== 'unmatched') {
                         continue;
                     }
-                    $stats['new']++;
+
                     if ($this->matcher->matchAutomatically($transaction->load('bankAccount'))) {
                         $stats['matched']++;
                     } else {
