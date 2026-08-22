@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
+use App\Domain\Invoices\InvoicePaymentEventSnapshot;
 use App\Enums\BusinessConnection;
 use App\Mail\AutomationMail;
 use App\Models\Business;
@@ -29,14 +30,38 @@ class InvoicePaidNotificationReliabilityTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_partial_payment_creates_nothing_and_transition_to_paid_creates_admin_event(): void
+    public function test_each_partial_and_full_payment_creates_one_admin_and_customer_delivery(): void
     {
-        [$invoice] = $this->environment(admin: true, customer: false);
-        $this->pay($invoice, '50');
+        Mail::fake();
+        [$invoice] = $this->environment(admin: true, customer: true);
+        $first = $this->pay($invoice, '40');
 
-        $this->assertSame(0, InvoicePaidNotification::query()->count());
-        $this->pay($invoice, '50');
-        $this->assertSame('internal', InvoicePaidNotification::query()->sole()->status);
+        $this->assertSame(3, InvoicePaidNotification::query()->where('triggering_payment_uuid', $first->uuid)->count());
+        $partialAdmin = InvoicePaidNotification::query()->where('triggering_payment_uuid', $first->uuid)->where('recipient_type', 'admin_email')->sole();
+        $partialCustomer = InvoicePaidNotification::query()->where('triggering_payment_uuid', $first->uuid)->where('recipient_type', 'customer')->sole();
+        $this->assertSame('sent', $partialAdmin->status);
+        $this->assertSame('sent', $partialCustomer->status);
+        $this->assertSame(auth()->user()->email, $partialAdmin->recipient_email);
+        $this->assertStringContainsString('Přijatá platba: 40 Kč', $partialAdmin->body_text);
+        $this->assertStringContainsString('Celkem uhrazeno: 40 Kč', $partialAdmin->body_text);
+        $this->assertStringContainsString('Zbývá: 60 Kč', $partialAdmin->body_text);
+        $this->assertStringContainsString('evidujeme platbu ve výši 40 Kč', $partialCustomer->body_text);
+        $this->assertStringContainsString('Zbývá uhradit: 60 Kč', $partialCustomer->body_text);
+
+        $second = $this->pay($invoice, '60');
+        $this->assertSame(3, InvoicePaidNotification::query()->where('triggering_payment_uuid', $second->uuid)->count());
+        $paidAdmin = InvoicePaidNotification::query()->where('triggering_payment_uuid', $second->uuid)->where('recipient_type', 'admin_email')->sole();
+        $this->assertStringContainsString('Celkem uhrazeno: 100 Kč', $paidAdmin->body_text);
+        $this->assertStringContainsString('Zbývá: 0 Kč', $paidAdmin->body_text);
+        $this->assertSame(6, InvoicePaidNotification::query()->count());
+        Mail::assertSent(AutomationMail::class, 4);
+
+        app(InvoicePaidNotificationService::class)->handle(new InvoicePaymentEventSnapshot(
+            $invoice->uuid, (string) $invoice->document_number, $second->uuid, 'payment', '60.0000', 'CZK',
+            '2026-08-19', 'partially_paid', 'paid', '100.0000', '0.0000', ['admin.invoice.paid', 'client.invoice.payment_confirmation'],
+        ));
+        $this->assertSame(6, InvoicePaidNotification::query()->count());
+        Mail::assertSent(AutomationMail::class, 4);
     }
 
     public function test_paid_transition_creates_internal_admin_notification(): void
@@ -44,10 +69,59 @@ class InvoicePaidNotificationReliabilityTest extends TestCase
         [$invoice] = $this->environment(admin: true, customer: false);
         $this->pay($invoice);
 
-        $notification = InvoicePaidNotification::query()->sole();
+        $notification = InvoicePaidNotification::query()->where('recipient_type', 'admin')->sole();
         $this->assertSame('admin', $notification->recipient_type);
         $this->assertSame('internal', $notification->status);
         $this->assertSame(0, $notification->send_attempts);
+        $email = InvoicePaidNotification::query()->where('recipient_type', 'admin_email')->sole();
+        $this->assertSame('sent', $email->status);
+        $this->assertSame(1, $email->send_attempts);
+    }
+
+    public function test_imported_overpayment_uses_the_same_notification_flow_and_formats_overpayment(): void
+    {
+        Mail::fake();
+        [$invoice] = $this->environment(admin: true, customer: true);
+
+        $payment = app(InvoicePaymentService::class)->recordImported(
+            $invoice->uuid,
+            (string) Str::uuid(),
+            'fio:overpayment-notification',
+            ['amount' => '110', 'currency' => 'CZK', 'paid_on' => '2026-08-19', 'payment_method' => 'bank_transfer'],
+            static function (): void {},
+        );
+
+        $admin = InvoicePaidNotification::query()->where('triggering_payment_uuid', $payment->uuid)->where('recipient_type', 'admin_email')->sole();
+        $customer = InvoicePaidNotification::query()->where('triggering_payment_uuid', $payment->uuid)->where('recipient_type', 'customer')->sole();
+        $this->assertStringContainsString('Přijatá platba: 110 Kč', $admin->body_text);
+        $this->assertStringContainsString('Přeplatek: 10 Kč', $admin->body_text);
+        $this->assertStringContainsString('přeplatek ve výši 10 Kč', $customer->body_text);
+        $this->assertSame('sent', $admin->status);
+        $this->assertSame('sent', $customer->status);
+        Mail::assertSent(AutomationMail::class, 2);
+    }
+
+    public function test_admin_email_recipient_is_resolved_from_the_active_tenant_membership(): void
+    {
+        Mail::fake();
+        [$firstAdmin, $firstBusiness] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($firstBusiness);
+        $this->actingAs($firstAdmin);
+        [$firstInvoice] = $this->createIssuedInvoice();
+        $settings = app(InvoiceAutomationSettingsService::class);
+        $settings->save([...$settings->defaults(), 'notify_admin_when_paid' => true, 'notify_customer_when_paid' => false]);
+        $this->pay($firstInvoice);
+
+        [$secondAdmin, $secondBusiness] = $this->deliveryMembership(connection: BusinessConnection::Business2);
+        app(ActiveBusinessContext::class)->set($secondBusiness);
+        $this->actingAs($secondAdmin);
+        [$secondInvoice] = $this->createIssuedInvoice();
+        $settings->save([...$settings->defaults(), 'notify_admin_when_paid' => true, 'notify_customer_when_paid' => false]);
+        $this->pay($secondInvoice);
+
+        Mail::assertSent(AutomationMail::class, fn (AutomationMail $mail): bool => $mail->hasTo($firstAdmin->email));
+        Mail::assertSent(AutomationMail::class, fn (AutomationMail $mail): bool => $mail->hasTo($secondAdmin->email));
+        $this->assertNotSame($firstAdmin->email, $secondAdmin->email);
     }
 
     public function test_customer_branch_saves_model_and_sends_valid_email(): void

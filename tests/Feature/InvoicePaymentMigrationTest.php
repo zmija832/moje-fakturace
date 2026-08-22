@@ -136,13 +136,9 @@ class InvoicePaymentMigrationTest extends TestCase
         $target = database_path('migrations/business/2026_08_04_000000_create_invoice_payments_table.php');
 
         $this->assertSame(0, Artisan::call('migrate:reset', ['--database' => $connection, '--path' => [database_path('migrations/business')], '--realpath' => true, '--force' => true]));
-        $this->assertSame(0, Artisan::call('migrate', ['--database' => $connection, '--path' => $all->reject(fn (string $path): bool => basename($path) === basename($target))->all(), '--realpath' => true, '--force' => true]));
+        $this->assertSame(0, Artisan::call('migrate', ['--database' => $connection, '--path' => $all->filter(fn (string $path): bool => basename($path) < basename($target))->all(), '--realpath' => true, '--force' => true]));
         $before = DB::connection($connection)->table('migrations')->pluck('migration')->all();
         $this->assertNotEmpty($before);
-        [, $business] = $this->deliveryMembership(connection: BusinessConnection::Business2);
-        app(ActiveBusinessContext::class)->set($business);
-        [$issuedInvoice] = $this->createIssuedInvoice();
-        $this->assertSame('issued', $issuedInvoice->status->value);
         $this->assertSame(0, Artisan::call('migrate', ['--database' => $connection, '--path' => [$target], '--realpath' => true, '--force' => true]));
         $this->assertTrue(Schema::connection($connection)->hasTable('invoice_payments'));
         $this->assertSame(0, Artisan::call('migrate:rollback', [

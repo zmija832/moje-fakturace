@@ -430,6 +430,8 @@ class BusinessMigrationCommandTest extends TestCase
                 ->where('migration', '2026_08_18_000000_enable_permanent_invoice_deletion')->exists());
             $this->assertTrue(DB::connection($connection)->table('migrations')
                 ->where('migration', '2026_08_19_000000_add_invoice_automation')->exists());
+            $this->assertTrue(DB::connection($connection)->table('migrations')
+                ->where('migration', '2026_08_22_020000_scope_payment_notifications_per_payment')->exists());
             foreach (['recurring_invoice_templates', 'recurring_invoice_items', 'recurring_invoice_runs', 'invoice_automation_settings', 'invoice_reminders', 'invoice_paid_notifications'] as $automationTable) {
                 $this->assertTrue(Schema::connection($connection)->hasTable($automationTable));
                 $this->assertFalse(Schema::connection('central')->hasTable($automationTable));
@@ -438,6 +440,12 @@ class BusinessMigrationCommandTest extends TestCase
                 $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_reminders', $claimColumn));
                 $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_paid_notifications', $claimColumn));
             }
+            $paymentNotificationIndex = DB::connection($connection)->selectOne(
+                "SELECT COUNT(*) AS aggregate FROM information_schema.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'invoice_paid_notifications'
+                   AND INDEX_NAME = 'payment_notifications_delivery_unique'",
+            );
+            $this->assertGreaterThan(0, (int) $paymentNotificationIndex->aggregate);
             $issuedGuard = DB::connection($connection)->selectOne(
                 "SELECT ACTION_STATEMENT AS body FROM information_schema.TRIGGERS
                  WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 'invoices_issued_immutable_update'",

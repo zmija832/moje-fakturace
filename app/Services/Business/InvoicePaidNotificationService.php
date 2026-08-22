@@ -2,6 +2,7 @@
 
 namespace App\Services\Business;
 
+use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Domain\BusinessContext\BusinessConnectionResolver;
 use App\Domain\Invoices\InvoicePaymentEventSnapshot;
 use App\Enums\InvoicePaymentStatus;
@@ -24,29 +25,38 @@ class InvoicePaidNotificationService
         private readonly InvoiceEmailSettingsService $emailSettings,
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly InvoicePaymentReader $payments,
+        private readonly ActiveBusinessContext $businessContext,
     ) {}
 
     public function handle(InvoicePaymentEventSnapshot $event): void
     {
-        if (! in_array($event->statusAfter, ['paid', 'overpaid'], true)
-            || in_array($event->statusBefore, ['paid', 'overpaid'], true)) {
+        if ($event->paymentType !== 'payment'
+            || ! in_array($event->statusAfter, ['partially_paid', 'paid', 'overpaid'], true)) {
             return;
         }
 
         $invoice = Invoice::query()->where('uuid', $event->invoiceUuid)->firstOrFail();
         $setting = $this->settings->current();
         if ($setting->notify_admin_when_paid) {
-            $this->create($invoice, $event, 'admin', null, 'internal', $setting->paid_subject, $setting->paid_body);
+            $rendered = $this->renderer->paymentNotification($invoice, $event, 'admin');
+            $this->create($invoice, $event, 'admin', null, 'internal', $rendered['subject'], $rendered['body']);
+            [$notification, $created] = $this->create($invoice, $event, 'admin_email', $this->adminRecipient(), 'prepared', $rendered['subject'], $rendered['body']);
+            if ($created) {
+                $this->send($notification);
+            }
         }
         if ($setting->notify_customer_when_paid) {
+            $rendered = $event->statusAfter === 'paid'
+                ? $this->renderer->paid($invoice, $setting->paid_subject, $setting->paid_body, $event->paidOn)
+                : $this->renderer->paymentNotification($invoice, $event, 'customer');
             [$notification, $created] = $this->create(
                 $invoice,
                 $event,
                 'customer',
                 $invoice->issuedRevision()->with('customerSnapshot')->firstOrFail()->customerSnapshot->email,
                 'prepared',
-                $setting->paid_subject,
-                $setting->paid_body,
+                $rendered['subject'],
+                $rendered['body'],
             );
             if ($created) {
                 $this->send($notification);
@@ -59,7 +69,7 @@ class InvoicePaidNotificationService
     {
         $result = ['processed' => 0, 'failed' => 0];
         $notifications = InvoicePaidNotification::query()
-            ->where('recipient_type', 'customer')
+            ->whereIn('recipient_type', ['admin_email', 'customer'])
             ->where(function ($query): void {
                 $query->whereIn('status', ['prepared', 'failed'])
                     ->orWhere(function ($query): void {
@@ -107,7 +117,9 @@ class InvoicePaidNotificationService
                 $token,
                 'failed',
                 'recipient_missing',
-                'Klient nemá platnou e-mailovou adresu.',
+                $claimed->recipient_type === 'customer'
+                    ? 'Klient nemá platnou e-mailovou adresu.'
+                    : 'Fakturační subjekt nemá dostupného administrátora s platnou e-mailovou adresou.',
             );
         }
 
@@ -129,7 +141,7 @@ class InvoicePaidNotificationService
                 $token,
                 'failed',
                 class_basename($exception),
-                'Odeslání potvrzení platby selhalo. Podrobnost je v aplikačním logu.',
+                'Odeslání platební notifikace selhalo. Podrobnost je v aplikačním logu.',
             );
         }
     }
@@ -151,7 +163,7 @@ class InvoicePaidNotificationService
         return DB::connection($connection)->transaction(function () use ($invoice, $event, $type, $recipient, $status, $subjectTemplate, $bodyTemplate): array {
             $lockedInvoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $existing = InvoicePaidNotification::query()
-                ->where('invoice_id', $lockedInvoice->id)
+                ->where('triggering_payment_uuid', $event->paymentUuid)
                 ->where('recipient_type', $type)
                 ->lockForUpdate()
                 ->first();
@@ -159,20 +171,14 @@ class InvoicePaidNotificationService
                 return [$existing, false];
             }
 
-            $rendered = $this->renderer->paid(
-                $lockedInvoice,
-                $subjectTemplate,
-                $bodyTemplate,
-                $event->paidOn,
-            );
             $notification = new InvoicePaidNotification;
             $notification->forceFill([
                 'invoice_id' => $lockedInvoice->id,
                 'triggering_payment_uuid' => $event->paymentUuid,
                 'recipient_type' => $type,
                 'recipient_email' => $recipient,
-                'subject' => $rendered['subject'],
-                'body_text' => $rendered['body'],
+                'subject' => $subjectTemplate,
+                'body_text' => $bodyTemplate,
                 'status' => $status,
                 'correlation_uuid' => (string) Str::uuid(),
             ]);
@@ -194,12 +200,12 @@ class InvoicePaidNotificationService
             }
             $invoice->load(['issuedRevision', 'payments']);
             $summary = $this->payments->summary($invoice);
-            if (! in_array($summary->status, [InvoicePaymentStatus::Paid, InvoicePaymentStatus::Overpaid], true)) {
+            if (! in_array($summary->status, [InvoicePaymentStatus::PartiallyPaid, InvoicePaymentStatus::Paid, InvoicePaymentStatus::Overpaid], true)) {
                 return null;
             }
 
             $locked = InvoicePaidNotification::query()->whereKey($notification->id)->lockForUpdate()->firstOrFail();
-            if ($locked->recipient_type !== 'customer' || $locked->status === 'sent') {
+            if (! in_array($locked->recipient_type, ['admin_email', 'customer'], true) || $locked->status === 'sent') {
                 return null;
             }
             if ($locked->status === 'sending'
@@ -247,5 +253,20 @@ class InvoicePaidNotificationService
 
             return $locked;
         }, 3);
+    }
+
+    private function adminRecipient(): ?string
+    {
+        $business = $this->businessContext->requireBusiness();
+        if (! $business->exists) {
+            return null;
+        }
+
+        $email = $business->users()
+            ->wherePivot('role', 'admin')
+            ->orderBy('users.id')
+            ->value('users.email');
+
+        return filter_var($email, FILTER_VALIDATE_EMAIL) ? (string) $email : null;
     }
 }

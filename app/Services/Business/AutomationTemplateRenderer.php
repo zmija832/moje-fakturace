@@ -3,6 +3,8 @@
 namespace App\Services\Business;
 
 use App\Domain\Invoices\InvoiceDecimal;
+use App\Domain\Invoices\InvoicePaymentEventSnapshot;
+use App\Enums\InvoicePaymentStatus;
 use App\Models\Business\Invoice;
 use Illuminate\Validation\ValidationException;
 
@@ -35,6 +37,53 @@ class AutomationTemplateRenderer
     public function paid(Invoice $invoice, string $subject, string $body, string $paidAt): array
     {
         return $this->render($invoice, $subject, $body, ['{paid_at}' => $paidAt], self::PAID_PLACEHOLDERS);
+    }
+
+    /** @return array{subject:string,body:string} */
+    public function paymentNotification(Invoice $invoice, InvoicePaymentEventSnapshot $event, string $audience): array
+    {
+        $invoice->loadMissing('issuedRevision.customerSnapshot');
+        $number = (string) $invoice->document_number;
+        $customer = (string) $invoice->issuedRevision->customerSnapshot->display_name;
+        $received = InvoiceDecimal::formatMoney($event->amount, $event->currency);
+        $paid = InvoiceDecimal::formatMoney($event->paidTotal, $event->currency);
+        $remaining = InvoiceDecimal::formatMoney($event->remainingTotal, $event->currency);
+        $overpayment = InvoiceDecimal::formatMoney(InvoiceDecimal::absolute($event->remainingTotal), $event->currency);
+        $status = InvoicePaymentStatus::from($event->statusAfter);
+
+        if ($audience === 'admin') {
+            return match ($status) {
+                InvoicePaymentStatus::PartiallyPaid => [
+                    'subject' => "Částečná úhrada faktury {$number}",
+                    'body' => "Faktura: {$number}\nKlient: {$customer}\nPřijatá platba: {$received}\nCelkem uhrazeno: {$paid}\nZbývá: {$remaining}\nStav: Částečně uhrazena",
+                ],
+                InvoicePaymentStatus::Paid => [
+                    'subject' => "Faktura {$number} byla uhrazena",
+                    'body' => "Faktura: {$number}\nKlient: {$customer}\nPřijatá platba: {$received}\nCelkem uhrazeno: {$paid}\nZbývá: {$remaining}\nStav: Uhrazená",
+                ],
+                InvoicePaymentStatus::Overpaid => [
+                    'subject' => "Faktura {$number} je přeplacena",
+                    'body' => "Faktura: {$number}\nKlient: {$customer}\nPřijatá platba: {$received}\nCelkem uhrazeno: {$paid}\nPřeplatek: {$overpayment}\nStav: Přeplacená",
+                ],
+                default => throw ValidationException::withMessages(['payment' => 'Pro tento platební stav nelze vytvořit e-mailovou notifikaci.']),
+            };
+        }
+
+        return match ($status) {
+            InvoicePaymentStatus::PartiallyPaid => [
+                'subject' => "Potvrzení částečné úhrady faktury {$number}",
+                'body' => "Dobrý den,\n\nevidujeme platbu ve výši {$received} k faktuře {$number}.\n\nCelkem uhrazeno: {$paid}\nZbývá uhradit: {$remaining}\n\nDěkujeme.",
+            ],
+            InvoicePaymentStatus::Paid => [
+                'subject' => "Potvrzení úhrady faktury {$number}",
+                'body' => "Dobrý den,\n\nevidujeme platbu ve výši {$received} k faktuře {$number}.\n\nFaktura je nyní plně uhrazena.\n\nDěkujeme.",
+            ],
+            InvoicePaymentStatus::Overpaid => [
+                'subject' => "Potvrzení platby k faktuře {$number}",
+                'body' => "Dobrý den,\n\nevidujeme platbu ve výši {$received} k faktuře {$number}.\n\nFaktura je uhrazena a evidujeme přeplatek ve výši {$overpayment}.\n\nDěkujeme.",
+            ],
+            default => throw ValidationException::withMessages(['payment' => 'Pro tento platební stav nelze vytvořit e-mailovou notifikaci.']),
+        };
     }
 
     /** @param array<string,string> $extra @param list<string> $allowed @return array{subject:string,body:string,recipient:?string} */

@@ -120,7 +120,10 @@ class InvoicePublicLinkTest extends TestCase
         $this->assertSame($second->last_viewed_at, $unchanged->last_viewed_at);
 
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
-        $this->get(route('invoices.index'))->assertOk()->assertSee('Webfaktura zobrazena zákazníkem');
+        $this->get(route('invoices.index'))
+            ->assertOk()
+            ->assertSee('data-web-invoice-viewed', false)
+            ->assertSee('Webfaktura zobrazena zákazníkem');
     }
 
     public function test_unviewed_and_revoked_web_invoice_do_not_show_customer_view_indicator(): void
@@ -133,7 +136,10 @@ class InvoicePublicLinkTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
 
-        $this->get(route('invoices.index'))->assertOk()->assertDontSee('Webfaktura zobrazena zákazníkem');
+        $this->get(route('invoices.index'))
+            ->assertOk()
+            ->assertDontSee('data-web-invoice-viewed', false)
+            ->assertDontSee('Webfaktura zobrazena zákazníkem');
         $this->delete(route('invoices.public-link.revoke', $invoice->uuid))->assertRedirect();
         auth()->logout();
         $this->get($url)->assertNotFound();

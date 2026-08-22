@@ -212,7 +212,7 @@ class InvoiceAutomationTest extends TestCase
         Mail::assertSent(InvoiceIssuedMail::class, 1);
     }
 
-    public function test_full_payment_creates_configured_notifications_only_once_and_reversal_does_not_repeat(): void
+    public function test_each_new_payment_creates_idempotent_notifications_and_reversal_itself_does_not(): void
     {
         Mail::fake();
         [$admin,$business] = $this->deliveryMembership();
@@ -223,13 +223,13 @@ class InvoiceAutomationTest extends TestCase
         $settings->save([...$settings->defaults(), 'notify_admin_when_paid' => true, 'notify_customer_when_paid' => true]);
         $payments = app(InvoicePaymentService::class);
         $payment = $payments->record($invoice->uuid, (string) Str::uuid(), ['amount' => '100', 'currency' => 'CZK', 'paid_on' => '2026-08-18', 'payment_method' => 'bank_transfer']);
-        $this->assertSame(2, InvoicePaidNotification::query()->count());
-        $this->assertSame(['admin', 'customer'], InvoicePaidNotification::query()->orderBy('recipient_type')->pluck('recipient_type')->all());
-        Mail::assertSent(AutomationMail::class, 1);
+        $this->assertSame(3, InvoicePaidNotification::query()->count());
+        $this->assertSame(['admin', 'admin_email', 'customer'], InvoicePaidNotification::query()->orderBy('recipient_type')->pluck('recipient_type')->all());
+        Mail::assertSent(AutomationMail::class, 2);
         $payments->reverse($invoice->uuid, $payment->uuid, (string) Str::uuid(), ['amount' => '100', 'reversed_on' => '2026-08-18', 'reason' => 'Oprava']);
         $payments->record($invoice->uuid, (string) Str::uuid(), ['amount' => '100', 'currency' => 'CZK', 'paid_on' => '2026-08-18', 'payment_method' => 'bank_transfer']);
-        $this->assertSame(2, InvoicePaidNotification::query()->count());
-        Mail::assertSent(AutomationMail::class, 1);
+        $this->assertSame(6, InvoicePaidNotification::query()->count());
+        Mail::assertSent(AutomationMail::class, 4);
     }
 
     public function test_automation_command_visits_both_tenants_and_is_safe_no_op(): void

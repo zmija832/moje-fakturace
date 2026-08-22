@@ -5,14 +5,17 @@ namespace Tests\Feature;
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Enums\BusinessConnection;
 use App\Events\InvoicePaymentChanged;
+use App\Mail\AutomationMail;
 use App\Models\Business\BankAccount;
 use App\Models\Business\BankTransaction;
 use App\Models\Business\FioBankAccountSetting;
+use App\Models\Business\InvoicePaidNotification;
 use App\Models\Business\InvoicePayment;
 use App\Services\Business\BankTransactionMatcher;
 use App\Services\Business\BusinessDate;
 use App\Services\Business\FioBankAccountSettingService;
 use App\Services\Business\FioBankSyncService;
+use App\Services\Business\InvoiceAutomationSettingsService;
 use App\Services\Business\InvoiceDraftEditor;
 use App\Services\Business\InvoiceDraftService;
 use App\Services\Business\InvoiceIssuer;
@@ -21,6 +24,7 @@ use App\Services\Business\InvoicePaymentService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
 use Tests\Concerns\InteractsWithBusinessDatabases;
@@ -86,6 +90,32 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame($invoice->id, $transaction->matched_invoice_id);
         $this->assertSame('future_bank_import', $transaction->payment->source->value);
         Event::assertDispatched(InvoicePaymentChanged::class, 1);
+    }
+
+    public function test_fio_payment_uses_shared_idempotent_admin_and_customer_email_flow(): void
+    {
+        Mail::fake();
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice, , $account] = $this->createIssuedInvoice();
+        $this->actingAs($admin);
+        $settings = app(InvoiceAutomationSettingsService::class);
+        $settings->save([...$settings->defaults(), 'notify_admin_when_paid' => true, 'notify_customer_when_paid' => true]);
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-payment-mail');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([
+            $this->movement('fio-mail-once', '100', 'CZK', '20260001'),
+        ], 'CZK', $account->iban), 200)]);
+
+        $first = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+        $second = app(FioBankSyncService::class)->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+
+        $this->assertSame(1, $first['matched']);
+        $this->assertSame(1, $second['duplicates']);
+        $this->assertSame(1, InvoicePayment::query()->where('invoice_id', $invoice->id)->count());
+        $this->assertSame(3, InvoicePaidNotification::query()->where('invoice_id', $invoice->id)->count());
+        $this->assertSame(1, InvoicePaidNotification::query()->where('recipient_type', 'admin_email')->where('status', 'sent')->count());
+        $this->assertSame(1, InvoicePaidNotification::query()->where('recipient_type', 'customer')->where('status', 'sent')->count());
+        Mail::assertSent(AutomationMail::class, 2);
     }
 
     public function test_existing_unmatched_movement_is_retried_after_eligible_invoice_is_issued(): void

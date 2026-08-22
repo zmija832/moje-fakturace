@@ -161,7 +161,7 @@ abstract class TestCase extends BaseTestCase
 
         return DB::connection($connection)
             ->table('migrations')
-            ->where('migration', '2026_08_22_010000_add_web_invoice_view_timestamps')
+            ->where('migration', '2026_08_22_020000_scope_payment_notifications_per_payment')
             ->exists();
     }
 
