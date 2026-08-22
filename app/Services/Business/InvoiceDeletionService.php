@@ -99,6 +99,33 @@ class InvoiceDeletionService
                     ]);
                 }
 
+                $paymentIds = DB::connection($connection)->table('invoice_payments')
+                    ->where('invoice_id', $invoice->id)
+                    ->lockForUpdate()
+                    ->pluck('id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->all();
+                $bankTransactions = DB::connection($connection)->table('bank_transactions')
+                    ->where(function ($query) use ($invoice, $paymentIds): void {
+                        $query->where('matched_invoice_id', $invoice->id);
+                        if ($paymentIds !== []) {
+                            $query->orWhereIn('invoice_payment_id', $paymentIds);
+                        }
+                    })
+                    ->lockForUpdate()
+                    ->pluck('id');
+                if ($bankTransactions->isNotEmpty()) {
+                    DB::connection($connection)->table('bank_transactions')
+                        ->whereIn('id', $bankTransactions)
+                        ->update([
+                            'status' => 'unmatched',
+                            'matched_invoice_id' => null,
+                            'invoice_payment_id' => null,
+                            'matched_at' => null,
+                            'updated_at' => now(),
+                        ]);
+                }
+
                 DB::connection($connection)->table('invoice_email_deliveries')->where('invoice_id', $invoice->id)->delete();
                 DB::connection($connection)->table('invoice_payments')->where('invoice_id', $invoice->id)->whereNotNull('reverses_payment_id')->delete();
                 DB::connection($connection)->table('invoice_payments')->where('invoice_id', $invoice->id)->delete();
