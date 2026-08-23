@@ -43,33 +43,64 @@ Alpine.data('aresClientForm', (config) => ({
 }));
 
 Alpine.data('mailSettingsPreview', (config) => ({
+    previewOpen: false,
+    previewType: null,
+    previewTitle: '',
+    previewTrigger: null,
     emailHtml: '',
     emailError: '',
     emailLoading: false,
     pdfObjectUrl: '',
     pdfError: '',
     pdfLoading: false,
-    emailTimer: null,
     emailController: null,
     pdfController: null,
-    init() {
-        this.$nextTick(() => {
-            this.refreshEmailPreview();
-            this.refreshPdfPreview();
-        });
-    },
     destroy() {
         this.emailController?.abort();
         this.pdfController?.abort();
         if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
     },
-    queueEmailPreview() {
-        clearTimeout(this.emailTimer);
-        this.emailTimer = setTimeout(() => this.refreshEmailPreview(), 450);
+    selectedStyleLabel(field) {
+        const option = this.$refs.form.elements[field]?.selectedOptions?.[0];
+        return option?.dataset?.label ?? option?.textContent?.split('—')?.[0]?.trim() ?? '';
     },
-    handleSettingsChange(event) {
-        this.queueEmailPreview();
-        if (event?.target?.name === 'pdf_style') this.refreshPdfPreview();
+    openEmailPreview() {
+        this.openPreview('email', `Náhled e-mailu – ${this.selectedStyleLabel('template_style')}`);
+        this.refreshEmailPreview();
+    },
+    openPdfPreview() {
+        this.openPreview('pdf', `Náhled PDF – ${this.selectedStyleLabel('pdf_style')}`);
+        this.refreshPdfPreview();
+    },
+    openPreview(type, title) {
+        this.emailController?.abort();
+        this.pdfController?.abort();
+        this.emailController = null;
+        this.pdfController = null;
+        if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
+        this.previewTrigger = document.activeElement;
+        this.previewType = type;
+        this.previewTitle = title;
+        this.previewOpen = true;
+        this.emailHtml = '';
+        this.emailError = '';
+        this.emailLoading = false;
+        this.pdfObjectUrl = '';
+        this.pdfError = '';
+        this.pdfLoading = false;
+        this.$nextTick(() => this.$refs.previewClose?.focus());
+    },
+    closePreview() {
+        this.emailController?.abort();
+        this.pdfController?.abort();
+        this.emailController = null;
+        this.pdfController = null;
+        if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
+        this.pdfObjectUrl = '';
+        this.emailHtml = '';
+        this.previewOpen = false;
+        this.previewType = null;
+        this.$nextTick(() => this.previewTrigger?.focus?.());
     },
     emailPayload() {
         const payload = new FormData(this.$refs.form);
@@ -92,7 +123,8 @@ Alpine.data('mailSettingsPreview', (config) => ({
             });
             const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
             if (!response.ok || !contentType.includes('text/html')) throw new Error('Náhled se nepodařilo vytvořit.');
-            this.emailHtml = await response.text();
+            const html = await response.text();
+            if (this.emailController === controller && this.previewOpen && this.previewType === 'email') this.emailHtml = html;
         } catch (error) {
             if (error?.name !== 'AbortError') this.emailError = 'Náhled se nepodařilo vytvořit.';
         } finally {
@@ -118,6 +150,10 @@ Alpine.data('mailSettingsPreview', (config) => ({
             const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
             if (!response.ok || !contentType.includes('application/pdf')) throw new Error('Náhled se nepodařilo vytvořit.');
             const nextUrl = URL.createObjectURL(await response.blob());
+            if (this.pdfController !== controller || !this.previewOpen || this.previewType !== 'pdf') {
+                URL.revokeObjectURL(nextUrl);
+                return;
+            }
             if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
             this.pdfObjectUrl = nextUrl;
         } catch (error) {

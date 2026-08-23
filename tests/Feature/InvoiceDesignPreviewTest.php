@@ -42,6 +42,12 @@ class InvoiceDesignPreviewTest extends TestCase
     {
         Mail::fake();
         [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        app(InvoiceEmailSettingsService::class)->save($this->settings([
+            'template_style' => 'modern',
+            'pdf_style' => 'classic',
+        ]));
+        app(ActiveBusinessContext::class)->clear();
         $before = $this->sideEffectCounts('business_1');
 
         $response = $this->actingAs($admin)
@@ -69,11 +75,17 @@ class InvoiceDesignPreviewTest extends TestCase
 
         Mail::assertNothingSent();
         $this->assertSame($before, $this->sideEffectCounts('business_1'));
+        app(ActiveBusinessContext::class)->set($business);
+        $this->assertSame('modern', app(InvoiceEmailSettingsService::class)->current()->template_style);
+        app(ActiveBusinessContext::class)->clear();
     }
 
     public function test_pdf_preview_renders_all_styles_without_accounting_side_effects(): void
     {
         [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        app(InvoiceEmailSettingsService::class)->save($this->settings(['pdf_style' => 'classic']));
+        app(ActiveBusinessContext::class)->clear();
         $before = $this->sideEffectCounts('business_1');
 
         foreach (InvoicePdfStyle::cases() as $style) {
@@ -81,10 +93,35 @@ class InvoiceDesignPreviewTest extends TestCase
                 ->withSession($this->deliveryBusinessSession($business))
                 ->post(route('invoice-email-settings.pdf-preview'), ['pdf_style' => $style->value]);
 
-            $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+            $response->assertOk()
+                ->assertHeader('Content-Type', 'application/pdf')
+                ->assertHeader('Content-Disposition', 'inline; filename="nahled-faktury.pdf"');
             $this->assertStringStartsWith('%PDF-', $response->getContent());
             $this->assertSame($before, $this->sideEffectCounts('business_1'));
         }
+
+        app(ActiveBusinessContext::class)->set($business);
+        $this->assertSame('classic', app(InvoiceEmailSettingsService::class)->current()->pdf_style);
+        app(ActiveBusinessContext::class)->clear();
+    }
+
+    public function test_settings_page_exposes_only_explicit_modal_preview_actions(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+
+        $response = $this->actingAs($admin)
+            ->withSession($this->deliveryBusinessSession($business))
+            ->get(route('invoice-email-settings.edit'));
+
+        $response->assertOk()
+            ->assertSee('Zobrazit náhled e-mailu')
+            ->assertSee('Zobrazit náhled PDF')
+            ->assertSee('<template x-if="previewOpen">', false)
+            ->assertSee('@click="openEmailPreview"', false)
+            ->assertSee('@click="openPdfPreview"', false)
+            ->assertDontSee('@input.debounce', false)
+            ->assertDontSee('@change.debounce', false)
+            ->assertDontSee('>Obnovit<', false);
     }
 
     public function test_real_invoice_data_and_nonpayer_qr_render_in_all_pdf_styles_without_rewriting_history(): void

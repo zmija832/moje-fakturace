@@ -10,7 +10,7 @@
         <p class="mt-2 text-sm text-slate-600">Šablona se použije pouze pro aktivní fakturační subjekt. SMTP From adresa zůstává řízená serverovou konfigurací.</p>
     </div>
 
-    <form x-ref="form" @input.debounce.450ms="queueEmailPreview()" @change.debounce.250ms="handleSettingsChange($event)" method="POST" action="{{ route('invoice-email-settings.update') }}" enctype="multipart/form-data" class="card max-w-4xl space-y-7">
+    <form x-ref="form" method="POST" action="{{ route('invoice-email-settings.update') }}" enctype="multipart/form-data" class="card max-w-4xl space-y-7">
         @csrf
         @method('PUT')
         <div class="grid gap-5 md:grid-cols-2">
@@ -19,7 +19,8 @@
         </div>
         <fieldset class="space-y-4 rounded-lg border border-slate-200 p-4">
             <legend class="px-2 font-semibold">Vzhled e-mailů</legend>
-            <div><label for="template_style">E-mailový vzhled *</label><select id="template_style" name="template_style" required>@foreach($styles as $style)<option value="{{ $style->value }}" @selected(old('template_style', $setting->template_style) === $style->value)>{{ $style->label() }} — {{ $style->description() }}</option>@endforeach</select>@error('template_style')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div><label for="template_style">E-mailový vzhled *</label><select id="template_style" name="template_style" required>@foreach($styles as $style)<option value="{{ $style->value }}" data-label="{{ $style->label() }}" @selected(old('template_style', $setting->template_style) === $style->value)>{{ $style->label() }} — {{ $style->description() }}</option>@endforeach</select>@error('template_style')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div><button type="button" class="button-secondary" @click="openEmailPreview">Zobrazit náhled e-mailu</button></div>
             @if($logoAvailable)<div><p class="mb-2 text-sm font-medium text-slate-700">Aktuální logo</p><div class="inline-flex rounded-lg border border-slate-200 bg-white p-3"><img src="{{ route('invoice-email-settings.logo') }}" alt="Aktuální firemní logo" class="max-h-20 max-w-56 object-contain"></div></div>@endif
             <div><label for="logo">Nahrát nové logo</label><input id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp"><p class="mt-1 text-xs text-slate-500">PNG, JPG nebo WEBP, nejvýše 2 MB a 2400 × 1200 px. Logo se vloží přímo do e-mailu a není veřejně dostupné.</p>@error('logo')<p class="field-error">{{ $message }}</p>@enderror</div>
             <input type="hidden" name="remove_logo" value="0">
@@ -27,7 +28,8 @@
         </fieldset>
         <fieldset class="space-y-4 rounded-lg border border-slate-200 p-4">
             <legend class="px-2 font-semibold">Vzhled PDF faktury</legend>
-            <div><label for="pdf_style">PDF vzhled *</label><select id="pdf_style" name="pdf_style" required>@foreach($pdfStyles as $style)<option value="{{ $style->value }}" @selected(old('pdf_style', $setting->pdf_style) === $style->value)>{{ $style->label() }} — {{ $style->description() }}</option>@endforeach</select>@error('pdf_style')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div><label for="pdf_style">PDF vzhled *</label><select id="pdf_style" name="pdf_style" required>@foreach($pdfStyles as $style)<option value="{{ $style->value }}" data-label="{{ $style->label() }}" @selected(old('pdf_style', $setting->pdf_style) === $style->value)>{{ $style->label() }} — {{ $style->description() }}</option>@endforeach</select>@error('pdf_style')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div><button type="button" class="button-secondary" @click="openPdfPreview">Zobrazit náhled PDF</button></div>
             <p class="text-xs text-slate-500">Volba se použije jen pro nově generovaná nebo výslovně přegenerovaná PDF. Existující PDF dokumenty se nemění.</p>
         </fieldset>
         <div><label for="subject_template">Předmět faktury *</label><input id="subject_template" name="subject_template" required maxlength="255" value="{{ old('subject_template', $setting->subject_template) }}">@error('subject_template')<p class="field-error">{{ $message }}</p>@enderror</div>
@@ -56,19 +58,21 @@
         <div class="flex justify-end"><button class="button-primary" type="submit">Uložit nastavení e-mailů</button></div>
     </form>
 
-    <div class="mt-8 grid gap-6 xl:grid-cols-2">
-        <section class="card">
-            <div class="flex items-center justify-between gap-4"><div><h2 class="text-lg font-bold">Náhled e-mailu</h2><p class="text-sm text-slate-500">Ukázková data, bez odeslání a bez veřejného tokenu.</p></div><button type="button" class="button-secondary" @click="refreshEmailPreview()" :disabled="emailLoading">Obnovit</button></div>
-            <p x-show="emailError" x-text="emailError" class="mt-3 rounded bg-red-50 p-3 text-sm text-red-800"></p>
-            <div x-show="emailLoading" class="mt-3 text-sm text-slate-500">Vytvářím náhled…</div>
-            <iframe x-ref="emailFrame" :srcdoc="emailHtml" title="Náhled e-mailové šablony" class="mt-4 h-[720px] w-full rounded-lg border border-slate-200 bg-white"></iframe>
-        </section>
-        <section class="card">
-            <div class="flex items-center justify-between gap-4"><div><h2 class="text-lg font-bold">Náhled PDF</h2><p class="text-sm text-slate-500">Skutečný Dompdf render bez uložení dokumentu.</p></div><button type="button" class="button-secondary" @click="refreshPdfPreview()" :disabled="pdfLoading">Obnovit</button></div>
-            <p x-show="pdfError" x-text="pdfError" class="mt-3 rounded bg-red-50 p-3 text-sm text-red-800"></p>
-            <div x-show="pdfLoading" class="mt-3 text-sm text-slate-500">Vytvářím PDF náhled…</div>
-            <iframe :src="pdfObjectUrl" title="Náhled PDF šablony" class="mt-4 h-[720px] w-full rounded-lg border border-slate-200 bg-white"></iframe>
+    <template x-if="previewOpen">
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="design-preview-title" @keydown.escape.window="closePreview" @click.self="closePreview">
+        <section class="flex h-[94vh] w-[96vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:h-[90vh] sm:w-[94vw]">
+            <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 sm:px-6">
+                <div><h2 id="design-preview-title" class="text-lg font-bold sm:text-xl" x-text="previewTitle"></h2><p class="text-xs text-slate-500 sm:text-sm">Ukázková data bez uložení nebo odeslání.</p></div>
+                <button x-ref="previewClose" type="button" class="button-secondary shrink-0" @click="closePreview">Zavřít</button>
+            </header>
+            <div class="relative min-h-0 flex-1 overflow-hidden bg-slate-100 p-2 sm:p-4">
+                <div x-show="emailLoading || pdfLoading" class="flex h-full items-center justify-center text-sm font-medium text-slate-600" role="status">Načítám náhled…</div>
+                <div x-show="emailError || pdfError" class="flex h-full items-center justify-center"><p class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" x-text="emailError || pdfError"></p></div>
+                <template x-if="previewType === 'email' && emailHtml && !emailError"><iframe :srcdoc="emailHtml" title="Náhled e-mailové šablony" class="h-full w-full rounded-lg border border-slate-200 bg-white"></iframe></template>
+                <template x-if="previewType === 'pdf' && pdfObjectUrl && !pdfError"><iframe :src="pdfObjectUrl" title="Náhled PDF šablony" class="h-full w-full rounded-lg border border-slate-200 bg-white"></iframe></template>
+            </div>
         </section>
     </div>
+    </template>
     </div>
 </x-layouts.app>
