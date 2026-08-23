@@ -47,7 +47,10 @@ class InvoiceEmailSettingsTest extends TestCase
         [$admin, $business] = $this->deliveryMembership();
         [$viewer] = $this->deliveryMembership('viewer', BusinessConnection::Business1, $business);
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
-        $this->get(route('invoice-email-settings.edit'))->assertOk()->assertSee('{invoice_number}');
+        $this->get(route('invoice-email-settings.edit'))
+            ->assertOk()
+            ->assertSee('{invoice_number}')
+            ->assertSee('Přiložit PDF jako přílohu e-mailu');
         $this->put(route('invoice-email-settings.update'), $this->settings())
             ->assertRedirect(route('invoice-email-settings.edit'))->assertSessionHas('status');
         app(ActiveBusinessContext::class)->set($business);
@@ -80,29 +83,47 @@ class InvoiceEmailSettingsTest extends TestCase
         [$invoice] = $this->createIssuedInvoice();
         $link = app(InvoicePublicLinkService::class)->create($invoice);
         $url = app(InvoicePublicLinkService::class)->url($link);
+        $pdfUrl = app(InvoicePublicLinkService::class)->activePdfUrlForInvoice($invoice);
+        $this->assertNotNull($url);
+        $this->assertNotNull($pdfUrl);
         app(InvoiceEmailSettingsService::class)->save($this->settings(['attach_pdf' => false, 'include_web_invoice' => true]));
         $rendered = app(InvoiceEmailTemplateRenderer::class)->render($invoice);
         $this->assertSame('Doklad '.$invoice->document_number.' / Příliš žluťoučký klient', $rendered['subject']);
         $this->assertStringContainsString('100 Kč', $rendered['body_text']);
         $this->assertStringContainsString($url, $rendered['body_text']);
+        $this->assertSame(1, substr_count($rendered['body_text'], $url));
         $this->assertStringContainsString('Žluťoučký dodavatel s.r.o.', $rendered['body_text']);
+        $this->assertStringContainsString('Fakturu můžete zobrazit online pomocí tlačítka níže.', $rendered['body_html']);
+        $this->assertStringContainsString('href="'.$url.'"', $rendered['body_html']);
+        $this->assertStringContainsString('Zobrazit fakturu', $rendered['body_html']);
+        $this->assertStringContainsString('tohoto odkazu', $rendered['body_html']);
+        $this->assertStringNotContainsString('>'.$url.'</a>', $rendered['body_html']);
+        $this->assertStringNotContainsString($pdfUrl, $rendered['body_html']);
+        $this->assertStringNotContainsString('Stáhnout PDF faktury', $rendered['body_html']);
         $this->assertFalse($rendered['attach_pdf']);
 
         $delivery = app(InvoiceMailer::class)->send($invoice->uuid, (string) Str::uuid(), []);
         $this->assertSame($rendered['subject'], $delivery->subject);
         $this->assertSame($rendered['body_text'], $delivery->body_text);
         $this->assertStringContainsString($url, $delivery->body_text);
-        Mail::assertSent(InvoiceIssuedMail::class, function (InvoiceIssuedMail $mail): bool {
+        Mail::assertSent(InvoiceIssuedMail::class, function (InvoiceIssuedMail $mail) use ($url, $pdfUrl): bool {
             return $mail->envelope()->from->name === 'Fakturace První subjekt'
                 && $mail->envelope()->replyTo[0]->address === 'reply@example.test'
-                && $mail->attachments() === [];
+                && $mail->attachments() === []
+                && str_contains($mail->render(), 'href="'.$url.'"')
+                && ! str_contains($mail->render(), $pdfUrl);
         });
 
-        app(InvoiceEmailSettingsService::class)->save($this->settings(['attach_pdf' => true, 'include_web_invoice' => false]));
+        app(InvoiceEmailSettingsService::class)->save($this->settings(['attach_pdf' => true, 'include_web_invoice' => true]));
         $second = app(InvoiceMailer::class)->send($invoice->uuid, (string) Str::uuid(), []);
-        $this->assertStringNotContainsString($url, $second->body_text);
+        $this->assertStringContainsString($url, $second->body_text);
+        $this->assertStringContainsString('href="'.$url.'"', $second->body_html);
+        $this->assertStringNotContainsString($pdfUrl, $second->body_html);
+        $this->assertStringNotContainsString('Stáhnout PDF faktury', $second->body_html);
         $this->assertSame(2, InvoiceEmailDelivery::query()->count());
-        Mail::assertSent(InvoiceIssuedMail::class, fn (InvoiceIssuedMail $mail): bool => count($mail->attachments()) === 1);
+        Mail::assertSent(InvoiceIssuedMail::class, fn (InvoiceIssuedMail $mail): bool => count($mail->attachments()) === 1
+            && str_contains($mail->render(), 'href="'.$url.'"')
+            && ! str_contains($mail->render(), $pdfUrl));
     }
 
     public function test_default_and_all_five_email_styles_render_from_one_design_system(): void
@@ -118,7 +139,9 @@ class InvoiceEmailSettingsTest extends TestCase
             $rendered = app(InvoiceEmailTemplateRenderer::class)->render($invoice);
             $this->assertStringContainsString('Faktura '.$invoice->document_number, $rendered['body_html']);
             $this->assertStringContainsString((string) $style->theme()['accent'], $rendered['body_html']);
-            $this->assertStringContainsString('Zobrazit fakturu', $rendered['body_text']);
+            $this->assertStringContainsString('Webfaktura:', $rendered['body_text']);
+            $this->assertStringContainsString('tohoto odkazu', $rendered['body_html']);
+            $this->assertStringNotContainsString('Stáhnout PDF faktury', $rendered['body_html']);
         }
     }
 

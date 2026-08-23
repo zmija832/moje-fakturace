@@ -18,7 +18,7 @@ final class InvoiceMailDesignRenderer
     ) {}
 
     /**
-     * @param  array{title:string,preheader?:string,intro?:string,status?:string,status_tone?:string,facts?:list<array{label:string,value:string,emphasis?:bool}>,cta_url?:?string,cta_label?:?string,pdf_url?:?string,outro?:?string,internal?:bool}  $message
+     * @param  array{title:string,preheader?:string,intro?:string,status?:string,status_tone?:string,facts?:list<array{label:string,value:string,emphasis?:bool}>,cta_url?:?string,cta_label?:?string,outro?:?string,internal?:bool}  $message
      * @return array{body_text:string,body_html:string}
      */
     public function render(array $message): array
@@ -27,11 +27,12 @@ final class InvoiceMailDesignRenderer
         $style = InvoiceMailStyle::tryFrom((string) $setting->template_style) ?? InvoiceMailStyle::Modern;
         $signature = $this->signature($setting, (string) ($message['supplier_name'] ?? ''));
         $hasLogo = $this->logoAttachment() !== null;
+        [$textMessage, $htmlMessage] = $this->messagesWithoutDuplicatedCtaUrl($message);
 
         return [
-            'body_text' => trim(view('mail.design.document-text', compact('message', 'signature'))->render()),
+            'body_text' => trim(view('mail.design.document-text', ['message' => $textMessage, 'signature' => $signature])->render()),
             'body_html' => view('mail.design.document-html', [
-                'messageData' => $message,
+                'messageData' => $htmlMessage,
                 'signature' => $signature,
                 'style' => $style,
                 'theme' => $style->theme(),
@@ -39,6 +40,43 @@ final class InvoiceMailDesignRenderer
                 'senderName' => (string) $setting->sender_name,
             ])->render(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $message
+     * @return array{0:array<string,mixed>,1:array<string,mixed>}
+     */
+    private function messagesWithoutDuplicatedCtaUrl(array $message): array
+    {
+        $url = trim((string) ($message['cta_url'] ?? ''));
+        $intro = (string) ($message['intro'] ?? '');
+        if ($url === '' || ! str_contains($intro, $url)) {
+            return [$message, $message];
+        }
+
+        $textLines = [];
+        $htmlLines = [];
+        $htmlReplacementAdded = false;
+        foreach (preg_split('/\R/u', $intro) ?: [] as $line) {
+            if (str_contains($line, $url)) {
+                if (! $htmlReplacementAdded) {
+                    $htmlLines[] = 'Fakturu můžete zobrazit online pomocí tlačítka níže.';
+                    $htmlReplacementAdded = true;
+                }
+
+                continue;
+            }
+
+            $textLines[] = $line;
+            $htmlLines[] = $line;
+        }
+
+        $textMessage = $message;
+        $textMessage['intro'] = trim(implode("\n", $textLines));
+        $htmlMessage = $message;
+        $htmlMessage['intro'] = trim(implode("\n", $htmlLines));
+
+        return [$textMessage, $htmlMessage];
     }
 
     /** @return null|array{data:string,mime:string,name:string} */

@@ -9,9 +9,8 @@
 @foreach($message['facts'] ?? [] as $fact){{ $fact['label'] }}: {{ $fact['value'] }}
 @endforeach
 @if(filled($message['cta_url'] ?? null))
-{{ $message['cta_label'] ?? 'Zobrazit fakturu' }}: {{ $message['cta_url'] }}
-@endif
-@if(filled($message['pdf_url'] ?? null))Stáhnout PDF faktury: {{ $message['pdf_url'] }}
+Webfaktura:
+{{ $message['cta_url'] }}
 @endif
 @if(filled($message['outro'] ?? null))
 {{ $message['outro'] }}

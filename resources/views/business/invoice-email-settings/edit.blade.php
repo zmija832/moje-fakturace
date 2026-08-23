@@ -39,7 +39,7 @@
             <p class="mt-2 text-slate-600">Jiné výrazy ani PHP/Blade kód se nevyhodnocují.</p>
         </div>
         <div class="space-y-3">
-            <label class="flex items-center gap-3"><input type="hidden" name="attach_pdf" value="0"><input name="attach_pdf" type="checkbox" value="1" @checked(old('attach_pdf', $setting->attach_pdf))> Připojit aktuální PDF</label>
+            <label class="flex items-center gap-3"><input type="hidden" name="attach_pdf" value="0"><input name="attach_pdf" type="checkbox" value="1" @checked(old('attach_pdf', $setting->attach_pdf))> Přiložit PDF jako přílohu e-mailu</label>
             <label class="flex items-center gap-3"><input type="hidden" name="include_web_invoice" value="0"><input name="include_web_invoice" type="checkbox" value="1" @checked(old('include_web_invoice', $setting->include_web_invoice))> Vložit aktivní Webfakturu</label>
         </div>
         <div class="flex justify-end"><button class="button-primary" type="submit">Uložit nastavení e-mailů</button></div>

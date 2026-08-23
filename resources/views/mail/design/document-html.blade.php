@@ -24,9 +24,8 @@
             @endif
             @if(filled($messageData['cta_url'] ?? null))
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 12px;"><tr><td style="border-radius:6px;background:{{ $theme['accent'] }};"><a href="{{ $messageData['cta_url'] }}" title="Zobrazit fakturu online" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;">{{ $messageData['cta_label'] ?? 'Zobrazit fakturu' }}</a></td></tr></table>
-                <p style="margin:0 0 20px;font-size:12px;line-height:18px;color:#64748b;word-break:break-all;">Pokud tlačítko nefunguje, otevřete: <a href="{{ $messageData['cta_url'] }}" style="color:{{ $theme['accent'] }};">{{ $messageData['cta_url'] }}</a></p>
+                <p style="margin:0 0 20px;font-size:11px;line-height:17px;color:#64748b;">Pokud tlačítko nefunguje, otevřete Webfakturu pomocí <a href="{{ $messageData['cta_url'] }}" style="color:{{ $theme['accent'] }};">tohoto odkazu</a>.</p>
             @endif
-            @if(filled($messageData['pdf_url'] ?? null))<p style="margin:0 0 20px;font-size:14px;"><a href="{{ $messageData['pdf_url'] }}" style="color:{{ $theme['accent'] }};font-weight:600;">Stáhnout PDF faktury</a></p>@endif
             @if(filled($messageData['outro'] ?? null))<div style="margin-top:20px;font-size:15px;line-height:24px;color:#475569;">{!! nl2br(e($messageData['outro'])) !!}</div>@endif
             @if(collect($signature)->filter()->isNotEmpty())
                 <div style="margin-top:28px;padding-top:20px;border-top:1px solid {{ $theme['border'] }};font-size:14px;line-height:21px;color:#475569;">
@@ -41,7 +40,7 @@
                 </div>
             @endif
         </td></tr>
-        <tr><td style="padding:16px {{ $theme['spacing'] }}px;background:#f8fafc;color:#64748b;font-size:11px;line-height:17px;">Tato zpráva byla vytvořena systémem {{ config('app.name') }}.</td></tr>
+        <tr><td style="padding:14px {{ $theme['spacing'] }}px;background:#f8fafc;color:#94a3b8;font-size:10px;line-height:16px;">Tato zpráva byla vytvořena systémem {{ config('app.name') }}.</td></tr>
     </table>
 </td></tr></table>
 </body></html>

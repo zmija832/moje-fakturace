@@ -62,6 +62,7 @@ class InvoiceMailCustomerContentTest extends TestCase
         $this->assertStringContainsString('Datum platby: 21. 8. 2026', $partial['body']);
         $this->assertStringContainsString('Variabilní symbol: 20260001', $partial['body']);
         $this->assertStringContainsString((string) $partial['web_invoice_url'], $partial['body']);
+        $this->assertCustomerWebInvoiceOnly($partial);
 
         $paid = $renderer->paymentNotification(
             $invoice,
@@ -75,6 +76,7 @@ class InvoiceMailCustomerContentTest extends TestCase
         $this->assertStringContainsString('Uhrazeno', $paid['body_html']);
         $this->assertStringContainsString('Přijatá platba: 60 Kč', $paid['body']);
         $this->assertStringContainsString('Celkem uhrazeno: 100 Kč', $paid['body']);
+        $this->assertCustomerWebInvoiceOnly($paid);
 
         $overpaid = $renderer->paymentNotification(
             $invoice,
@@ -88,6 +90,7 @@ class InvoiceMailCustomerContentTest extends TestCase
         $this->assertStringContainsString('Přeplaceno', $overpaid['body_html']);
         $this->assertStringContainsString('Přeplatek: 10 Kč', $overpaid['body']);
         $this->assertStringContainsString('Celkem uhrazeno: 110 Kč', $overpaid['body']);
+        $this->assertCustomerWebInvoiceOnly($overpaid);
     }
 
     public function test_reminder_uses_shared_layout_plain_text_fallback_and_public_link(): void
@@ -110,7 +113,8 @@ class InvoiceMailCustomerContentTest extends TestCase
         $this->assertStringContainsString('Zbývá uhradit: 60 Kč', $rendered['body']);
         $this->assertStringContainsString('Splatnost: 16. 8. 2026', $rendered['body']);
         $this->assertStringContainsString($rendered['web_invoice_url'], $rendered['body']);
-        $this->assertStringContainsString('Zobrazit fakturu', $rendered['body']);
+        $this->assertStringContainsString('Webfaktura:', $rendered['body']);
+        $this->assertCustomerWebInvoiceOnly($rendered);
     }
 
     public function test_admin_can_edit_safe_customer_payment_texts_for_all_payment_states(): void
@@ -160,5 +164,18 @@ class InvoiceMailCustomerContentTest extends TestCase
             remainingTotal: $remaining,
             notificationIntents: [],
         );
+    }
+
+    /** @param array{body:string,body_html:string,web_invoice_url:?string} $rendered */
+    private function assertCustomerWebInvoiceOnly(array $rendered): void
+    {
+        $url = (string) $rendered['web_invoice_url'];
+        $this->assertNotSame('', $url);
+        $this->assertStringContainsString('href="'.$url.'"', $rendered['body_html']);
+        $this->assertStringContainsString('tohoto odkazu', $rendered['body_html']);
+        $this->assertStringNotContainsString('>'.$url.'</a>', $rendered['body_html']);
+        $this->assertStringNotContainsString('Stáhnout PDF', $rendered['body_html']);
+        $this->assertStringContainsString($url, $rendered['body']);
+        $this->assertSame(1, substr_count($rendered['body'], $url));
     }
 }

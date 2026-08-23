@@ -49,7 +49,6 @@ class InvoiceEmailTemplateRenderer
             ],
             'cta_url' => $publicUrl,
             'cta_label' => 'Zobrazit fakturu',
-            'pdf_url' => $publicUrl !== null ? $this->publicLinks->activePdfUrlForInvoice($invoice) : null,
             'outro' => filled($additionalMessage) ? trim($additionalMessage) : null,
         ]);
 
