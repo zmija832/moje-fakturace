@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\InvoiceMailStyle;
+use App\Enums\InvoicePdfStyle;
 use App\Http\Requests\Concerns\NormalizesBooleanInput;
 use App\Models\Business\InvoiceEmailSetting;
 use App\Services\Business\InvoiceEmailTemplateRenderer;
@@ -26,6 +27,7 @@ class UpdateInvoiceEmailSettingRequest extends FormRequest
             'sender_name' => ['required', 'string', 'max:255'],
             'reply_to' => ['nullable', 'email', 'max:255'],
             'template_style' => ['required', Rule::enum(InvoiceMailStyle::class)],
+            'pdf_style' => ['required', Rule::enum(InvoicePdfStyle::class)],
             'logo' => ['nullable', 'file', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:max_width=2400,max_height=1200'],
             'remove_logo' => ['required', 'boolean'],
             'subject_template' => ['required', 'string', 'max:255'],
@@ -69,6 +71,7 @@ class UpdateInvoiceEmailSettingRequest extends FormRequest
     {
         $this->merge([
             'template_style' => $this->input('template_style', InvoiceMailStyle::Modern->value),
+            'pdf_style' => $this->input('pdf_style', InvoicePdfStyle::Classic->value),
             'attach_pdf' => $this->normalizedBooleanInput('attach_pdf'),
             'include_web_invoice' => $this->normalizedBooleanInput('include_web_invoice'),
             'remove_logo' => $this->normalizedBooleanInput('remove_logo'),

@@ -24,9 +24,18 @@ final class InvoiceMailDesignRenderer
     public function render(array $message): array
     {
         $setting = $this->settings->current();
+
+        return $this->renderWithSetting($message, $setting, $this->logoAttachment() !== null);
+    }
+
+    /**
+     * @param  array{title:string,preheader?:string,intro?:string,status?:string,status_tone?:string,facts?:list<array{label:string,value:string,emphasis?:bool}>,cta_url?:?string,cta_label?:?string,outro?:?string,internal?:bool}  $message
+     * @return array{body_text:string,body_html:string}
+     */
+    public function renderWithSetting(array $message, InvoiceEmailSetting $setting, bool $hasLogo): array
+    {
         $style = InvoiceMailStyle::tryFrom((string) $setting->template_style) ?? InvoiceMailStyle::Modern;
         $signature = $this->signature($setting, (string) ($message['supplier_name'] ?? ''));
-        $hasLogo = $this->logoAttachment() !== null;
         [$textMessage, $htmlMessage] = $this->messagesWithoutDuplicatedCtaUrl($message);
 
         return [

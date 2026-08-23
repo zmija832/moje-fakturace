@@ -14,8 +14,10 @@ use App\Models\Business\InvoiceDocument;
 use App\Services\Business\InvoiceDocumentViewModelFactory;
 use App\Services\Business\InvoiceMailer;
 use App\Services\Business\InvoicePdfGenerator;
+use App\Services\Business\InvoicePdfRenderer;
 use App\Services\Business\InvoiceReader;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -24,12 +26,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InvoiceDeliveryController extends Controller
 {
-    public function print(string $uuid, InvoiceReader $reader, InvoiceDocumentViewModelFactory $viewModels): View
+    public function print(string $uuid, InvoiceReader $reader, InvoiceDocumentViewModelFactory $viewModels, InvoicePdfRenderer $renderer): Response
     {
         $invoice = $reader->find($uuid);
         Gate::authorize('print', $invoice);
 
-        return view('business.invoices.print', ['document' => $viewModels->make($invoice)->toArray(), 'archival' => false]);
+        return response($renderer->renderHtml($viewModels->make($invoice)->toArray()));
     }
 
     public function download(string $uuid, InvoiceReader $reader, ?string $documentUuid = null): StreamedResponse

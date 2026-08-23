@@ -113,6 +113,7 @@ class InvoiceEmailSettingsService
             'sender_name' => $supplier,
             'reply_to' => filter_var($company?->email, FILTER_VALIDATE_EMAIL) ? $company->email : null,
             'template_style' => 'modern',
+            'pdf_style' => 'classic',
             'logo_path' => null,
             'subject_template' => 'Faktura {invoice_number} od {supplier_name}',
             'body_template' => "Dobrý den, {customer_name},\n\nzasíláme fakturu {invoice_number} na částku {amount}.\nSplatnost: {due_date}.\n{web_invoice_url}\n\nPDF faktury je přiloženo podle nastavení odesílání.",

@@ -66,7 +66,7 @@ class BusinessAuditSanitizer
             ],
             BusinessAuditableType::InvoiceEmailSettings => [
                 'sender_name', 'reply_to', 'subject_template', 'body_template', 'signature',
-                'template_style', 'logo_path', 'signature_name', 'signature_role',
+                'template_style', 'pdf_style', 'logo_path', 'signature_name', 'signature_role',
                 'signature_phone', 'signature_email', 'signature_web', 'signature_text',
                 'attach_pdf', 'include_web_invoice',
             ],
@@ -214,6 +214,7 @@ class BusinessAuditSanitizer
             'sender_name' => $setting->sender_name,
             'reply_to_configured' => filter_var($setting->reply_to, FILTER_VALIDATE_EMAIL) !== false,
             'template_style' => $setting->template_style,
+            'pdf_style' => $setting->pdf_style,
             'logo_configured' => filled($setting->logo_path),
             'subject_template' => $setting->subject_template,
             'body_template' => $setting->body_template,

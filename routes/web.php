@@ -70,6 +70,12 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->name('invoice-email-settings.edit');
         Route::put('/nastaveni/emaily', [InvoiceEmailSettingController::class, 'update'])
             ->name('invoice-email-settings.update');
+        Route::post('/nastaveni/emaily/nahled', [InvoiceEmailSettingController::class, 'previewEmail'])
+            ->middleware('throttle:60,1')->name('invoice-email-settings.preview');
+        Route::post('/nastaveni/emaily/nahled-pdf', [InvoiceEmailSettingController::class, 'previewPdf'])
+            ->middleware('throttle:30,1')->name('invoice-email-settings.pdf-preview');
+        Route::get('/nastaveni/emaily/logo', [InvoiceEmailSettingController::class, 'logo'])
+            ->middleware('throttle:60,1')->name('invoice-email-settings.logo');
         Route::get('/nastaveni/automatizace', [InvoiceAutomationSettingController::class, 'edit'])->name('automation-settings.edit');
         Route::put('/nastaveni/automatizace', [InvoiceAutomationSettingController::class, 'update'])->name('automation-settings.update');
 

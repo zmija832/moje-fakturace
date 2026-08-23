@@ -42,6 +42,92 @@ Alpine.data('aresClientForm', (config) => ({
     },
 }));
 
+Alpine.data('mailSettingsPreview', (config) => ({
+    emailHtml: '',
+    emailError: '',
+    emailLoading: false,
+    pdfObjectUrl: '',
+    pdfError: '',
+    pdfLoading: false,
+    emailTimer: null,
+    emailController: null,
+    pdfController: null,
+    init() {
+        this.$nextTick(() => {
+            this.refreshEmailPreview();
+            this.refreshPdfPreview();
+        });
+    },
+    destroy() {
+        this.emailController?.abort();
+        this.pdfController?.abort();
+        if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
+    },
+    queueEmailPreview() {
+        clearTimeout(this.emailTimer);
+        this.emailTimer = setTimeout(() => this.refreshEmailPreview(), 450);
+    },
+    handleSettingsChange(event) {
+        this.queueEmailPreview();
+        if (event?.target?.name === 'pdf_style') this.refreshPdfPreview();
+    },
+    emailPayload() {
+        const payload = new FormData(this.$refs.form);
+        payload.delete('_method');
+        payload.delete('logo');
+        return payload;
+    },
+    async refreshEmailPreview() {
+        this.emailController?.abort();
+        const controller = new AbortController();
+        this.emailController = controller;
+        this.emailLoading = true;
+        this.emailError = '';
+        try {
+            const response = await fetch(config.emailUrl, {
+                method: 'POST',
+                headers: { Accept: 'text/html', 'X-CSRF-TOKEN': config.csrf },
+                body: this.emailPayload(),
+                signal: controller.signal,
+            });
+            const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+            if (!response.ok || !contentType.includes('text/html')) throw new Error('Náhled se nepodařilo vytvořit.');
+            this.emailHtml = await response.text();
+        } catch (error) {
+            if (error?.name !== 'AbortError') this.emailError = 'Náhled se nepodařilo vytvořit.';
+        } finally {
+            if (this.emailController === controller) this.emailLoading = false;
+        }
+    },
+    async refreshPdfPreview() {
+        this.pdfController?.abort();
+        const controller = new AbortController();
+        this.pdfController = controller;
+        this.pdfLoading = true;
+        this.pdfError = '';
+        const payload = new FormData();
+        payload.set('_token', config.csrf);
+        payload.set('pdf_style', this.$refs.form.elements.pdf_style.value);
+        try {
+            const response = await fetch(config.pdfUrl, {
+                method: 'POST',
+                headers: { Accept: 'application/pdf', 'X-CSRF-TOKEN': config.csrf },
+                body: payload,
+                signal: controller.signal,
+            });
+            const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+            if (!response.ok || !contentType.includes('application/pdf')) throw new Error('Náhled se nepodařilo vytvořit.');
+            const nextUrl = URL.createObjectURL(await response.blob());
+            if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
+            this.pdfObjectUrl = nextUrl;
+        } catch (error) {
+            if (error?.name !== 'AbortError') this.pdfError = 'Náhled se nepodařilo vytvořit.';
+        } finally {
+            if (this.pdfController === controller) this.pdfLoading = false;
+        }
+    },
+}));
+
 Alpine.data('invoiceEditor', (config) => ({
     items: config.items,
     currency: config.currency,

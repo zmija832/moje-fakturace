@@ -14,8 +14,6 @@ use App\Enums\InvoiceDocumentType;
 use App\Enums\InvoiceStatus;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceDocument;
-use Dompdf\Dompdf;
-use Dompdf\Options;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -32,6 +30,7 @@ class InvoicePdfGenerator
         private readonly ActiveBusinessContext $businessContext,
         private readonly InvoiceReader $reader,
         private readonly InvoiceDocumentViewModelFactory $viewModels,
+        private readonly InvoicePdfRenderer $renderer,
         private readonly BusinessAuditSanitizer $auditSanitizer,
         private readonly BusinessAuditWriter $auditWriter,
     ) {}
@@ -67,7 +66,7 @@ class InvoicePdfGenerator
         $moved = false;
 
         try {
-            $pdf = $this->render($this->viewModels->make($invoice)->toArray());
+            $pdf = $this->renderer->renderPdf($this->viewModels->make($invoice)->toArray());
             Storage::disk(self::DISK)->put($tempPath, $pdf);
             $hash = hash('sha256', $pdf);
             $size = strlen($pdf);
@@ -145,27 +144,6 @@ class InvoicePdfGenerator
             }
             throw InvoicePdfGenerationFailed::create();
         }
-    }
-
-    private function render(array $data): string
-    {
-        if (! class_exists(Dompdf::class)) {
-            throw InvoicePdfGenerationFailed::create();
-        }
-        $options = new Options;
-        $options->set('isRemoteEnabled', false);
-        $options->set('isPhpEnabled', false);
-        $options->set('defaultFont', 'DejaVu Sans');
-        $dompdf = new Dompdf($options);
-        $dompdf->loadHtml(view('business.invoices.print', ['document' => $data, 'archival' => true])->render(), 'UTF-8');
-        $dompdf->setPaper('A4');
-        $dompdf->render();
-        $output = $dompdf->output();
-        if (! str_starts_with($output, '%PDF-') || strlen($output) === 0) {
-            throw InvoicePdfGenerationFailed::create();
-        }
-
-        return $output;
     }
 
     private function auditFailure(string $connection, Invoice $invoice, string $correlationUuid): void

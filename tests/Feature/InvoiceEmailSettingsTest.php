@@ -51,10 +51,11 @@ class InvoiceEmailSettingsTest extends TestCase
             ->assertOk()
             ->assertSee('{invoice_number}')
             ->assertSee('Přiložit PDF jako přílohu e-mailu');
-        $this->put(route('invoice-email-settings.update'), $this->settings())
+        $this->put(route('invoice-email-settings.update'), $this->settings(['pdf_style' => 'corporate']))
             ->assertRedirect(route('invoice-email-settings.edit'))->assertSessionHas('status');
         app(ActiveBusinessContext::class)->set($business);
         $this->assertSame('Fakturace První subjekt', InvoiceEmailSetting::query()->sole()->sender_name);
+        $this->assertSame('corporate', InvoiceEmailSetting::query()->sole()->pdf_style);
         $this->assertSame(1, DB::connection('business_1')->table('audit_logs')->where('event', 'invoice_email_settings.created')->count());
         app(ActiveBusinessContext::class)->clear();
 
@@ -237,6 +238,7 @@ class InvoiceEmailSettingsTest extends TestCase
         foreach (['business_1', 'business_2'] as $connection) {
             $this->assertTrue(Schema::connection($connection)->hasColumns('invoice_email_settings', [
                 'template_style', 'logo_path', 'signature_name', 'signature_role',
+                'pdf_style',
                 'signature_phone', 'signature_email', 'signature_web', 'signature_text',
             ]));
             $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_reminders', 'body_html'));
@@ -254,6 +256,7 @@ class InvoiceEmailSettingsTest extends TestCase
         return [
             'sender_name' => 'Fakturace První subjekt',
             'reply_to' => 'reply@example.test',
+            'pdf_style' => 'classic',
             'subject_template' => 'Doklad {invoice_number} / {customer_name}',
             'body_template' => "Dodavatel: {supplier_name}\nČástka: {amount}\nSplatnost: {due_date}\n{web_invoice_url}",
             'signature' => 'Podpis {supplier_name}',

@@ -3,6 +3,7 @@
 namespace App\Services\Business;
 
 use App\Models\Business\Invoice;
+use App\Models\Business\InvoiceEmailSetting;
 
 class InvoiceEmailTemplateRenderer
 {
@@ -61,6 +62,38 @@ class InvoiceEmailTemplateRenderer
             'attach_pdf' => (bool) $setting->attach_pdf,
             'public_url' => $publicUrl,
         ];
+    }
+
+    /** @return array{body_text:string,body_html:string} */
+    public function preview(InvoiceEmailSetting $setting, bool $hasLogo): array
+    {
+        $url = 'https://example.invalid/webfaktura';
+        $tokens = [
+            '{invoice_number}' => 'FA-202600123',
+            '{customer_name}' => 'Jan Novák',
+            '{supplier_name}' => trim((string) $setting->sender_name) ?: 'Ukázkový dodavatel',
+            '{amount}' => '1 250 CZK',
+            '{due_date}' => '6. 9. 2026',
+            '{web_invoice_url}' => $url,
+        ];
+
+        return $this->mailDesign->renderWithSetting([
+            'title' => $this->substitute($setting->subject_template, $tokens),
+            'supplier_name' => $tokens['{supplier_name}'],
+            'preheader' => 'Bezpečný náhled e-mailu',
+            'intro' => trim($this->substitute($setting->body_template, $tokens)),
+            'status' => 'Vystavena',
+            'facts' => [
+                ['label' => 'Faktura', 'value' => 'FA-202600123'],
+                ['label' => 'Dodavatel', 'value' => $tokens['{supplier_name}']],
+                ['label' => 'Částka', 'value' => '1 250 CZK', 'emphasis' => true],
+                ['label' => 'Datum vystavení', 'value' => '23. 8. 2026'],
+                ['label' => 'Datum splatnosti', 'value' => '6. 9. 2026'],
+                ['label' => 'Variabilní symbol', 'value' => '202600123'],
+            ],
+            'cta_url' => $url,
+            'cta_label' => 'Zobrazit fakturu',
+        ], $setting, $hasLogo);
     }
 
     /** @param array<string, string> $tokens */
