@@ -14,10 +14,11 @@ class InvoiceEmailTemplateRenderer
         private readonly InvoiceEmailSettingsService $settings,
         private readonly InvoiceDocumentViewModelFactory $viewModels,
         private readonly InvoicePublicLinkService $publicLinks,
+        private readonly InvoiceMailDesignRenderer $mailDesign,
     ) {}
 
     /** @return array{sender_name:string,reply_to:?string,subject:string,body_text:string,body_html:string,attach_pdf:bool,public_url:?string} */
-    public function render(Invoice $invoice): array
+    public function render(Invoice $invoice, string $additionalMessage = ''): array
     {
         $setting = $this->settings->current();
         $model = $this->viewModels->make($invoice)->toArray();
@@ -32,19 +33,32 @@ class InvoiceEmailTemplateRenderer
         ];
         $subject = $this->substitute($setting->subject_template, $tokens);
         $body = trim($this->substitute($setting->body_template, $tokens));
-        $signature = trim($this->substitute((string) $setting->signature, $tokens));
-        $text = trim($body.($signature === '' ? '' : "\n\n".$signature));
-        $html = nl2br(e($text));
-        if ($publicUrl !== null) {
-            $html = str_replace(e($publicUrl), '<a href="'.e($publicUrl).'">Zobrazit fakturu online</a>', $html);
-        }
+        $designed = $this->mailDesign->render([
+            'title' => 'Faktura '.$invoice->document_number,
+            'supplier_name' => (string) $model['supplier']['name'],
+            'preheader' => 'Nová faktura od '.$model['supplier']['name'],
+            'intro' => $body,
+            'status' => 'Vystavena',
+            'facts' => [
+                ['label' => 'Faktura', 'value' => (string) $invoice->document_number],
+                ['label' => 'Dodavatel', 'value' => (string) $model['supplier']['name']],
+                ['label' => 'Částka', 'value' => $model['totals']['grand_total'].' '.$model['currency_label'], 'emphasis' => true],
+                ['label' => 'Datum vystavení', 'value' => (string) $model['issued_on']],
+                ['label' => 'Datum splatnosti', 'value' => (string) $model['due_on']],
+                ['label' => 'Variabilní symbol', 'value' => (string) $model['variable_symbol']],
+            ],
+            'cta_url' => $publicUrl,
+            'cta_label' => 'Zobrazit fakturu',
+            'pdf_url' => $publicUrl !== null ? $this->publicLinks->activePdfUrlForInvoice($invoice) : null,
+            'outro' => filled($additionalMessage) ? trim($additionalMessage) : null,
+        ]);
 
         return [
             'sender_name' => trim((string) $setting->sender_name),
             'reply_to' => filter_var($setting->reply_to, FILTER_VALIDATE_EMAIL) ? $setting->reply_to : null,
             'subject' => $subject,
-            'body_text' => $text,
-            'body_html' => '<div style="font-family:Arial,sans-serif;line-height:1.5">'.$html.'</div>',
+            'body_text' => $designed['body_text'],
+            'body_html' => $designed['body_html'],
             'attach_pdf' => (bool) $setting->attach_pdf,
             'public_url' => $publicUrl,
         ];

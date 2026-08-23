@@ -4,15 +4,19 @@ namespace Tests\Feature;
 
 use App\Domain\BusinessContext\ActiveBusinessContext;
 use App\Enums\BusinessConnection;
+use App\Enums\InvoiceMailStyle;
 use App\Mail\InvoiceIssuedMail;
 use App\Models\Business\InvoiceEmailDelivery;
 use App\Models\Business\InvoiceEmailSetting;
 use App\Services\Business\InvoiceEmailSettingsService;
 use App\Services\Business\InvoiceEmailTemplateRenderer;
+use App\Services\Business\InvoiceMailDesignRenderer;
 use App\Services\Business\InvoiceMailer;
 use App\Services\Business\InvoicePublicLinkService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\Concerns\CreatesInvoiceDeliveryFixtures;
@@ -29,6 +33,7 @@ class InvoiceEmailSettingsTest extends TestCase
         parent::setUp();
         $this->refreshBusinessTestDatabases();
         Storage::fake('invoice_documents');
+        Storage::fake(InvoiceMailDesignRenderer::LOGO_DISK);
     }
 
     protected function tearDown(): void
@@ -100,6 +105,126 @@ class InvoiceEmailSettingsTest extends TestCase
         Mail::assertSent(InvoiceIssuedMail::class, fn (InvoiceIssuedMail $mail): bool => count($mail->attachments()) === 1);
     }
 
+    public function test_default_and_all_five_email_styles_render_from_one_design_system(): void
+    {
+        [, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        $service = app(InvoiceEmailSettingsService::class);
+
+        $this->assertSame(InvoiceMailStyle::Modern->value, $service->current()->template_style);
+        foreach (InvoiceMailStyle::cases() as $style) {
+            $service->save($this->settings(['template_style' => $style->value]));
+            $rendered = app(InvoiceEmailTemplateRenderer::class)->render($invoice);
+            $this->assertStringContainsString('Faktura '.$invoice->document_number, $rendered['body_html']);
+            $this->assertStringContainsString((string) $style->theme()['accent'], $rendered['body_html']);
+            $this->assertStringContainsString('Zobrazit fakturu', $rendered['body_text']);
+        }
+    }
+
+    public function test_logo_upload_is_private_tenant_scoped_and_invalid_files_are_rejected(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $logo = $this->png('logo.png');
+
+        $this->put(route('invoice-email-settings.update'), [
+            ...$this->settings(['template_style' => 'modern']),
+            'logo' => $logo,
+            'remove_logo' => '0',
+        ])->assertRedirect(route('invoice-email-settings.edit'));
+
+        app(ActiveBusinessContext::class)->set($business);
+        $setting = InvoiceEmailSetting::query()->sole();
+        $this->assertStringStartsWith($business->uuid.'/', $setting->logo_path);
+        Storage::disk(InvoiceMailDesignRenderer::LOGO_DISK)->assertExists($setting->logo_path);
+        $this->assertNotNull(app(InvoiceMailDesignRenderer::class)->logoAttachment());
+        [$invoice] = $this->createIssuedInvoice();
+        $rendered = app(InvoiceEmailTemplateRenderer::class)->render($invoice);
+        $this->assertStringContainsString('<img', $rendered['body_html']);
+        $this->assertStringContainsString('__MAIL_LOGO__', $rendered['body_html']);
+        Mail::fake();
+        app(InvoiceMailer::class)->send($invoice->uuid, (string) Str::uuid(), []);
+        Mail::assertSent(InvoiceIssuedMail::class, function (InvoiceIssuedMail $mail): bool {
+            $html = $mail->render();
+
+            return str_contains($html, '<img') && ! str_contains($html, '__MAIL_LOGO__');
+        });
+        app(ActiveBusinessContext::class)->clear();
+
+        $this->put(route('invoice-email-settings.update'), [
+            ...$this->settings(['template_style' => 'modern']),
+            'logo' => UploadedFile::fake()->createWithContent('fake.png', '<?php echo "bad";'),
+            'remove_logo' => '0',
+        ])->assertSessionHasErrors('logo');
+        $this->put(route('invoice-email-settings.update'), [
+            ...$this->settings(['template_style' => 'modern']),
+            'logo' => $this->png('huge.png', 2100),
+            'remove_logo' => '0',
+        ])->assertSessionHasErrors('logo');
+    }
+
+    public function test_structured_signature_is_escaped_and_missing_logo_never_breaks_render(): void
+    {
+        [, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$invoice] = $this->createIssuedInvoice();
+        app(InvoiceEmailSettingsService::class)->save($this->settings([
+            'template_style' => 'corporate',
+            'signature' => null,
+            'signature_name' => '<script>alert(1)</script>',
+            'signature_role' => 'Jednatel',
+            'signature_text' => "S pozdravem\nBez HTML",
+        ]));
+        InvoiceEmailSetting::query()->update(['logo_path' => $business->uuid.'/missing.png']);
+
+        $rendered = app(InvoiceEmailTemplateRenderer::class)->render($invoice);
+
+        $this->assertStringNotContainsString('<script>alert(1)</script>', $rendered['body_html']);
+        $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $rendered['body_html']);
+        $this->assertStringContainsString('Bez HTML', $rendered['body_text']);
+        $this->assertStringNotContainsString('__MAIL_LOGO__', $rendered['body_html']);
+    }
+
+    public function test_logo_style_and_signature_are_isolated_per_business(): void
+    {
+        [, $first] = $this->deliveryMembership();
+        [, $second] = $this->deliveryMembership(connection: BusinessConnection::Business2);
+        app(ActiveBusinessContext::class)->set($first);
+        app(InvoiceEmailSettingsService::class)->save(
+            $this->settings(['template_style' => 'elegant', 'signature_name' => 'První podpis']),
+            $this->png('first.png'),
+        );
+        $firstSetting = InvoiceEmailSetting::query()->sole();
+
+        app(ActiveBusinessContext::class)->set($second);
+        $secondSetting = app(InvoiceEmailSettingsService::class)->current();
+
+        $this->assertSame('elegant', $firstSetting->template_style);
+        $this->assertSame('První podpis', $firstSetting->signature_name);
+        $this->assertNotNull($firstSetting->logo_path);
+        $this->assertSame('modern', $secondSetting->template_style);
+        $this->assertNull($secondSetting->signature_name);
+        $this->assertNull($secondSetting->logo_path);
+        $this->assertStringStartsWith($first->uuid.'/', $firstSetting->logo_path);
+    }
+
+    public function test_mail_design_schema_is_present_only_in_both_business_databases(): void
+    {
+        foreach (['business_1', 'business_2'] as $connection) {
+            $this->assertTrue(Schema::connection($connection)->hasColumns('invoice_email_settings', [
+                'template_style', 'logo_path', 'signature_name', 'signature_role',
+                'signature_phone', 'signature_email', 'signature_web', 'signature_text',
+            ]));
+            $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_reminders', 'body_html'));
+            $this->assertTrue(Schema::connection($connection)->hasColumn('invoice_paid_notifications', 'body_html'));
+            $this->assertTrue(Schema::connection($connection)->hasColumns('invoice_automation_settings', [
+                'partial_subject', 'partial_body', 'overpaid_subject', 'overpaid_body',
+            ]));
+        }
+        $this->assertFalse(Schema::connection('central')->hasTable('invoice_email_settings'));
+    }
+
     /** @param array<string, mixed> $overrides @return array<string, mixed> */
     private function settings(array $overrides = []): array
     {
@@ -113,5 +238,13 @@ class InvoiceEmailSettingsTest extends TestCase
             'include_web_invoice' => true,
             ...$overrides,
         ];
+    }
+
+    private function png(string $name, int $kilobytes = 1): UploadedFile
+    {
+        $pixel = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', true);
+        $content = $pixel.str_repeat("\0", max(0, ($kilobytes * 1024) - strlen($pixel)));
+
+        return UploadedFile::fake()->createWithContent($name, $content);
     }
 }

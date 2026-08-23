@@ -22,6 +22,10 @@ class AutomationMail extends Mailable
         private readonly ?string $replyToAddress = null,
         private readonly ?InvoiceDocument $document = null,
         public readonly ?string $webInvoiceUrl = null,
+        public readonly ?string $bodyHtml = null,
+        public readonly ?string $logoData = null,
+        public readonly ?string $logoMime = null,
+        public readonly ?string $logoName = null,
     ) {}
 
     public function envelope(): Envelope
@@ -31,7 +35,7 @@ class AutomationMail extends Mailable
 
     public function content(): Content
     {
-        return new Content(html: 'mail.automation.html', text: 'mail.automation.text');
+        return new Content(html: 'mail.shared-html', text: 'mail.shared-text');
     }
 
     public function attachments(): array

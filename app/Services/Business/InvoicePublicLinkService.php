@@ -36,7 +36,19 @@ class InvoicePublicLinkService
         return $link ? $this->url($link) : null;
     }
 
+    public function activePdfUrlForInvoice(Invoice $invoice): ?string
+    {
+        $link = $this->activeForInvoice($invoice);
+
+        return $link ? $this->urlForRoute($link, 'public-invoices.pdf') : null;
+    }
+
     public function url(InvoicePublicLink $link): ?string
+    {
+        return $this->urlForRoute($link, 'public-invoices.show');
+    }
+
+    private function urlForRoute(InvoicePublicLink $link, string $route): ?string
     {
         try {
             $token = (string) $link->token_ciphertext;
@@ -54,7 +66,7 @@ class InvoicePublicLinkService
             return null;
         }
 
-        return route('public-invoices.show', ['token' => $token]);
+        return route($route, ['token' => $token]);
     }
 
     public function create(Invoice $invoice): InvoicePublicLink

@@ -38,6 +38,14 @@ return [
             'report' => true,
         ],
 
+        'mail_branding' => [
+            'driver' => 'local',
+            'root' => env('MAIL_BRANDING_ROOT') ?: storage_path('app/private/mail-branding'),
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => true,
+        ],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),

@@ -26,6 +26,7 @@ class InvoicePaidNotificationService
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly InvoicePaymentReader $payments,
         private readonly ActiveBusinessContext $businessContext,
+        private readonly InvoiceMailDesignRenderer $mailDesign,
     ) {}
 
     public function handle(InvoicePaymentEventSnapshot $event): void
@@ -39,16 +40,30 @@ class InvoicePaidNotificationService
         $setting = $this->settings->current();
         if ($setting->notify_admin_when_paid) {
             $rendered = $this->renderer->paymentNotification($invoice, $event, 'admin');
-            $this->create($invoice, $event, 'admin', null, 'internal', $rendered['subject'], $rendered['body']);
-            [$notification, $created] = $this->create($invoice, $event, 'admin_email', $this->adminRecipient(), 'prepared', $rendered['subject'], $rendered['body']);
+            $this->create($invoice, $event, 'admin', null, 'internal', $rendered['subject'], $rendered['body'], $rendered['body_html']);
+            [$notification, $created] = $this->create($invoice, $event, 'admin_email', $this->adminRecipient(), 'prepared', $rendered['subject'], $rendered['body'], $rendered['body_html']);
             if ($created) {
                 $this->send($notification);
             }
         }
         if ($setting->notify_customer_when_paid) {
-            $rendered = $event->statusAfter === 'paid'
-                ? $this->renderer->paid($invoice, $setting->paid_subject, $setting->paid_body, $event->paidOn)
-                : $this->renderer->paymentNotification($invoice, $event, 'customer');
+            $rendered = $this->renderer->paymentNotification(
+                $invoice,
+                $event,
+                'customer',
+                match ($event->statusAfter) {
+                    'partially_paid' => $setting->partial_subject,
+                    'paid' => $setting->paid_subject,
+                    'overpaid' => $setting->overpaid_subject,
+                    default => null,
+                },
+                match ($event->statusAfter) {
+                    'partially_paid' => $setting->partial_body,
+                    'paid' => $setting->paid_body,
+                    'overpaid' => $setting->overpaid_body,
+                    default => null,
+                },
+            );
             [$notification, $created] = $this->create(
                 $invoice,
                 $event,
@@ -57,6 +72,7 @@ class InvoicePaidNotificationService
                 'prepared',
                 $rendered['subject'],
                 $rendered['body'],
+                $rendered['body_html'],
             );
             if ($created) {
                 $this->send($notification);
@@ -125,11 +141,18 @@ class InvoicePaidNotificationService
 
         try {
             $email = $this->emailSettings->current();
+            $logo = $this->mailDesign->logoAttachment();
             Mail::to($claimed->recipient_email)->send(new AutomationMail(
                 $claimed->subject,
                 $claimed->body_text,
                 $email->sender_name,
                 $email->reply_to,
+                null,
+                null,
+                $claimed->body_html,
+                $logo['data'] ?? null,
+                $logo['mime'] ?? null,
+                $logo['name'] ?? null,
             ));
 
             return $this->finishClaim($claimed, $token, 'sent');
@@ -157,10 +180,11 @@ class InvoicePaidNotificationService
         string $status,
         string $subjectTemplate,
         string $bodyTemplate,
+        ?string $bodyHtml,
     ): array {
         $connection = $this->connectionResolver->resolve()->connectionName();
 
-        return DB::connection($connection)->transaction(function () use ($invoice, $event, $type, $recipient, $status, $subjectTemplate, $bodyTemplate): array {
+        return DB::connection($connection)->transaction(function () use ($invoice, $event, $type, $recipient, $status, $subjectTemplate, $bodyTemplate, $bodyHtml): array {
             $lockedInvoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $existing = InvoicePaidNotification::query()
                 ->where('triggering_payment_uuid', $event->paymentUuid)
@@ -179,6 +203,7 @@ class InvoicePaidNotificationService
                 'recipient_email' => $recipient,
                 'subject' => $subjectTemplate,
                 'body_text' => $bodyTemplate,
+                'body_html' => $bodyHtml,
                 'status' => $status,
                 'correlation_uuid' => (string) Str::uuid(),
             ]);

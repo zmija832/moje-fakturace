@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\InvoiceMailStyle;
 use App\Http\Requests\UpdateInvoiceEmailSettingRequest;
 use App\Models\Business\InvoiceEmailSetting;
 use App\Services\Business\InvoiceEmailSettingsService;
@@ -19,12 +20,14 @@ class InvoiceEmailSettingController extends Controller
         return view('business.invoice-email-settings.edit', [
             'setting' => $settings->current(),
             'placeholders' => InvoiceEmailTemplateRenderer::PLACEHOLDERS,
+            'styles' => InvoiceMailStyle::cases(),
         ]);
     }
 
     public function update(UpdateInvoiceEmailSettingRequest $request, InvoiceEmailSettingsService $settings): RedirectResponse
     {
-        $settings->save($request->validated());
+        $validated = $request->safe()->except(['logo', 'remove_logo']);
+        $settings->save($validated, $request->file('logo'), $request->boolean('remove_logo'));
 
         return redirect()->route('invoice-email-settings.edit')->with('status', 'Nastavení e-mailů bylo uloženo.');
     }

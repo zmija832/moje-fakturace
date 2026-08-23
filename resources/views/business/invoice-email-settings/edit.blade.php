@@ -5,16 +5,34 @@
         <p class="mt-2 text-sm text-slate-600">Šablona se použije pouze pro aktivní fakturační subjekt. SMTP From adresa zůstává řízená serverovou konfigurací.</p>
     </div>
 
-    <form method="POST" action="{{ route('invoice-email-settings.update') }}" class="card max-w-4xl space-y-5">
+    <form method="POST" action="{{ route('invoice-email-settings.update') }}" enctype="multipart/form-data" class="card max-w-4xl space-y-7">
         @csrf
         @method('PUT')
         <div class="grid gap-5 md:grid-cols-2">
             <div><label for="sender_name">Jméno odesílatele *</label><input id="sender_name" name="sender_name" required maxlength="255" value="{{ old('sender_name', $setting->sender_name) }}">@error('sender_name')<p class="field-error">{{ $message }}</p>@enderror</div>
             <div><label for="reply_to">Reply-To</label><input id="reply_to" name="reply_to" type="email" maxlength="255" value="{{ old('reply_to', $setting->reply_to) }}">@error('reply_to')<p class="field-error">{{ $message }}</p>@enderror</div>
         </div>
+        <fieldset class="space-y-4 rounded-lg border border-slate-200 p-4">
+            <legend class="px-2 font-semibold">Vzhled e-mailů</legend>
+            <div><label for="template_style">E-mailový vzhled *</label><select id="template_style" name="template_style" required>@foreach($styles as $style)<option value="{{ $style->value }}" @selected(old('template_style', $setting->template_style) === $style->value)>{{ $style->label() }} — {{ $style->description() }}</option>@endforeach</select>@error('template_style')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div><label for="logo">Firemní logo</label><input id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp"><p class="mt-1 text-xs text-slate-500">PNG, JPG nebo WEBP, nejvýše 2 MB a 2400 × 1200 px. Logo se vloží přímo do e-mailu a není veřejně dostupné.</p>@error('logo')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <input type="hidden" name="remove_logo" value="0">
+            @if($setting->logo_path)<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="remove_logo" value="1"> Odebrat současné logo</label>@endif
+        </fieldset>
         <div><label for="subject_template">Předmět faktury *</label><input id="subject_template" name="subject_template" required maxlength="255" value="{{ old('subject_template', $setting->subject_template) }}">@error('subject_template')<p class="field-error">{{ $message }}</p>@enderror</div>
         <div><label for="body_template">Text e-mailu *</label><textarea id="body_template" name="body_template" rows="8" required maxlength="10000">{{ old('body_template', $setting->body_template) }}</textarea>@error('body_template')<p class="field-error">{{ $message }}</p>@enderror</div>
-        <div><label for="signature">Podpis</label><textarea id="signature" name="signature" rows="4" maxlength="5000">{{ old('signature', $setting->signature) }}</textarea>@error('signature')<p class="field-error">{{ $message }}</p>@enderror</div>
+        <fieldset class="space-y-4 rounded-lg border border-slate-200 p-4">
+            <legend class="px-2 font-semibold">Strukturovaný podpis</legend>
+            @if($setting->signature && blank($setting->signature_name) && blank($setting->signature_text))<p class="rounded bg-amber-50 p-3 text-sm text-amber-900">Dokud nevyplníte strukturovaný podpis, zůstává použitý váš dosavadní text podpisu.</p>@endif
+            <div class="grid gap-4 md:grid-cols-2">
+                <div><label for="signature_name">Jméno / název</label><input id="signature_name" name="signature_name" maxlength="255" value="{{ old('signature_name', $setting->signature_name) }}">@error('signature_name')<p class="field-error">{{ $message }}</p>@enderror</div>
+                <div><label for="signature_role">Role / doplňkový řádek</label><input id="signature_role" name="signature_role" maxlength="255" value="{{ old('signature_role', $setting->signature_role) }}">@error('signature_role')<p class="field-error">{{ $message }}</p>@enderror</div>
+                <div><label for="signature_phone">Telefon</label><input id="signature_phone" name="signature_phone" maxlength="64" value="{{ old('signature_phone', $setting->signature_phone) }}">@error('signature_phone')<p class="field-error">{{ $message }}</p>@enderror</div>
+                <div><label for="signature_email">E-mail</label><input id="signature_email" name="signature_email" type="email" maxlength="255" value="{{ old('signature_email', $setting->signature_email) }}">@error('signature_email')<p class="field-error">{{ $message }}</p>@enderror</div>
+                <div class="md:col-span-2"><label for="signature_web">Web</label><input id="signature_web" name="signature_web" type="url" maxlength="500" placeholder="https://…" value="{{ old('signature_web', $setting->signature_web) }}">@error('signature_web')<p class="field-error">{{ $message }}</p>@enderror</div>
+            </div>
+            <div><label for="signature_text">Text podpisu</label><textarea id="signature_text" name="signature_text" rows="3" maxlength="2000">{{ old('signature_text', $setting->signature_text) }}</textarea><p class="mt-1 text-xs text-slate-500">Pouze prostý text. Odstavce a zalomení řádků budou zachovány.</p>@error('signature_text')<p class="field-error">{{ $message }}</p>@enderror</div>
+        </fieldset>
         <div class="rounded-lg bg-slate-50 p-4 text-sm">
             <p class="font-semibold">Bezpečné placeholdery</p>
             <p class="mt-2 flex flex-wrap gap-2">@foreach($placeholders as $placeholder)<code class="rounded bg-white px-2 py-1">{{ $placeholder }}</code>@endforeach</p>

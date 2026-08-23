@@ -34,6 +34,7 @@ class InvoiceMailer
         private readonly BusinessAuditSanitizer $auditSanitizer,
         private readonly BusinessAuditWriter $auditWriter,
         private readonly MailConfigurationInspector $mailConfiguration,
+        private readonly InvoiceMailDesignRenderer $mailDesign,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -60,7 +61,8 @@ class InvoiceMailer
         if (! Storage::disk(InvoicePdfGenerator::DISK)->exists($document->storage_path)) {
             throw InvoiceDocumentNotFound::create();
         }
-        $rendered = $this->templateRenderer->render($invoice);
+        $message = trim((string) ($input['message'] ?? ''));
+        $rendered = $this->templateRenderer->render($invoice, $message);
         $recipientEmail = trim((string) ($input['recipient_email'] ?? $invoice->issuedRevision->customerSnapshot->email));
         if ($recipientEmail === '' || filter_var($recipientEmail, FILTER_VALIDATE_EMAIL) === false) {
             throw InvoiceEmailRecipientMissing::create();
@@ -68,9 +70,8 @@ class InvoiceMailer
         $recipientName = trim((string) ($input['recipient_name'] ?? $invoice->issuedRevision->customerSnapshot->display_name));
         $subjectOverride = trim((string) ($input['subject'] ?? ''));
         $subject = $subjectOverride !== '' ? $subjectOverride : $rendered['subject'];
-        $message = trim((string) ($input['message'] ?? ''));
-        $bodyText = $rendered['body_text'].($message === '' ? '' : "\n\n".$message);
-        $bodyHtml = $rendered['body_html'].($message === '' ? '' : '<p>'.nl2br(e($message)).'</p>');
+        $bodyText = $rendered['body_text'];
+        $bodyHtml = $rendered['body_html'];
 
         [$delivery, $created] = DB::connection($connection)->transaction(function () use ($invoice, $document, $correlationUuid, $recipientEmail, $recipientName, $subject, $bodyText, $bodyHtml): array {
             $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
@@ -132,6 +133,7 @@ class InvoiceMailer
                     $rendered['sender_name'],
                     $rendered['reply_to'],
                     $rendered['attach_pdf'],
+                    ...$this->logoArguments(),
                 ));
 
             return DB::connection($connection)->transaction(function () use ($delivery, $sentMessage): InvoiceEmailDelivery {
@@ -194,5 +196,13 @@ class InvoiceMailer
         $user = auth()->user();
 
         return $user ? 'central-user:'.$user->getAuthIdentifier() : null;
+    }
+
+    /** @return array{?string,?string,?string} */
+    private function logoArguments(): array
+    {
+        $logo = $this->mailDesign->logoAttachment();
+
+        return [$logo['data'] ?? null, $logo['mime'] ?? null, $logo['name'] ?? null];
     }
 }

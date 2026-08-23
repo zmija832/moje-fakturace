@@ -66,6 +66,8 @@ class BusinessAuditSanitizer
             ],
             BusinessAuditableType::InvoiceEmailSettings => [
                 'sender_name', 'reply_to', 'subject_template', 'body_template', 'signature',
+                'template_style', 'logo_path', 'signature_name', 'signature_role',
+                'signature_phone', 'signature_email', 'signature_web', 'signature_text',
                 'attach_pdf', 'include_web_invoice',
             ],
             BusinessAuditableType::BankAccount => [
@@ -106,7 +108,7 @@ class BusinessAuditSanitizer
             BusinessAuditableType::InvoicePayment => [],
             BusinessAuditableType::InvoicePublicLink => [],
             BusinessAuditableType::RecurringInvoice => ['name', 'client_uuid', 'bank_account_uuid', 'currency', 'payment_method', 'due_days', 'interval_months', 'next_run_on', 'mode', 'auto_send', 'is_active', 'note', 'invoice_discount_type', 'invoice_discount_value'],
-            BusinessAuditableType::InvoiceAutomationSettings => ['reminders_enabled', 'reminder_mode', 'reminder_day_1', 'reminder_day_2', 'reminder_day_3', 'notify_admin_when_paid', 'notify_customer_when_paid', 'paid_subject', 'paid_body'],
+            BusinessAuditableType::InvoiceAutomationSettings => ['reminders_enabled', 'reminder_mode', 'reminder_day_1', 'reminder_day_2', 'reminder_day_3', 'notify_admin_when_paid', 'notify_customer_when_paid', 'partial_subject', 'partial_body', 'paid_subject', 'paid_body', 'overpaid_subject', 'overpaid_body'],
             BusinessAuditableType::BankAccountDefault,
             BusinessAuditableType::FioBankAccountSetting,
             BusinessAuditableType::BankTransaction,
@@ -211,9 +213,17 @@ class BusinessAuditSanitizer
         return [
             'sender_name' => $setting->sender_name,
             'reply_to_configured' => filter_var($setting->reply_to, FILTER_VALIDATE_EMAIL) !== false,
+            'template_style' => $setting->template_style,
+            'logo_configured' => filled($setting->logo_path),
             'subject_template' => $setting->subject_template,
             'body_template' => $setting->body_template,
             'signature' => $setting->signature,
+            'signature_name' => $setting->signature_name,
+            'signature_role' => $setting->signature_role,
+            'signature_phone' => $setting->signature_phone,
+            'signature_email' => $setting->signature_email,
+            'signature_web' => $setting->signature_web,
+            'signature_text' => $setting->signature_text,
             'attach_pdf' => (bool) $setting->attach_pdf,
             'include_web_invoice' => (bool) $setting->include_web_invoice,
         ];
@@ -401,7 +411,7 @@ class BusinessAuditSanitizer
 
     private function automationSettings(InvoiceAutomationSetting $setting): array
     {
-        return ['reminders_enabled' => (bool) $setting->reminders_enabled, 'reminder_mode' => $setting->reminder_mode, 'reminder_day_1' => $setting->reminder_day_1, 'reminder_day_2' => $setting->reminder_day_2, 'reminder_day_3' => $setting->reminder_day_3, 'notify_admin_when_paid' => (bool) $setting->notify_admin_when_paid, 'notify_customer_when_paid' => (bool) $setting->notify_customer_when_paid];
+        return ['reminders_enabled' => (bool) $setting->reminders_enabled, 'reminder_mode' => $setting->reminder_mode, 'reminder_day_1' => $setting->reminder_day_1, 'reminder_day_2' => $setting->reminder_day_2, 'reminder_day_3' => $setting->reminder_day_3, 'notify_admin_when_paid' => (bool) $setting->notify_admin_when_paid, 'notify_customer_when_paid' => (bool) $setting->notify_customer_when_paid, 'partial_subject' => $setting->partial_subject, 'partial_body' => $setting->partial_body, 'paid_subject' => $setting->paid_subject, 'paid_body' => $setting->paid_body, 'overpaid_subject' => $setting->overpaid_subject, 'overpaid_body' => $setting->overpaid_body];
     }
 
     private function maskEmail(string $email): string

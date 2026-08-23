@@ -4,7 +4,7 @@ namespace App\Models\Business;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 
-#[Fillable(['reminders_enabled', 'reminder_mode', 'reminder_day_1', 'reminder_day_2', 'reminder_day_3', 'reminder_subject_1', 'reminder_body_1', 'reminder_subject_2', 'reminder_body_2', 'reminder_subject_3', 'reminder_body_3', 'notify_admin_when_paid', 'notify_customer_when_paid', 'paid_subject', 'paid_body'])]
+#[Fillable(['reminders_enabled', 'reminder_mode', 'reminder_day_1', 'reminder_day_2', 'reminder_day_3', 'reminder_subject_1', 'reminder_body_1', 'reminder_subject_2', 'reminder_body_2', 'reminder_subject_3', 'reminder_body_3', 'notify_admin_when_paid', 'notify_customer_when_paid', 'partial_subject', 'partial_body', 'paid_subject', 'paid_body', 'overpaid_subject', 'overpaid_body'])]
 class InvoiceAutomationSetting extends BusinessModel
 {
     public const SINGLETON_KEY = '1';

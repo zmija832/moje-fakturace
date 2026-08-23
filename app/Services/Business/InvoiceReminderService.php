@@ -34,6 +34,7 @@ class InvoiceReminderService
         private readonly BusinessDate $businessDate,
         private readonly BusinessAuditWriter $auditWriter,
         private readonly InvoicePdfGenerator $pdfGenerator,
+        private readonly InvoiceMailDesignRenderer $mailDesign,
     ) {}
 
     /** @return array{processed:int,failed:int} */
@@ -163,6 +164,7 @@ class InvoiceReminderService
                 'recipient_email' => $rendered['recipient'],
                 'subject' => $rendered['subject'],
                 'body_text' => $rendered['body'],
+                'body_html' => $rendered['body_html'],
                 'correlation_uuid' => (string) Str::uuid(),
             ]);
             $reminder->save();
@@ -195,6 +197,7 @@ class InvoiceReminderService
 
         try {
             $email = $this->emailSettings->current();
+            $logo = $this->mailDesign->logoAttachment();
             Mail::to($claimed->recipient_email)->send(new AutomationMail(
                 $claimed->subject,
                 $claimed->body_text,
@@ -202,6 +205,10 @@ class InvoiceReminderService
                 $email->reply_to,
                 $document,
                 $webInvoiceUrl,
+                $claimed->body_html,
+                $logo['data'] ?? null,
+                $logo['mime'] ?? null,
+                $logo['name'] ?? null,
             ));
 
             return $this->finishClaim($claimed, $token, 'sent', $origin);
@@ -258,6 +265,7 @@ class InvoiceReminderService
                 'recipient_email' => $rendered['recipient'],
                 'subject' => $rendered['subject'],
                 'body_text' => $rendered['body'],
+                'body_html' => $rendered['body_html'],
             ])->save();
         }, 3);
 

@@ -2,11 +2,13 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\InvoiceMailStyle;
 use App\Http\Requests\Concerns\NormalizesBooleanInput;
 use App\Models\Business\InvoiceEmailSetting;
 use App\Services\Business\InvoiceEmailTemplateRenderer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class UpdateInvoiceEmailSettingRequest extends FormRequest
@@ -23,9 +25,18 @@ class UpdateInvoiceEmailSettingRequest extends FormRequest
         return [
             'sender_name' => ['required', 'string', 'max:255'],
             'reply_to' => ['nullable', 'email', 'max:255'],
+            'template_style' => ['required', Rule::enum(InvoiceMailStyle::class)],
+            'logo' => ['nullable', 'file', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:max_width=2400,max_height=1200'],
+            'remove_logo' => ['required', 'boolean'],
             'subject_template' => ['required', 'string', 'max:255'],
             'body_template' => ['required', 'string', 'max:10000'],
             'signature' => ['nullable', 'string', 'max:5000'],
+            'signature_name' => ['nullable', 'string', 'max:255'],
+            'signature_role' => ['nullable', 'string', 'max:255'],
+            'signature_phone' => ['nullable', 'string', 'max:64'],
+            'signature_email' => ['nullable', 'email', 'max:255'],
+            'signature_web' => ['nullable', 'url:http,https', 'max:500'],
+            'signature_text' => ['nullable', 'string', 'max:2000'],
             'attach_pdf' => ['required', 'boolean'],
             'include_web_invoice' => ['required', 'boolean'],
             'business_id' => ['prohibited'],
@@ -57,8 +68,10 @@ class UpdateInvoiceEmailSettingRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
+            'template_style' => $this->input('template_style', InvoiceMailStyle::Modern->value),
             'attach_pdf' => $this->normalizedBooleanInput('attach_pdf'),
             'include_web_invoice' => $this->normalizedBooleanInput('include_web_invoice'),
+            'remove_logo' => $this->normalizedBooleanInput('remove_logo'),
         ]);
     }
 }
