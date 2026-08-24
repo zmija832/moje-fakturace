@@ -50,7 +50,7 @@ Alpine.data('mailSettingsPreview', (config) => ({
     emailHtml: '',
     emailError: '',
     emailLoading: false,
-    pdfObjectUrl: '',
+    pdfHtml: '',
     pdfError: '',
     pdfLoading: false,
     emailController: null,
@@ -58,7 +58,6 @@ Alpine.data('mailSettingsPreview', (config) => ({
     destroy() {
         this.emailController?.abort();
         this.pdfController?.abort();
-        if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
     },
     selectedStyleLabel(field) {
         const option = this.$refs.form.elements[field]?.selectedOptions?.[0];
@@ -77,7 +76,6 @@ Alpine.data('mailSettingsPreview', (config) => ({
         this.pdfController?.abort();
         this.emailController = null;
         this.pdfController = null;
-        if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
         this.previewTrigger = document.activeElement;
         this.previewType = type;
         this.previewTitle = title;
@@ -85,7 +83,7 @@ Alpine.data('mailSettingsPreview', (config) => ({
         this.emailHtml = '';
         this.emailError = '';
         this.emailLoading = false;
-        this.pdfObjectUrl = '';
+        this.pdfHtml = '';
         this.pdfError = '';
         this.pdfLoading = false;
         this.$nextTick(() => this.$refs.previewClose?.focus());
@@ -95,8 +93,7 @@ Alpine.data('mailSettingsPreview', (config) => ({
         this.pdfController?.abort();
         this.emailController = null;
         this.pdfController = null;
-        if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
-        this.pdfObjectUrl = '';
+        this.pdfHtml = '';
         this.emailHtml = '';
         this.previewOpen = false;
         this.previewType = null;
@@ -143,19 +140,14 @@ Alpine.data('mailSettingsPreview', (config) => ({
         try {
             const response = await fetch(config.pdfUrl, {
                 method: 'POST',
-                headers: { Accept: 'application/pdf', 'X-CSRF-TOKEN': config.csrf },
+                headers: { Accept: 'text/html', 'X-CSRF-TOKEN': config.csrf },
                 body: payload,
                 signal: controller.signal,
             });
             const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-            if (!response.ok || !contentType.includes('application/pdf')) throw new Error('Náhled se nepodařilo vytvořit.');
-            const nextUrl = URL.createObjectURL(await response.blob());
-            if (this.pdfController !== controller || !this.previewOpen || this.previewType !== 'pdf') {
-                URL.revokeObjectURL(nextUrl);
-                return;
-            }
-            if (this.pdfObjectUrl) URL.revokeObjectURL(this.pdfObjectUrl);
-            this.pdfObjectUrl = nextUrl;
+            if (!response.ok || !contentType.includes('text/html')) throw new Error('Náhled se nepodařilo vytvořit.');
+            const html = await response.text();
+            if (this.pdfController === controller && this.previewOpen && this.previewType === 'pdf') this.pdfHtml = html;
         } catch (error) {
             if (error?.name !== 'AbortError') this.pdfError = 'Náhled se nepodařilo vytvořit.';
         } finally {

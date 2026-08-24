@@ -94,9 +94,20 @@ class InvoiceDesignPreviewTest extends TestCase
                 ->post(route('invoice-email-settings.pdf-preview'), ['pdf_style' => $style->value]);
 
             $response->assertOk()
-                ->assertHeader('Content-Type', 'application/pdf')
-                ->assertHeader('Content-Disposition', 'inline; filename="nahled-faktury.pdf"');
-            $this->assertStringStartsWith('%PDF-', $response->getContent());
+                ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
+                ->assertHeaderMissing('Content-Disposition')
+                ->assertSee('FA-202600123')
+                ->assertSee('Dodavatel')
+                ->assertSee('Jan Novák')
+                ->assertSee('1 250')
+                ->assertSee('CZK')
+                ->assertSee('6. 9. 2026')
+                ->assertSee('202600123')
+                ->assertSee('Grafické práce')
+                ->assertSee('Neplátce DPH')
+                ->assertSee('QR Platba')
+                ->assertSee((string) $style->theme()['accent'], false);
+            $this->assertStringNotContainsString('%PDF-', $response->getContent());
             $this->assertSame($before, $this->sideEffectCounts('business_1'));
         }
 
@@ -122,6 +133,14 @@ class InvoiceDesignPreviewTest extends TestCase
             ->assertDontSee('@input.debounce', false)
             ->assertDontSee('@change.debounce', false)
             ->assertDontSee('>Obnovit<', false);
+
+        $javascript = file_get_contents(resource_path('js/app.js'));
+        $this->assertIsString($javascript);
+        $this->assertStringNotContainsString('response.blob()', $javascript);
+        $this->assertStringNotContainsString('URL.createObjectURL', $javascript);
+        $this->assertStringNotContainsString('URL.revokeObjectURL', $javascript);
+        $this->assertStringContainsString("contentType.includes('text/html')", $javascript);
+        $this->assertStringContainsString(':srcdoc="pdfHtml"', $response->getContent());
     }
 
     public function test_real_invoice_data_and_nonpayer_qr_render_in_all_pdf_styles_without_rewriting_history(): void

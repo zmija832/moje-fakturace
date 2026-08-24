@@ -58,10 +58,10 @@ class InvoiceEmailSettingController extends Controller
     {
         $style = InvoicePdfStyle::from((string) $request->validated('pdf_style'));
 
-        return response($renderer->renderPreview($style), 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="nahled-faktury.pdf"',
+        return response($renderer->renderPreviewHtml($style), 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
             'Cache-Control' => 'no-store, private',
+            'Content-Security-Policy' => "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'",
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

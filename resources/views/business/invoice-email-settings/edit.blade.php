@@ -69,7 +69,7 @@
                 <div x-show="emailLoading || pdfLoading" class="flex h-full items-center justify-center text-sm font-medium text-slate-600" role="status">Načítám náhled…</div>
                 <div x-show="emailError || pdfError" class="flex h-full items-center justify-center"><p class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" x-text="emailError || pdfError"></p></div>
                 <template x-if="previewType === 'email' && emailHtml && !emailError"><iframe :srcdoc="emailHtml" title="Náhled e-mailové šablony" class="h-full w-full rounded-lg border border-slate-200 bg-white"></iframe></template>
-                <template x-if="previewType === 'pdf' && pdfObjectUrl && !pdfError"><iframe :src="pdfObjectUrl" title="Náhled PDF šablony" class="h-full w-full rounded-lg border border-slate-200 bg-white"></iframe></template>
+                <template x-if="previewType === 'pdf' && pdfHtml && !pdfError"><iframe :srcdoc="pdfHtml" title="Náhled PDF šablony" class="h-full w-full rounded-lg border border-slate-200 bg-slate-200"></iframe></template>
             </div>
         </section>
     </div>

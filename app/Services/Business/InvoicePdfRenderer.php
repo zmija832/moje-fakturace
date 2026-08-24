@@ -57,9 +57,9 @@ final class InvoicePdfRenderer
         return $output;
     }
 
-    public function renderPreview(InvoicePdfStyle $style): string
+    public function renderPreviewHtml(InvoicePdfStyle $style): string
     {
-        return $this->renderPdf($this->previewData->make(), $style);
+        return $this->renderHtml($this->previewData->make(), $style, true);
     }
 
     /** @param array<string, mixed> $document */

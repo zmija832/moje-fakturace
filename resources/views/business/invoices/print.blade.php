@@ -3,9 +3,10 @@
     $pdfTheme ??= $pdfStyle->theme();
     $archival ??= false;
     $logoDataUri ??= null;
+    $isDesignPreview = ($document['template_version'] ?? null) === 'invoice-preview';
 @endphp
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="cs" @class(['preview-shell' => $isDesignPreview])>
 <head>
     <meta charset="utf-8">
     <title>Faktura {{ $document['document_number'] }}</title>
@@ -25,10 +26,18 @@
         .brand-logo { display: block; margin-bottom: 8px; max-height: 48px; max-width: 190px; width: auto; }
         .payment-highlight td { background: {{ $pdfTheme['soft'] }}; }
         .preview-watermark { color: #9a3412; font-size: 9px; font-weight: bold; text-align: center; }
+        @media screen {
+            html.preview-shell { background: #e2e8f0; min-height: 100%; padding: 24px 0; }
+            body.preview-document { background: #fff; box-shadow: 0 14px 40px rgba(15, 23, 42, .18); box-sizing: border-box; margin: 0 auto; min-height: 297mm; padding: {{ $pdfTheme['page_margin'] }}mm; width: min(210mm, calc(100% - 24px)); }
+        }
+        @media screen and (max-width: 640px) {
+            html.preview-shell { padding: 8px 0; }
+            body.preview-document { min-height: 0; padding: 16px; width: calc(100% - 12px); }
+        }
         @media print { .screen-only { display: none; } }
     </style>
 </head>
-<body>
+<body @class(['preview-document' => $isDesignPreview])>
 @php($nonPayer = $document['is_non_payer'])
 @if(!$archival)<p class="notice screen-only"><strong>Tiskový náhled.</strong> Toto je HTML stránka pro tisk, nikoli uložený PDF soubor.</p>@endif
 <table class="invoice-header"><tr><td>@if($logoDataUri)<img class="brand-logo" alt="Logo" src="{{ $logoDataUri }}">@endif<h1>Faktura</h1><div class="muted">Vystavená faktura</div>@if($nonPayer)<div class="non-payer">Neplátce DPH</div>@endif</td><td class="right"><div class="document-number">{{ $document['document_number'] }}</div><div>{{ $document['currency_label'] }}</div></td></tr></table>
