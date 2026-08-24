@@ -1,7 +1,7 @@
 <x-layouts.app title="Přehled">
     <div class="mb-6">
         <p class="text-sm font-medium text-blue-700">Přehled</p>
-        <h1 class="mt-1 text-3xl font-bold">Vítejte, {{ $user->name }}</h1>
+        <h1 class="mt-1 text-3xl font-bold" data-dashboard-business-identity>{{ $activeBusiness?->display_name ?? 'Přehled' }}</h1>
     </div>
 
     @if($activeBusiness)

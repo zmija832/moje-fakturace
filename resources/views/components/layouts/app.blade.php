@@ -42,7 +42,7 @@
                         <span>{{ config('app.name') }}</span>
                     </a>
                     @auth
-                        <span class="max-w-52 truncate text-sm font-semibold uppercase tracking-wide text-slate-700 sm:max-w-72 sm:text-base" title="Přihlášený uživatel: {{ auth()->user()->name }}">{{ auth()->user()->name }}</span>
+                        <span class="hidden max-w-52 truncate text-base font-semibold uppercase tracking-wide text-slate-700 lg:inline-block lg:max-w-72" data-login-user-desktop title="Přihlášený uživatel: {{ auth()->user()->name }}">{{ auth()->user()->name }}</span>
                     @endauth
                 </div>
 
@@ -127,7 +127,13 @@
                     </div>
                     @if($navigationBusinesses->isNotEmpty())
                         <div class="mb-5 border-b border-slate-200 pb-5">
-                            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Fakturační subjekt</p>
+                            @if($navigationActiveBusiness)
+                                <div class="mb-4 flex items-center gap-3 rounded-xl border px-3 py-3" data-mobile-menu-active-business data-active-business-name="{{ $navigationActiveBusiness->display_name }}" style="background-color: {{ $businessTheme['background'] }}; border-color: {{ $businessTheme['border'] }}; color: {{ $businessTheme['text'] }}">
+                                    <span class="h-3 w-3 shrink-0 rounded-full" style="background-color: {{ $businessTheme['accent'] }}" aria-hidden="true"></span>
+                                    <span class="min-w-0"><span class="block text-[11px] font-semibold uppercase tracking-wide">Aktivní subjekt</span><span class="block truncate font-bold">{{ $navigationActiveBusiness->display_name }}</span></span>
+                                </div>
+                            @endif
+                            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Přepnout subjekt</p>
                             @foreach($navigationBusinesses as $business)
                                 @php
                                     $mobileColor = \App\Enums\BusinessThemeColor::tryFrom((string) $business->theme_color) ?? \App\Enums\BusinessThemeColor::Blue;
@@ -152,6 +158,12 @@
                             </a>
                         @endforeach
                     </nav>
+                    @auth
+                        <div class="mt-5 border-t border-slate-200 pt-4" data-login-user-mobile-menu>
+                            <span class="block text-xs font-medium text-slate-500">Přihlášen:</span>
+                            <span class="mt-1 block font-semibold text-slate-800">{{ auth()->user()->name }}</span>
+                        </div>
+                    @endauth
                     <form method="POST" action="{{ route('logout') }}" class="mt-5">
                         @csrf
                         <button type="submit" class="button-secondary w-full">Odhlásit</button>

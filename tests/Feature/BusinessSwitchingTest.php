@@ -72,6 +72,14 @@ class BusinessSwitchingTest extends TestCase
             ->assertSee('data-business-theme="pink"', false)
             ->assertSee('data-active-business-mobile data-active-business-name="Jana podnikání"', false)
             ->assertSee('data-active-business-desktop data-active-business-name="Jana podnikání"', false)
+            ->assertSee('data-mobile-menu-active-business data-active-business-name="Jana podnikání"', false)
+            ->assertSee('data-dashboard-business-identity', false)
+            ->assertSee('>Jana podnikání</h1>', false)
+            ->assertSee('data-login-user-desktop', false)
+            ->assertSee('data-login-user-mobile-menu', false)
+            ->assertSee('Přihlášen:')
+            ->assertSee('Milan Zítek')
+            ->assertDontSee('Vítejte, Milan Zítek')
             ->assertDontSee('data-active-business-name="Milan podnikání"', false);
     }
 
@@ -132,6 +140,9 @@ class BusinessSwitchingTest extends TestCase
             ->assertOk()
             ->assertSee('Milan Zítek')
             ->assertSee('Správná OSVČ')
+            ->assertSee('>Správná OSVČ</h1>', false)
+            ->assertDontSee('Vítejte, Milan Zítek')
+            ->assertSee('data-login-user-mobile-menu', false)
             ->assertSee('IČO 12345678');
     }
 
