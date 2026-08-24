@@ -49,6 +49,7 @@ class InvoicesHttpTest extends TestCase
         $draft = app(InvoiceDraftService::class)->create($this->payload($client, $account, $rate));
         $this->sequence(default: true);
         $issued = app(InvoiceIssuer::class)->issue($draft->uuid, 1, (string) Str::uuid());
+        $issuedVariableSymbol = $issued->fresh()->issuedRevision->variable_symbol;
 
         $other = $this->business(BusinessConnection::Business2);
         app(ActiveBusinessContext::class)->set($other);
@@ -59,8 +60,18 @@ class InvoicesHttpTest extends TestCase
         $this->actingAs($admin)->withSession($this->businessSession($business));
         DB::connection('business_1')->flushQueryLog();
         DB::connection('business_1')->enableQueryLog();
-        $this->get(route('invoices.index'))->assertOk()->assertSee($issued->document_number)
-            ->assertSee('Alfa odběratel')->assertDontSee('Tajný cizí klient')->assertSee('lg:hidden', false);
+        $indexResponse = $this->get(route('invoices.index'));
+        $indexResponse->assertOk()->assertSee($issued->document_number)
+            ->assertSee('Alfa odběratel')->assertDontSee('Tajný cizí klient')->assertSee('lg:hidden', false)
+            ->assertSee('VS '.$issuedVariableSymbol)
+            ->assertSee('data-filter-count="0"', false)
+            ->assertSee('x-data="{ filtersOpen: false }"', false)
+            ->assertSee('whitespace-nowrap', false)
+            ->assertSee('>Detail<', false)
+            ->assertDontSee('>PDF<', false)
+            ->assertDontSee('>Webfaktura<', false)
+            ->assertDontSee('>Duplikovat<', false)
+            ->assertDontSee('>Archivovat<', false);
         $this->assertLessThanOrEqual(10, count(DB::connection('business_1')->getQueryLog()));
         DB::connection('business_1')->disableQueryLog();
 
@@ -75,7 +86,10 @@ class InvoicesHttpTest extends TestCase
         $this->get(route('invoices.index'))->assertOk()->assertSee('page=2', false);
         $this->get(route('invoices.index', ['page' => 2]))->assertOk()->assertSee($issued->document_number);
         $this->get(route('invoices.index', ['status' => 'issued', 'currency' => 'CZK', 'search' => 'Alfa']))
-            ->assertOk()->assertSee($issued->document_number)->assertSee('Alfa odběratel');
+            ->assertOk()->assertSee($issued->document_number)->assertSee('Alfa odběratel')
+            ->assertSee('data-filter-count="3"', false)
+            ->assertSee('x-data="{ filtersOpen: true }"', false)
+            ->assertSee('(3)');
         $this->get(route('invoices.index', ['status' => 'draft']))->assertOk()->assertDontSee($issued->document_number);
         $this->get(route('invoices.index', ['sort' => 'DROP TABLE invoices']))->assertSessionHasErrors('sort');
         $this->get(route('invoices.index', ['connection' => 'business_2']))->assertSessionHasErrors('connection');

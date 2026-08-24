@@ -35,9 +35,9 @@ class InvoiceReader
     {
         $this->connectionResolver->resolve();
         $query = Invoice::query()->with([
-            'currentRevision:id,invoice_id,revision_number,grand_total',
+            'currentRevision:id,invoice_id,revision_number,variable_symbol,grand_total',
             'currentRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
-            'issuedRevision:id,invoice_id,revision_number,grand_total',
+            'issuedRevision:id,invoice_id,revision_number,variable_symbol,grand_total',
             'issuedRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
             'documents:id,uuid,invoice_id,invoice_revision_id,storage_path,storage_disk,original_filename,mime_type,generated_at',
             'publicLinks:id,invoice_id,first_viewed_at,last_viewed_at',

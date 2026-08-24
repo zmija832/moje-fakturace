@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'registration_number',
     'short_label',
     'visual_identifier',
+    'theme_color',
     'connection_name',
     'is_active',
     'sort_order',

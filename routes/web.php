@@ -83,6 +83,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->name('company-settings.edit');
         Route::put('/nastaveni/subjekt', [CompanySettingsController::class, 'update'])
             ->name('company-settings.update');
+        Route::put('/nastaveni/subjekt/vzhled', [CompanySettingsController::class, 'updateAppearance'])
+            ->name('company-settings.appearance.update');
 
         Route::get('/nastaveni/bankovni-ucty', [BankAccountController::class, 'index'])
             ->name('bank-accounts.index');

@@ -1,5 +1,25 @@
 @props(['filters', 'clients'])
-<form method="GET" action="{{ route('invoices.index') }}" class="card mb-6">
+@php
+    $activeFilterCount = collect([
+        filled($filters['search'] ?? null),
+        isset($filters['visibility']) && $filters['visibility'] !== 'active',
+        isset($filters['status']) && $filters['status'] !== 'all',
+        filled($filters['client_uuid'] ?? null),
+        isset($filters['currency']) && $filters['currency'] !== 'all',
+        isset($filters['payment_status']) && $filters['payment_status'] !== 'all',
+        filled($filters['issued_from'] ?? null),
+        filled($filters['issued_to'] ?? null),
+        filled($filters['due_from'] ?? null),
+        filled($filters['due_to'] ?? null),
+        filter_var($filters['overdue'] ?? false, FILTER_VALIDATE_BOOL),
+    ])->filter()->count();
+@endphp
+<div class="mb-6" x-data="{ filtersOpen: {{ $activeFilterCount > 0 ? 'true' : 'false' }} }" data-filter-count="{{ $activeFilterCount }}">
+    <button type="button" class="button-secondary" aria-controls="invoice-filter-panel" :aria-expanded="filtersOpen" @click="filtersOpen = ! filtersOpen">
+        <span>Filtry<span @if($activeFilterCount === 0) class="hidden" @endif> ({{ $activeFilterCount }})</span></span>
+        <span class="ml-2" aria-hidden="true" x-text="filtersOpen ? '▴' : '▾'"></span>
+    </button>
+<form x-cloak x-show="filtersOpen" id="invoice-filter-panel" method="GET" action="{{ route('invoices.index') }}" class="card mt-3">
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div class="xl:col-span-2"><label for="search">Hledat</label><input id="search" name="search" type="search" maxlength="100" value="{{ $filters['search'] ?? '' }}" placeholder="Číslo, klient, IČO, variabilní symbol nebo UUID"></div>
         <div><label for="visibility">Zobrazení</label><select id="visibility" name="visibility">@foreach(['active'=>'Aktivní','drafts'=>'Koncepty','unpaid'=>'Neuhrazené','paid'=>'Uhrazené','cancelled'=>'Stornované','archived'=>'Archivované','all'=>'Vše'] as $value=>$label)<option value="{{ $value }}" @selected(($filters['visibility'] ?? 'active') === $value)>{{ $label }}</option>@endforeach</select></div>
@@ -16,3 +36,4 @@
     </div>
     <div class="mt-5 flex flex-wrap gap-2"><button class="button-primary" type="submit">Filtrovat</button><a class="button-secondary" href="{{ route('invoices.index') }}">Zrušit filtry</a></div>
 </form>
+</div>

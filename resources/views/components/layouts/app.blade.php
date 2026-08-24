@@ -28,18 +28,21 @@
             ] : []),
             ['route' => 'settings', 'active' => 'settings', 'label' => 'Nastavení'],
         ];
+        $businessThemeColor = \App\Enums\BusinessThemeColor::tryFrom((string) $navigationActiveBusiness?->theme_color)
+            ?? \App\Enums\BusinessThemeColor::Blue;
+        $businessTheme = $businessThemeColor->theme();
     @endphp
 
-    <div class="min-h-screen" x-data="{ menuOpen: false }">
-        <header class="border-b border-slate-200 bg-white">
-            <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+    <div class="min-h-screen" data-business-theme="{{ $businessThemeColor->value }}" x-data="{ menuOpen: false }" style="background-color: {{ $businessTheme['page'] }}">
+        <header class="border-b" style="border-color: {{ $businessTheme['border'] }}; background-color: {{ $businessTheme['page'] }}">
+            <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
                 <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-3 font-bold">
                         <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-700 text-white" aria-hidden="true">F</span>
                         <span>{{ config('app.name') }}</span>
                     </a>
                     @auth
-                        <span class="max-w-52 truncate text-base font-bold uppercase tracking-wide text-slate-700 sm:max-w-72" title="{{ auth()->user()->name }}">{{ auth()->user()->name }}</span>
+                        <span class="max-w-52 truncate text-sm font-semibold uppercase tracking-wide text-slate-700 sm:max-w-72 sm:text-base" title="Přihlášený uživatel: {{ auth()->user()->name }}">{{ auth()->user()->name }}</span>
                     @endauth
                 </div>
 
@@ -47,14 +50,21 @@
                     Menu
                 </button>
 
+                @if($navigationActiveBusiness)
+                    <div class="order-3 flex w-full items-center gap-3 rounded-xl border px-3 py-2 lg:hidden" data-active-business-mobile data-active-business-name="{{ $navigationActiveBusiness->display_name }}" style="background-color: {{ $businessTheme['background'] }}; border-color: {{ $businessTheme['border'] }}; color: {{ $businessTheme['text'] }}">
+                        <span class="h-3 w-3 shrink-0 rounded-full" style="background-color: {{ $businessTheme['accent'] }}" aria-hidden="true"></span>
+                        <span class="min-w-0"><span class="block text-[11px] font-semibold uppercase tracking-wide">Aktivní subjekt</span><span class="block truncate font-bold">{{ $navigationActiveBusiness->display_name }}</span></span>
+                    </div>
+                @endif
+
                 <div class="hidden items-center gap-3 lg:flex">
                     @if ($navigationBusinesses->isNotEmpty())
                         <div x-data="{ open: false }" class="relative">
-                            <button type="button" class="button-secondary min-w-72 justify-between text-left" @click="open = ! open" @click.outside="open = false">
+                            <button type="button" class="inline-flex min-w-72 items-center justify-between rounded-lg border px-4 py-2 text-left text-sm font-semibold shadow-sm" data-active-business-desktop data-active-business-name="{{ $navigationActiveBusiness?->display_name }}" style="background-color: {{ $businessTheme['background'] }}; border-color: {{ $businessTheme['border'] }}; color: {{ $businessTheme['text'] }}" @click="open = ! open" @click.outside="open = false">
                                 <span>
                                     <span class="block text-xs font-normal text-slate-500">Fakturační subjekt</span>
                                     <span class="block">
-                                        {{ $navigationActiveBusiness?->short_label ?? 'Vyberte subjekt' }}
+                                        {{ $navigationActiveBusiness?->display_name ?? 'Vyberte subjekt' }}
                                         @if ($navigationActiveBusiness)
                                             · IČO {{ $navigationActiveBusiness->registration_number }}
                                         @endif
@@ -65,12 +75,14 @@
 
                             <div x-cloak x-show="open" class="absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
                                 @foreach ($navigationBusinesses as $business)
+                                    @php
+                                        $switchColor = \App\Enums\BusinessThemeColor::tryFrom((string) $business->theme_color) ?? \App\Enums\BusinessThemeColor::Blue;
+                                        $switchTheme = $switchColor->theme();
+                                    @endphp
                                     <form method="POST" action="{{ route('business.switch', $business->uuid) }}">
                                         @csrf
                                         <button class="flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left hover:bg-slate-50" type="submit">
-                                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100" aria-hidden="true">
-                                                {{ $business->visual_identifier === 'home-business' ? '⌂' : '▣' }}
-                                            </span>
+                                            <span class="mt-1 h-3 w-3 shrink-0 rounded-full" style="background-color: {{ $switchTheme['accent'] }}" aria-hidden="true"></span>
                                             <span>
                                                 <span class="block font-semibold">{{ $business->display_name }}</span>
                                                 <span class="block text-xs text-slate-500">IČO {{ $business->registration_number }}</span>
@@ -113,6 +125,25 @@
                         <strong>Navigace</strong>
                         <button class="button-secondary" @click="menuOpen = false">Zavřít</button>
                     </div>
+                    @if($navigationBusinesses->isNotEmpty())
+                        <div class="mb-5 border-b border-slate-200 pb-5">
+                            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Fakturační subjekt</p>
+                            @foreach($navigationBusinesses as $business)
+                                @php
+                                    $mobileColor = \App\Enums\BusinessThemeColor::tryFrom((string) $business->theme_color) ?? \App\Enums\BusinessThemeColor::Blue;
+                                    $mobileTheme = $mobileColor->theme();
+                                @endphp
+                                <form method="POST" action="{{ route('business.switch', $business->uuid) }}">
+                                    @csrf
+                                    <button type="submit" class="mb-2 flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left" style="{{ $navigationActiveBusiness?->is($business) ? 'background-color: '.$mobileTheme['background'].'; border-color: '.$mobileTheme['border'].'; color: '.$mobileTheme['text'] : 'border-color: #e2e8f0' }}">
+                                        <span class="h-3 w-3 shrink-0 rounded-full" style="background-color: {{ $mobileTheme['accent'] }}" aria-hidden="true"></span>
+                                        <span class="min-w-0 flex-1 truncate font-semibold">{{ $business->display_name }}</span>
+                                        @if($navigationActiveBusiness?->is($business))<span class="text-xs font-bold">Aktivní</span>@endif
+                                    </button>
+                                </form>
+                            @endforeach
+                        </div>
+                    @endif
                     <nav class="space-y-1">
                         @foreach ($navigationItems as $item)
                             <a href="{{ route($item['route']) }}"

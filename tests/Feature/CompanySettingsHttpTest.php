@@ -107,8 +107,38 @@ class CompanySettingsHttpTest extends TestCase
 
         $this->put(route('company-settings.update'), $this->validPayload())
             ->assertForbidden();
+        $this->put(route('company-settings.appearance.update'), ['theme_color' => 'pink'])
+            ->assertForbidden();
 
         $this->assertSame(0, DB::connection('business_1')->table('company_settings')->count());
+    }
+
+    public function test_business_theme_is_central_tenant_scoped_whitelisted_and_has_safe_default(): void
+    {
+        [$user, $businessOne] = $this->userWithBusiness('admin', BusinessConnection::Business1);
+        $businessTwo = $this->createBusiness(BusinessConnection::Business2);
+
+        $this->assertSame('blue', $businessOne->fresh()->theme_color);
+        $this->assertSame('blue', $businessTwo->fresh()->theme_color);
+
+        $this->actingAs($user)
+            ->withSession([config('business.session_key') => $businessOne->uuid])
+            ->get(route('company-settings.edit'))
+            ->assertOk()
+            ->assertSee('Barva subjektu')
+            ->assertSee('name="theme_color" value="blue"', false)
+            ->assertSee('name="theme_color" value="pink"', false);
+
+        $this->put(route('company-settings.appearance.update'), ['theme_color' => 'pink'])
+            ->assertRedirect(route('company-settings.edit'))
+            ->assertSessionHas('status', 'Barva subjektu byla uložena.');
+
+        $this->assertSame('pink', $businessOne->fresh()->theme_color);
+        $this->assertSame('blue', $businessTwo->fresh()->theme_color);
+
+        $this->put(route('company-settings.appearance.update'), ['theme_color' => 'neon-random-123'])
+            ->assertSessionHasErrors('theme_color');
+        $this->assertSame('pink', $businessOne->fresh()->theme_color);
     }
 
     public function test_user_without_business_access_receives_forbidden_response(): void

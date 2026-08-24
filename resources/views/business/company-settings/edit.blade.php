@@ -26,6 +26,35 @@
         </div>
     @endunless
 
+    @php
+        $selectedThemeColor = old('theme_color', $activeBusiness->theme_color ?: \App\Enums\BusinessThemeColor::Blue->value);
+    @endphp
+    <section class="card mb-6">
+        <div class="mb-5">
+            <h2 class="text-lg font-bold">Barva subjektu</h2>
+            <p class="mt-1 text-sm text-slate-600">Bezpečné vizuální rozlišení právě aktivního fakturačního subjektu v hlavičce aplikace.</p>
+        </div>
+        <form method="POST" action="{{ route('company-settings.appearance.update') }}">
+            @csrf
+            @method('PUT')
+            <fieldset @disabled(!$canUpdate)>
+                <legend class="sr-only">Vyberte barvu subjektu</legend>
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    @foreach($businessThemeColors as $color)
+                        @php($theme = $color->theme())
+                        <label class="flex cursor-pointer items-center gap-3 rounded-xl border p-3" style="background-color: {{ $theme['background'] }}; border-color: {{ $theme['border'] }}; color: {{ $theme['text'] }}">
+                            <input type="radio" name="theme_color" value="{{ $color->value }}" @checked($selectedThemeColor === $color->value)>
+                            <span class="h-4 w-4 shrink-0 rounded-full" style="background-color: {{ $theme['accent'] }}" aria-hidden="true"></span>
+                            <span class="font-semibold">{{ $color->label() }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            </fieldset>
+            @error('theme_color')<p class="field-error">{{ $message }}</p>@enderror
+            @if($canUpdate)<div class="mt-4 flex justify-end"><button type="submit" class="button-secondary">Uložit barvu subjektu</button></div>@endif
+        </form>
+    </section>
+
     <form
         method="POST"
         action="{{ route('company-settings.update') }}"

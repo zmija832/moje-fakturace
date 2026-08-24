@@ -47,6 +47,34 @@ class BusinessSwitchingTest extends TestCase
         ]);
     }
 
+    public function test_switch_updates_desktop_and_mobile_active_business_identity_and_theme(): void
+    {
+        $user = User::factory()->create(['name' => 'Milan Zítek']);
+        $first = $this->business('Milan podnikání', '12345678', 'business_1', 1, 'blue');
+        $second = $this->business('Jana podnikání', '87654321', 'business_2', 2, 'pink');
+        $user->businesses()->attach([
+            $first->id => ['role' => 'admin'],
+            $second->id => ['role' => 'admin'],
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([config('business.session_key') => $first->uuid])
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('data-business-theme="blue"', false)
+            ->assertSee('data-active-business-mobile data-active-business-name="Milan podnikání"', false)
+            ->assertSee('data-active-business-desktop data-active-business-name="Milan podnikání"', false);
+
+        $this->post(route('business.switch', $second->uuid))->assertRedirect();
+
+        $response = $this->get(route('dashboard'));
+        $response->assertOk()
+            ->assertSee('data-business-theme="pink"', false)
+            ->assertSee('data-active-business-mobile data-active-business-name="Jana podnikání"', false)
+            ->assertSee('data-active-business-desktop data-active-business-name="Jana podnikání"', false)
+            ->assertDontSee('data-active-business-name="Milan podnikání"', false);
+    }
+
     public function test_user_cannot_switch_to_unauthorized_business(): void
     {
         $user = User::factory()->create();
@@ -125,8 +153,9 @@ class BusinessSwitchingTest extends TestCase
         string $registrationNumber,
         string $connection,
         int $sortOrder = 1,
+        ?string $themeColor = null,
     ): Business {
-        return Business::query()->create([
+        $business = Business::query()->create([
             'uuid' => (string) Str::uuid(),
             'display_name' => $name,
             'registration_number' => $registrationNumber,
@@ -136,5 +165,11 @@ class BusinessSwitchingTest extends TestCase
             'is_active' => true,
             'sort_order' => $sortOrder,
         ]);
+
+        if ($themeColor !== null) {
+            $business->forceFill(['theme_color' => $themeColor])->save();
+        }
+
+        return $business->refresh();
     }
 }
