@@ -17,6 +17,8 @@ final class FioBankSyncService
 {
     private const CLAIM_TIMEOUT_SECONDS = 120;
 
+    private const EXISTING_UNMATCHED_REMATCH_LIMIT = 500;
+
     public function __construct(
         private readonly BusinessConnectionResolver $connectionResolver,
         private readonly FioApiClient $client,
@@ -65,9 +67,11 @@ final class FioBankSyncService
             $this->assertAccount($setting->bankAccount, $statement['account']);
 
             $stats = ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => count($statement['transactions']), 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'invalid' => $statement['invalid_count'], 'failed' => 0];
+            $fetchedTransactionIds = [];
             foreach ($statement['transactions'] as $row) {
                 try {
                     [$transaction, $created] = $this->import($setting->bankAccount, $row);
+                    $fetchedTransactionIds[] = $transaction->id;
                     if (! $created) {
                         $stats['duplicates']++;
                     } else {
@@ -88,6 +92,8 @@ final class FioBankSyncService
                     report($exception);
                 }
             }
+
+            $this->rematchExistingUnmatched($setting->bankAccount, $fetchedTransactionIds, $stats);
             $this->finishClaim($setting->id, $claim, null);
 
             return $stats;
@@ -95,6 +101,36 @@ final class FioBankSyncService
             $code = $exception instanceof FioApiException ? $exception->safeCode : 'sync_failed';
             $this->finishClaim($setting->id, $claim, $code);
             throw $exception;
+        }
+    }
+
+    /** @param list<int> $fetchedTransactionIds @param array<string, int|string> $stats */
+    private function rematchExistingUnmatched(BankAccount $account, array $fetchedTransactionIds, array &$stats): void
+    {
+        $query = BankTransaction::query()
+            ->with('bankAccount')
+            ->where('bank_account_id', $account->id)
+            ->where('source', 'fio')
+            ->where('status', 'unmatched')
+            ->orderByDesc('booked_on')
+            ->orderByDesc('id')
+            ->limit(self::EXISTING_UNMATCHED_REMATCH_LIMIT);
+
+        if ($fetchedTransactionIds !== []) {
+            $query->whereNotIn('id', $fetchedTransactionIds);
+        }
+
+        foreach ($query->get() as $transaction) {
+            try {
+                if ($this->matcher->matchAutomatically($transaction)->matched) {
+                    $stats['matched']++;
+                } else {
+                    $stats['unmatched']++;
+                }
+            } catch (Throwable $exception) {
+                $stats['failed']++;
+                report($exception);
+            }
         }
     }
 
