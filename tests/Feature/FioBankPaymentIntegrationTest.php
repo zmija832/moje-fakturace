@@ -140,6 +140,7 @@ class FioBankPaymentIntegrationTest extends TestCase
         $first = $service->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
         $transaction = BankTransaction::query()->sole();
         $this->assertSame(['new' => 1, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 1], $this->matchingStats($first));
+        $this->assertSame(['checked' => 0, 'matched' => 0], $this->rematchStats($first));
         $this->assertSame('unmatched', $transaction->status);
         $this->assertSame(BankTransactionUnmatchedReason::NoInvoiceCandidate, $transaction->unmatched_reason);
         $this->assertSame(0, InvoicePayment::query()->count());
@@ -155,7 +156,8 @@ class FioBankPaymentIntegrationTest extends TestCase
         $second = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
         $transaction = $transaction->fresh();
         $payment = InvoicePayment::query()->sole();
-        $this->assertSame(['new' => 0, 'duplicates' => 0, 'matched' => 1, 'unmatched' => 0], $this->matchingStats($second));
+        $this->assertSame(['new' => 0, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 0], $this->matchingStats($second));
+        $this->assertSame(['checked' => 1, 'matched' => 1], $this->rematchStats($second));
         $this->assertSame(1, BankTransaction::query()->count());
         $this->assertSame('matched', $transaction->status);
         $this->assertNull($transaction->unmatched_reason);
@@ -164,6 +166,7 @@ class FioBankPaymentIntegrationTest extends TestCase
 
         $third = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
         $this->assertSame(['new' => 0, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 0], $this->matchingStats($third));
+        $this->assertSame(['checked' => 0, 'matched' => 0], $this->rematchStats($third));
         $this->assertSame(1, BankTransaction::query()->count());
         $this->assertSame(1, InvoicePayment::query()->count());
         Event::assertDispatched(InvoicePaymentChanged::class, 1);
@@ -212,6 +215,64 @@ class FioBankPaymentIntegrationTest extends TestCase
         $this->assertSame(1, InvoicePayment::query()->count());
     }
 
+    public function test_historical_rematch_has_separate_stats_from_current_import(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $account] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        foreach (range(1, 5) as $index) {
+            $this->bankTransaction($account->id, 'historical-unmatched-'.$index, '25', null);
+        }
+        $setting = app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-historical-stats');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([], 'CZK', $account->iban), 200)]);
+
+        $result = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
+
+        $this->assertSame(0, $result['fetched']);
+        $this->assertSame(0, $result['new']);
+        $this->assertSame(0, $result['matched']);
+        $this->assertSame(0, $result['unmatched']);
+        $this->assertSame(5, $result['rematch_checked']);
+        $this->assertSame(0, $result['rematch_matched']);
+        $this->assertSame(5, BankTransaction::query()->where('status', 'unmatched')->count());
+        $this->assertSame(0, InvoicePayment::query()->count());
+    }
+
+    public function test_sync_command_reports_historical_rematch_separately(): void
+    {
+        [, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $account] = $this->createIssuedInvoice(false);
+        $this->bankTransaction($account->id, 'historical-command-output', '25', null);
+        app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-historical-command-output');
+        app(ActiveBusinessContext::class)->clear();
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([], 'CZK', $account->iban), 200)]);
+
+        $this->artisan('app:sync-bank-payments', ['--business' => $business->uuid])
+            ->expectsOutputToContain('fetched 0, new 0, matched 0, unmatched 0, duplicates 0, historical rematch checked 1, matched 0')
+            ->assertSuccessful();
+    }
+
+    public function test_manual_sync_status_reports_historical_rematch_separately(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [, , $account] = $this->createIssuedInvoice(false);
+        $this->actingAs($admin);
+        $this->bankTransaction($account->id, 'historical-manual-output', '25', null);
+        app(FioBankAccountSettingService::class)->save($account->uuid, true, 'token-historical-manual-output');
+        Http::fake(['fioapi.fio.cz/*' => Http::response($this->statement([], 'CZK', $account->iban), 200)]);
+
+        $this->withSession($this->deliveryBusinessSession($business))
+            ->post(route('bank-accounts.fio.sync', $account->uuid))
+            ->assertRedirect()
+            ->assertSessionHas(
+                'status',
+                'Synchronizace dokončena: nové 0, spárované 0, nespárované 0, historicky prověřené 1, z nich spárované 0.',
+            );
+    }
+
     public function test_existing_unmatched_with_multiple_candidates_stays_unmatched(): void
     {
         [$admin, $business] = $this->deliveryMembership();
@@ -234,7 +295,8 @@ class FioBankPaymentIntegrationTest extends TestCase
         $service->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
         $repeated = $service->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
 
-        $this->assertSame(['new' => 0, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 1], $this->matchingStats($repeated));
+        $this->assertSame(['new' => 0, 'duplicates' => 0, 'matched' => 0, 'unmatched' => 0], $this->matchingStats($repeated));
+        $this->assertSame(['checked' => 1, 'matched' => 0], $this->rematchStats($repeated));
         $this->assertSame('unmatched', BankTransaction::query()->sole()->status);
         $this->assertSame(BankTransactionUnmatchedReason::MultipleInvoiceCandidates, BankTransaction::query()->sole()->unmatched_reason);
         $this->assertSame(0, InvoicePayment::query()->count());
@@ -258,7 +320,8 @@ class FioBankPaymentIntegrationTest extends TestCase
 
         $result = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
 
-        $this->assertSame(1, $result['unmatched']);
+        $this->assertSame(0, $result['unmatched']);
+        $this->assertSame(['checked' => 1, 'matched' => 0], $this->rematchStats($result));
         $this->assertSame('unmatched', $transaction->fresh()->status);
         $this->assertSame(BankTransactionUnmatchedReason::MissingVariableSymbol, $transaction->fresh()->unmatched_reason);
         $this->assertSame(0, InvoicePayment::query()->count());
@@ -288,7 +351,8 @@ class FioBankPaymentIntegrationTest extends TestCase
 
         $result = app(FioBankSyncService::class)->sync($setting->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
 
-        $this->assertSame(1, $result['matched']);
+        $this->assertSame(0, $result['matched']);
+        $this->assertSame(['checked' => 1, 'matched' => 1], $this->rematchStats($result));
         $this->assertSame('matched', $matching->fresh()->status);
         $this->assertSame($invoice->id, $matching->fresh()->matched_invoice_id);
         $this->assertSame('unmatched', $outsideScope->fresh()->status);
@@ -331,8 +395,10 @@ class FioBankPaymentIntegrationTest extends TestCase
         $repeated = app(FioBankSyncService::class)->sync($setting->fresh()->load('bankAccount'), BusinessDate::normalize('2026-08-21'));
 
         $this->assertSame(2, $result['unmatched']);
+        $this->assertSame(['checked' => 0, 'matched' => 0], $this->rematchStats($result));
         $this->assertSame(2, $repeated['duplicates']);
         $this->assertSame(2, $repeated['unmatched']);
+        $this->assertSame(['checked' => 0, 'matched' => 0], $this->rematchStats($repeated));
         $this->assertSame(0, InvoicePayment::query()->count());
         $this->assertSame(2, BankTransaction::query()->where('status', 'unmatched')->count());
         $this->assertSame(BankTransactionUnmatchedReason::MissingVariableSymbol, BankTransaction::query()->where('external_transaction_id', '900002')->sole()->unmatched_reason);
@@ -554,7 +620,8 @@ class FioBankPaymentIntegrationTest extends TestCase
             BusinessDate::normalize('2026-08-21'),
         );
 
-        $this->assertSame(1, $result['unmatched']);
+        $this->assertSame(0, $result['unmatched']);
+        $this->assertSame(['checked' => 1, 'matched' => 0], $this->rematchStats($result));
         $this->assertSame(BankTransactionUnmatchedReason::NoInvoiceCandidate, $transaction->fresh()->unmatched_reason);
         $this->assertSame(0, InvoicePayment::query()->count());
     }
@@ -618,6 +685,15 @@ class FioBankPaymentIntegrationTest extends TestCase
             'duplicates' => (int) $stats['duplicates'],
             'matched' => (int) $stats['matched'],
             'unmatched' => (int) $stats['unmatched'],
+        ];
+    }
+
+    /** @param array<string, int|string> $stats @return array{checked: int, matched: int} */
+    private function rematchStats(array $stats): array
+    {
+        return [
+            'checked' => (int) $stats['rematch_checked'],
+            'matched' => (int) $stats['rematch_matched'],
         ];
     }
 

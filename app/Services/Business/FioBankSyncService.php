@@ -42,7 +42,7 @@ final class FioBankSyncService
             } catch (Throwable $exception) {
                 $failed++;
                 report($exception);
-                $accounts[] = ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => 0, 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'invalid' => 0, 'failed' => 1];
+                $accounts[] = ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => 0, 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'rematch_checked' => 0, 'rematch_matched' => 0, 'invalid' => 0, 'failed' => 1];
             }
         }
 
@@ -54,7 +54,7 @@ final class FioBankSyncService
     {
         $claim = $this->claim($setting->id);
         if ($claim === null) {
-            return ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => 0, 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'invalid' => 0, 'failed' => 0];
+            return ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => 0, 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'rematch_checked' => 0, 'rematch_matched' => 0, 'invalid' => 0, 'failed' => 0];
         }
 
         try {
@@ -66,7 +66,7 @@ final class FioBankSyncService
             );
             $this->assertAccount($setting->bankAccount, $statement['account']);
 
-            $stats = ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => count($statement['transactions']), 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'invalid' => $statement['invalid_count'], 'failed' => 0];
+            $stats = ['bank_account_uuid' => $setting->bankAccount->uuid, 'fetched' => count($statement['transactions']), 'new' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'rematch_checked' => 0, 'rematch_matched' => 0, 'invalid' => $statement['invalid_count'], 'failed' => 0];
             $fetchedTransactionIds = [];
             foreach ($statement['transactions'] as $row) {
                 try {
@@ -121,11 +121,10 @@ final class FioBankSyncService
         }
 
         foreach ($query->get() as $transaction) {
+            $stats['rematch_checked']++;
             try {
                 if ($this->matcher->matchAutomatically($transaction)->matched) {
-                    $stats['matched']++;
-                } else {
-                    $stats['unmatched']++;
+                    $stats['rematch_matched']++;
                 }
             } catch (Throwable $exception) {
                 $stats['failed']++;

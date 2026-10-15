@@ -56,6 +56,6 @@ class FioBankAccountController extends Controller
             return back()->withErrors(['fio' => 'Synchronizace Fio účtu selhala. Podrobnost je bezpečně zaznamenána v logu.']);
         }
 
-        return back()->with('status', "Synchronizace dokončena: nové {$result['new']}, spárované {$result['matched']}, nespárované {$result['unmatched']}.");
+        return back()->with('status', "Synchronizace dokončena: nové {$result['new']}, spárované {$result['matched']}, nespárované {$result['unmatched']}, historicky prověřené {$result['rematch_checked']}, z nich spárované {$result['rematch_matched']}.");
     }
 }

@@ -35,7 +35,7 @@ class SyncBankPaymentsCommand extends Command
             try {
                 $result = app(FioBankSyncService::class)->syncAll(app(BusinessDate::class)->today());
                 foreach ($result['accounts'] as $account) {
-                    $this->line("{$business->display_name} / {$account['bank_account_uuid']}: fetched {$account['fetched']}, new {$account['new']}, matched {$account['matched']}, unmatched {$account['unmatched']}, duplicates {$account['duplicates']}");
+                    $this->line("{$business->display_name} / {$account['bank_account_uuid']}: fetched {$account['fetched']}, new {$account['new']}, matched {$account['matched']}, unmatched {$account['unmatched']}, duplicates {$account['duplicates']}, historical rematch checked {$account['rematch_checked']}, matched {$account['rematch_matched']}");
                 }
                 $failed = $failed || $result['failed'] > 0;
             } catch (Throwable $exception) {
