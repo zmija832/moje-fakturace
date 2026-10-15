@@ -68,9 +68,10 @@ class InvoicesHttpTest extends TestCase
             ->assertSee('x-data="{ filtersOpen: false }"', false)
             ->assertSee('whitespace-nowrap', false)
             ->assertSee('>Detail<', false)
+            ->assertSee('>Náhled<', false)
+            ->assertSee('>Duplikovat<', false)
             ->assertDontSee('>PDF<', false)
             ->assertDontSee('>Webfaktura<', false)
-            ->assertDontSee('>Duplikovat<', false)
             ->assertDontSee('>Archivovat<', false);
         // Labels add two fixed queries (available filter options + eager-loaded invoice labels), never one per row.
         $this->assertLessThanOrEqual(12, count(DB::connection('business_1')->getQueryLog()));
@@ -575,7 +576,7 @@ class InvoicesHttpTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
-        $response = $this->post(route('invoices.duplicate', $source->uuid));
+        $response = $this->post(route('invoices.duplicate', $source->uuid), ['client_mode' => 'original']);
         $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
 
         $response->assertRedirect(route('invoices.edit', $duplicate->uuid))->assertSessionHas('status');
@@ -631,7 +632,7 @@ class InvoicesHttpTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
         $this->actingAs($admin)->withSession($this->businessSession($business));
 
-        $this->post(route('invoices.duplicate', $source->uuid))->assertSessionHas('status');
+        $this->post(route('invoices.duplicate', $source->uuid), ['client_mode' => 'original'])->assertSessionHas('status');
         $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
         $this->assertNull($duplicate->variable_symbol);
         $this->assertNull($duplicate->currentRevision->variable_symbol);

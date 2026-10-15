@@ -177,15 +177,13 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function duplicateForm(string $uuid, InvoiceReader $reader, InvoiceFormOptions $options): View
+    public function duplicateForm(string $uuid, InvoiceReader $reader): View
     {
         $source = $reader->find($uuid);
         Gate::authorize('duplicate', $source);
-        $originalClientUuid = (string) $source->issuedRevision?->customerSnapshot?->source_client_uuid;
 
         return view('business.invoices.duplicate', [
             'source' => $source,
-            'originalClient' => $options->activeClient($originalClientUuid),
             'clientTypes' => ClientType::options(),
             'countries' => CompanySettingOptions::COUNTRIES,
         ]);
@@ -197,7 +195,10 @@ class InvoiceController extends Controller
         Gate::authorize('duplicate', $source);
 
         try {
-            $draft = $duplicator->duplicate($source, $request->validated('client_uuid'));
+            $clientUuid = $request->validated('client_mode') === 'selected'
+                ? $request->validated('selected_client_uuid')
+                : null;
+            $draft = $duplicator->duplicate($source, $clientUuid);
         } catch (ValidationException) {
             return redirect()->route('invoices.show', $source->uuid)
                 ->with('error', 'Fakturu nelze bezpečně duplikovat. Ověřte dostupnost odběratele, bankovního účtu a sazeb DPH.');

@@ -64,7 +64,7 @@ class ClientServiceTest extends TestCase
         $this->assertSame('business_1', $first->getConnectionName());
 
         $this->activateBusiness(BusinessConnection::Business2);
-        $second = $this->forcedUuidClient($uuid, 'Druhý klient');
+        $second = $this->forcedUuidClient($uuid, 'Druhý klient', $first->id);
 
         $this->assertSame($first->id, $second->id);
         $this->assertSame('Druhý klient', $this->service()->find($uuid)->display_name);
@@ -272,10 +272,13 @@ class ClientServiceTest extends TestCase
         return $business;
     }
 
-    private function forcedUuidClient(string $uuid, string $displayName): Client
+    private function forcedUuidClient(string $uuid, string $displayName, ?int $id = null): Client
     {
         $client = new Client;
-        $client->forceFill(['uuid' => $uuid]);
+        $client->forceFill(array_filter([
+            'id' => $id,
+            'uuid' => $uuid,
+        ], static fn (mixed $value): bool => $value !== null));
         $client->fill($this->companyAttributes(['display_name' => $displayName]));
         $client->save();
 

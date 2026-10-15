@@ -47,6 +47,10 @@ class InvoiceStageEExperienceTest extends TestCase
         $this->client('Archivovaný odběratel', '88776655', 'archived@example.test')->forceFill(['archived_at' => now()])->save();
         $label = app(InvoiceLabelService::class)->create(['name' => 'Priorita', 'color' => 'rose', 'is_active' => true]);
         app(InvoiceLabelService::class)->attach($source->uuid, $label->uuid);
+        app(InvoicePaymentService::class)->record($source->uuid, (string) Str::uuid(), [
+            'amount' => '40', 'currency' => 'CZK', 'paid_on' => '2026-08-10', 'payment_method' => 'bank_transfer',
+        ]);
+        app(InvoicePublicLinkService::class)->create($source);
         $foreignBusiness = $this->deliveryMembership('admin', BusinessConnection::Business2)[1];
         app(ActiveBusinessContext::class)->set($foreignBusiness);
         $this->client('Cizí tajný klient', '44332211', 'foreign@example.test');
@@ -54,8 +58,15 @@ class InvoiceStageEExperienceTest extends TestCase
 
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
         $this->get(route('invoices.duplicate-form', $source->uuid))->assertOk()
-            ->assertSee('Název, jméno, IČO nebo e-mail')
-            ->assertSee('Nový klient');
+            ->assertSee('Klient nové faktury')
+            ->assertSee('Ponechat původního klienta')
+            ->assertSee('value="original"', false)
+            ->assertSee('Vybrat jiného klienta')
+            ->assertSee('Nový klient')
+            ->assertSee('Souhrn duplikované faktury')
+            ->assertSee($source->document_number)
+            ->assertSee('Bezpečná služba')
+            ->assertSee('100 Kč');
         $this->getJson(route('clients.search', ['q' => '11223344']))->assertOk()
             ->assertJsonCount(1, 'clients')->assertJsonPath('clients.0.uuid', $selected->uuid);
         $this->getJson(route('clients.search', ['q' => 'Zvolený']))->assertOk()
@@ -75,13 +86,66 @@ class InvoiceStageEExperienceTest extends TestCase
             'street' => 'Nová 1', 'city' => 'Praha', 'postal_code' => '11000', 'country_code' => 'CZ',
         ])->assertCreated()->json('client');
 
-        $this->post(route('invoices.duplicate', $source->uuid), ['client_uuid' => $created['uuid']])
+        $this->post(route('invoices.duplicate', $source->uuid), [
+            'client_mode' => 'selected',
+            'selected_client_uuid' => $created['uuid'],
+        ])
             ->assertRedirect();
         $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
         $this->assertSame($created['uuid'], $duplicate->currentRevision->customerSnapshot->source_client_uuid);
         $this->assertCount(0, $duplicate->labels);
+        $this->assertCount(0, $duplicate->payments);
+        $this->assertCount(0, $duplicate->publicLinks);
+        $this->assertNull($duplicate->document_number_allocation_id);
         $this->assertCount(1, $source->fresh()->labels);
         $this->assertFalse($inactive->is_active);
+    }
+
+    public function test_duplicate_defaults_to_authoritative_original_client_and_ignores_hidden_selection(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$source] = $this->createIssuedInvoice();
+        $originalClientUuid = $source->issuedRevision->customerSnapshot->source_client_uuid;
+        $otherClient = $this->client('Jiný odběratel', '22334455', 'jiny@example.test');
+        app(ActiveBusinessContext::class)->clear();
+
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $this->post(route('invoices.duplicate', $source->uuid), [
+            'client_mode' => 'original',
+            'selected_client_uuid' => $otherClient->uuid,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
+        $this->assertSame($originalClientUuid, $duplicate->currentRevision->customerSnapshot->source_client_uuid);
+    }
+
+    public function test_duplicate_selected_mode_requires_an_active_tenant_local_client(): void
+    {
+        [$admin, $business] = $this->deliveryMembership();
+        app(ActiveBusinessContext::class)->set($business);
+        [$source] = $this->createIssuedInvoice();
+        $inactive = $this->client('Neaktivní klient', '33445566', 'neaktivni@example.test', false);
+        $foreignBusiness = $this->deliveryMembership('admin', BusinessConnection::Business2)[1];
+        app(ActiveBusinessContext::class)->set($foreignBusiness);
+        $foreign = $this->client('Cizí klient', '44556677', 'cizi@example.test');
+        app(ActiveBusinessContext::class)->clear();
+
+        $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
+        $this->post(route('invoices.duplicate', $source->uuid), ['client_mode' => 'selected'])
+            ->assertSessionHasErrors('selected_client_uuid');
+        session()->forget('errors');
+        $this->post(route('invoices.duplicate', $source->uuid), [
+            'client_mode' => 'selected',
+            'selected_client_uuid' => $inactive->uuid,
+        ])->assertSessionHasErrors('selected_client_uuid');
+        session()->forget('errors');
+        $this->post(route('invoices.duplicate', $source->uuid), [
+            'client_mode' => 'selected',
+            'selected_client_uuid' => $foreign->uuid,
+        ])->assertSessionHasErrors('selected_client_uuid');
+
+        $this->assertSame(1, Invoice::query()->count());
     }
 
     public function test_labels_are_tenant_local_audited_filterable_and_absent_from_customer_outputs(): void
@@ -151,7 +215,21 @@ class InvoiceStageEExperienceTest extends TestCase
         $this->get(route('invoices.quick-preview', $invoice->uuid))->assertRedirect(route('login'));
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
         $index = $this->get(route('invoices.index'))->assertOk();
-        $index->assertSee('invoiceQuickPreview()', false)->assertSee('>Náhled<', false);
+        $index->assertSee('invoiceQuickPreview()', false)
+            ->assertSee('data-preview-hover-zone', false)
+            ->assertSee('desktopOpen && currentUrl', false)
+            ->assertSee('x-show="mobileOpen"', false)
+            ->assertSee('>Detail<', false)
+            ->assertSee('>Náhled<', false)
+            ->assertSee('>Duplikovat<', false)
+            ->assertDontSee('>PDF<', false)
+            ->assertDontSee('>Webfaktura<', false)
+            ->assertDontSee('>Archivovat<', false);
+        $this->assertSame(2, substr_count($index->getContent(), route('invoices.duplicate-form', $invoice->uuid)));
+        $javascript = file_get_contents(resource_path('js/app.js'));
+        $this->assertStringContainsString('setTimeout(() => this.openPreview(url, title, trigger, false), 300)', $javascript);
+        $this->assertStringContainsString('if (this.cache.has(url))', $javascript);
+        $this->assertStringContainsString('if (!this.isDesktop()) return;', $javascript);
         $this->get(route('invoices.quick-preview', $invoice->uuid))->assertOk()
             ->assertSee($invoice->document_number)
             ->assertSee($invoice->issuedRevision->variable_symbol)

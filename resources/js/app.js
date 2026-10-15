@@ -518,7 +518,9 @@ Alpine.data('invoiceEditor', (config) => ({
 }));
 
 Alpine.data('invoiceQuickPreview', () => ({
-    isOpen: false,
+    desktopOpen: false,
+    mobileOpen: false,
+    currentUrl: '',
     loading: false,
     error: '',
     html: '',
@@ -528,24 +530,34 @@ Alpine.data('invoiceQuickPreview', () => ({
     closeTimer: null,
     controller: null,
     trigger: null,
+    isDesktop() {
+        return window.matchMedia('(min-width: 1024px)').matches;
+    },
     schedulePreview(url, title, trigger) {
+        if (!this.isDesktop()) return;
         this.cancelClosePreview();
         clearTimeout(this.openTimer);
-        this.openTimer = setTimeout(() => this.openPreview(url, title, trigger), 300);
+        if (this.desktopOpen && this.currentUrl === url) return;
+        this.openTimer = setTimeout(() => this.openPreview(url, title, trigger, false), 300);
     },
     scheduleClosePreview() {
         clearTimeout(this.closeTimer);
-        this.closeTimer = setTimeout(() => this.closePreview(), 180);
+        this.closeTimer = setTimeout(() => this.closePreview(), 250);
     },
     cancelClosePreview() {
         clearTimeout(this.closeTimer);
     },
-    async openPreview(url, title, trigger) {
+    activatePreview(url, title, trigger) {
+        return this.openPreview(url, title, trigger, !this.isDesktop());
+    },
+    async openPreview(url, title, trigger, asMobile) {
         clearTimeout(this.openTimer);
         this.cancelClosePreview();
         this.trigger = trigger;
         this.title = title;
-        this.isOpen = true;
+        this.currentUrl = url;
+        this.desktopOpen = !asMobile;
+        this.mobileOpen = asMobile;
         this.error = '';
         if (this.cache.has(url)) {
             this.html = this.cache.get(url);
@@ -573,16 +585,20 @@ Alpine.data('invoiceQuickPreview', () => ({
         }
     },
     closePreview() {
+        const restoreMobileFocus = this.mobileOpen;
         clearTimeout(this.openTimer);
         clearTimeout(this.closeTimer);
         this.controller?.abort();
         this.controller = null;
-        this.isOpen = false;
-        this.$nextTick(() => this.trigger?.focus?.());
+        this.desktopOpen = false;
+        this.mobileOpen = false;
+        this.currentUrl = '';
+        if (restoreMobileFocus) this.$nextTick(() => this.trigger?.focus?.());
     },
 }));
 
 Alpine.data('duplicateClientPicker', (config) => ({
+    clientMode: config.initialMode ?? 'original',
     query: '',
     clients: config.initialClient ? [config.initialClient] : [],
     selected: config.initialClient,
@@ -601,7 +617,14 @@ Alpine.data('duplicateClientPicker', (config) => ({
         if (!client) return '';
         return [client.registration_number ? `IČO ${client.registration_number}` : '', client.email ?? ''].filter(Boolean).join(' · ');
     },
+    openPicker() {
+        this.clientMode = 'selected';
+        this.open = true;
+        this.search();
+        this.$nextTick(() => this.$refs.clientSearch?.focus());
+    },
     select(client) {
+        this.clientMode = 'selected';
         this.selected = client;
         this.query = client.display_name;
         this.open = false;
@@ -622,6 +645,7 @@ Alpine.data('duplicateClientPicker', (config) => ({
         }
     },
     openQuickClient() {
+        this.clientMode = 'selected';
         this.quickClientErrors = {};
         this.quickClientGeneralError = '';
         this.aresMessage = '';

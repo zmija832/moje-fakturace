@@ -404,7 +404,7 @@ class InvoiceDeliveryTest extends TestCase
         $this->get(route('invoices.print', $firstInvoice->uuid))->assertNotFound();
         $this->get(route('invoices.pdf.download', $firstInvoice->uuid))->assertNotFound();
         $this->get(route('invoices.email.form', $firstInvoice->uuid))->assertNotFound();
-        $this->post(route('invoices.duplicate', $firstInvoice->uuid))->assertNotFound();
+        $this->post(route('invoices.duplicate', $firstInvoice->uuid), ['client_mode' => 'original'])->assertNotFound();
         $this->assertNotSame($firstAdmin->id, $secondAdmin->id);
     }
 
