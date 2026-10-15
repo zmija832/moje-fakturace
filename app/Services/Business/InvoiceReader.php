@@ -26,7 +26,7 @@ class InvoiceReader
             $revisionRelation.'.bankAccountSnapshot', $revisionRelation.'.vatSnapshots',
             $revisionRelation.'.items.vatSnapshot', $revisionRelation.'.vatSummaries',
             'documents.revision', 'emailDeliveries.document', 'payments.originalPayment', 'payments.reversals',
-            'reminders',
+            'reminders', 'labels',
         ]);
     }
 
@@ -41,6 +41,7 @@ class InvoiceReader
             'issuedRevision.customerSnapshot:invoice_revision_id,source_client_uuid,display_name,registration_number',
             'documents:id,uuid,invoice_id,invoice_revision_id,storage_path,storage_disk,original_filename,mime_type,generated_at',
             'publicLinks:id,invoice_id,first_viewed_at,last_viewed_at',
+            'labels:id,uuid,name,color,is_active',
         ])->select('invoices.*')->selectRaw(
             "(SELECT COALESCE(SUM(CASE WHEN invoice_payments.payment_type = 'payment' THEN invoice_payments.amount ELSE -invoice_payments.amount END), 0) FROM invoice_payments WHERE invoice_payments.invoice_id = invoices.id) AS payment_paid_total",
         );
@@ -98,6 +99,11 @@ class InvoiceReader
         $clientUuid = $filters['client_uuid'] ?? null;
         if (is_string($clientUuid) && $clientUuid !== '') {
             $this->whereRevisionSnapshot($query, fn ($snapshot): mixed => $snapshot->where('source_client_uuid', $clientUuid));
+        }
+
+        $labelUuid = $filters['label_uuid'] ?? null;
+        if (is_string($labelUuid) && $labelUuid !== '') {
+            $query->whereHas('labels', fn ($labels) => $labels->where('invoice_labels.uuid', $labelUuid));
         }
 
         $search = trim((string) ($filters['search'] ?? ''));

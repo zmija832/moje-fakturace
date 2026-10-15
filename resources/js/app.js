@@ -517,6 +517,179 @@ Alpine.data('invoiceEditor', (config) => ({
     },
 }));
 
+Alpine.data('invoiceQuickPreview', () => ({
+    isOpen: false,
+    loading: false,
+    error: '',
+    html: '',
+    title: '',
+    cache: new Map(),
+    openTimer: null,
+    closeTimer: null,
+    controller: null,
+    trigger: null,
+    schedulePreview(url, title, trigger) {
+        this.cancelClosePreview();
+        clearTimeout(this.openTimer);
+        this.openTimer = setTimeout(() => this.openPreview(url, title, trigger), 300);
+    },
+    scheduleClosePreview() {
+        clearTimeout(this.closeTimer);
+        this.closeTimer = setTimeout(() => this.closePreview(), 180);
+    },
+    cancelClosePreview() {
+        clearTimeout(this.closeTimer);
+    },
+    async openPreview(url, title, trigger) {
+        clearTimeout(this.openTimer);
+        this.cancelClosePreview();
+        this.trigger = trigger;
+        this.title = title;
+        this.isOpen = true;
+        this.error = '';
+        if (this.cache.has(url)) {
+            this.html = this.cache.get(url);
+            this.loading = false;
+            return;
+        }
+
+        this.controller?.abort();
+        const controller = new AbortController();
+        this.controller = controller;
+        this.html = '';
+        this.loading = true;
+        try {
+            const response = await fetch(url, { headers: { Accept: 'text/html' }, signal: controller.signal });
+            const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+            if (!response.ok || !contentType.includes('text/html')) throw new Error('Náhled se nepodařilo načíst.');
+            const html = await response.text();
+            if (this.controller !== controller) return;
+            this.cache.set(url, html);
+            this.html = html;
+        } catch (error) {
+            if (error?.name !== 'AbortError') this.error = 'Náhled se nepodařilo načíst.';
+        } finally {
+            if (this.controller === controller) this.loading = false;
+        }
+    },
+    closePreview() {
+        clearTimeout(this.openTimer);
+        clearTimeout(this.closeTimer);
+        this.controller?.abort();
+        this.controller = null;
+        this.isOpen = false;
+        this.$nextTick(() => this.trigger?.focus?.());
+    },
+}));
+
+Alpine.data('duplicateClientPicker', (config) => ({
+    query: '',
+    clients: config.initialClient ? [config.initialClient] : [],
+    selected: config.initialClient,
+    open: false,
+    loading: false,
+    request: 0,
+    quickClientOpen: false,
+    quickClientType: 'company',
+    quickClientErrors: {},
+    quickClientGeneralError: '',
+    quickClientSubmitting: false,
+    aresLoading: false,
+    aresMessage: '',
+    aresWarning: '',
+    clientMeta(client) {
+        if (!client) return '';
+        return [client.registration_number ? `IČO ${client.registration_number}` : '', client.email ?? ''].filter(Boolean).join(' · ');
+    },
+    select(client) {
+        this.selected = client;
+        this.query = client.display_name;
+        this.open = false;
+    },
+    async search() {
+        const request = ++this.request;
+        this.loading = true;
+        const url = new URL(config.searchUrl, window.location.origin);
+        if (this.query.trim()) url.searchParams.set('q', this.query.trim());
+        try {
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            const data = await response.json().catch(() => ({}));
+            if (request === this.request) this.clients = response.ok && Array.isArray(data.clients) ? data.clients : [];
+        } catch {
+            if (request === this.request) this.clients = [];
+        } finally {
+            if (request === this.request) this.loading = false;
+        }
+    },
+    openQuickClient() {
+        this.quickClientErrors = {};
+        this.quickClientGeneralError = '';
+        this.aresMessage = '';
+        this.aresWarning = '';
+        this.quickClientType = 'company';
+        this.quickClientOpen = true;
+        this.$nextTick(() => this.$refs.quickClientFirst?.focus());
+    },
+    closeQuickClient() {
+        if (!this.quickClientSubmitting && !this.aresLoading) this.quickClientOpen = false;
+    },
+    quickClientFieldError(field) {
+        return this.quickClientErrors[field]?.[0] ?? '';
+    },
+    async loadQuickClientFromAres() {
+        if (this.aresLoading || this.quickClientSubmitting || !config.aresLookupUrl) return;
+        const registrationInput = this.$refs.quickClientForm.elements.namedItem('registration_number');
+        this.aresLoading = true;
+        this.aresMessage = '';
+        this.aresWarning = '';
+        this.quickClientGeneralError = '';
+        try {
+            const data = await lookupClientInAres(config.aresLookupUrl, config.csrf, String(registrationInput?.value ?? '').replace(/\s+/g, ''));
+            registrationInput.value = data.ico;
+            this.quickClientType = 'company';
+            for (const field of ['company_name', 'registration_number', 'tax_id', 'street', 'city', 'postal_code', 'country_code']) {
+                const input = this.$refs.quickClientForm.elements.namedItem(field);
+                if (input && typeof data.subject[field] === 'string' && data.subject[field] !== '') input.value = data.subject[field];
+            }
+            this.aresMessage = 'Údaje byly načteny z ARES. Před uložením je můžete upravit.';
+            this.aresWarning = Array.isArray(data.warnings) ? data.warnings.join(' ') : '';
+        } catch (error) {
+            this.quickClientGeneralError = error instanceof Error ? error.message : 'ARES nyní není dostupný.';
+        } finally {
+            this.aresLoading = false;
+        }
+    },
+    async createQuickClient() {
+        if (this.quickClientSubmitting || this.aresLoading || !config.clientStoreUrl) return;
+        this.quickClientSubmitting = true;
+        this.quickClientErrors = {};
+        this.quickClientGeneralError = '';
+        try {
+            const response = await fetch(config.clientStoreUrl, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': config.csrf },
+                body: new FormData(this.$refs.quickClientForm),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 422) {
+                this.quickClientErrors = data.errors ?? {};
+                this.quickClientGeneralError = 'Opravte označená pole.';
+                return;
+            }
+            if (!response.ok || !data.client?.uuid) throw new Error('Klienta se nyní nepodařilo vytvořit.');
+            const client = { ...data.client, email: this.$refs.quickClientForm.elements.namedItem('email')?.value ?? '' };
+            this.clients = [client, ...this.clients.filter((item) => item.uuid !== client.uuid)];
+            this.select(client);
+            this.$refs.quickClientForm.reset();
+            this.quickClientOpen = false;
+        } catch (error) {
+            this.quickClientGeneralError = error instanceof Error ? error.message : 'Klienta se nyní nepodařilo vytvořit.';
+        } finally {
+            this.quickClientSubmitting = false;
+        }
+    },
+}));
+
 window.Alpine = Alpine;
 
 Alpine.start();

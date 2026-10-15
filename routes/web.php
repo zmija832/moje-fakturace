@@ -19,6 +19,7 @@ use App\Http\Controllers\InvoiceCatalogController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceDeliveryController;
 use App\Http\Controllers\InvoiceEmailSettingController;
+use App\Http\Controllers\InvoiceLabelController;
 use App\Http\Controllers\InvoiceLifecycleController;
 use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\InvoicePublicLinkController;
@@ -78,6 +79,9 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->middleware('throttle:60,1')->name('invoice-email-settings.logo');
         Route::get('/nastaveni/automatizace', [InvoiceAutomationSettingController::class, 'edit'])->name('automation-settings.edit');
         Route::put('/nastaveni/automatizace', [InvoiceAutomationSettingController::class, 'update'])->name('automation-settings.update');
+        Route::get('/nastaveni/stitky-faktur', [InvoiceLabelController::class, 'index'])->name('invoice-labels.index');
+        Route::post('/nastaveni/stitky-faktur', [InvoiceLabelController::class, 'store'])->name('invoice-labels.store');
+        Route::put('/nastaveni/stitky-faktur/{uuid}', [InvoiceLabelController::class, 'update'])->whereUuid('uuid')->name('invoice-labels.update');
 
         Route::get('/nastaveni/subjekt', [CompanySettingsController::class, 'edit'])
             ->name('company-settings.edit');
@@ -206,8 +210,16 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.update');
         Route::post('/faktury/{uuid}/vystavit', [InvoiceController::class, 'issue'])
             ->whereUuid('uuid')->name('invoices.issue');
+        Route::get('/faktury/{uuid}/duplikovat', [InvoiceController::class, 'duplicateForm'])
+            ->whereUuid('uuid')->name('invoices.duplicate-form');
         Route::post('/faktury/{uuid}/duplikovat', [InvoiceController::class, 'duplicate'])
             ->whereUuid('uuid')->name('invoices.duplicate');
+        Route::get('/faktury/{uuid}/rychly-nahled', [InvoiceController::class, 'quickPreview'])
+            ->middleware('throttle:120,1')->whereUuid('uuid')->name('invoices.quick-preview');
+        Route::post('/faktury/{uuid}/stitky', [InvoiceLabelController::class, 'attach'])
+            ->whereUuid('uuid')->name('invoices.labels.attach');
+        Route::delete('/faktury/{uuid}/stitky/{labelUuid}', [InvoiceLabelController::class, 'detach'])
+            ->whereUuid(['uuid', 'labelUuid'])->name('invoices.labels.detach');
         Route::patch('/faktury/{uuid}/archivovat', [InvoiceController::class, 'archive'])
             ->whereUuid('uuid')->name('invoices.archive');
         Route::patch('/faktury/{uuid}/obnovit', [InvoiceController::class, 'restore'])
@@ -233,6 +245,8 @@ Route::middleware(['business.request-id', 'auth', 'business.context'])->group(fu
             ->whereUuid('uuid')->name('invoices.show');
         Route::get('/klienti', [ClientController::class, 'index'])->name('clients.index');
         Route::get('/klienti/novy', [ClientController::class, 'create'])->name('clients.create');
+        Route::get('/klienti/hledat', [ClientController::class, 'search'])
+            ->middleware('throttle:120,1')->name('clients.search');
         Route::post('/klienti/ares/nacist', AresClientLookupController::class)
             ->middleware('throttle:20,1')->name('clients.ares.lookup');
         Route::post('/klienti', [ClientController::class, 'store'])->name('clients.store');

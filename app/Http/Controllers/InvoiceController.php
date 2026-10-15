@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Domain\CompanySettings\CompanySettingOptions;
 use App\Domain\Invoices\Exceptions\InvoiceDraftIdempotencyConflict;
 use App\Domain\Invoices\Exceptions\InvoiceDraftVersionConflict;
 use App\Domain\Invoices\Exceptions\InvoiceIssuedImmutable;
@@ -14,8 +15,10 @@ use App\Domain\Invoices\Exceptions\InvoiceNotDraft;
 use App\Domain\Invoices\Exceptions\InvoiceNotReadyForIssue;
 use App\Domain\Invoices\Exceptions\InvoicePdfGenerationFailed;
 use App\Enums\BusinessAuditableType;
+use App\Enums\ClientType;
 use App\Enums\DefaultPaymentMethod;
 use App\Enums\InvoiceStatus;
+use App\Http\Requests\DuplicateInvoiceRequest;
 use App\Http\Requests\InvoiceIndexRequest;
 use App\Http\Requests\IssueInvoiceRequest;
 use App\Http\Requests\PreviewInvoiceRequest;
@@ -32,6 +35,7 @@ use App\Services\Business\InvoiceFormOptions;
 use App\Services\Business\InvoiceIssueAvailability;
 use App\Services\Business\InvoiceIssuedRevisionService;
 use App\Services\Business\InvoiceIssuer;
+use App\Services\Business\InvoiceLabelService;
 use App\Services\Business\InvoicePaymentReader;
 use App\Services\Business\InvoicePdfGenerator;
 use App\Services\Business\InvoicePreviewService;
@@ -48,7 +52,7 @@ use Illuminate\View\View;
 
 class InvoiceController extends Controller
 {
-    public function index(InvoiceIndexRequest $request, InvoiceReader $reader, InvoiceFormOptions $options): View
+    public function index(InvoiceIndexRequest $request, InvoiceReader $reader, InvoiceFormOptions $options, InvoiceLabelService $labels): View
     {
         $filters = $request->validated();
 
@@ -56,6 +60,7 @@ class InvoiceController extends Controller
             'invoices' => $reader->search($filters),
             'filters' => $filters,
             'clients' => $options->clientsForIndex(),
+            'labels' => $labels->active(),
         ]);
     }
 
@@ -124,6 +129,7 @@ class InvoiceController extends Controller
         InvoiceIssueAvailability $availability,
         InvoicePublicLinkService $publicLinks,
         InvoiceQrPaymentService $qrPayments,
+        InvoiceLabelService $labels,
     ): View {
         Gate::authorize('view', Invoice::class);
         $invoice = $reader->find($uuid);
@@ -152,6 +158,7 @@ class InvoiceController extends Controller
             'publicLink' => $publicLink,
             'publicLinkUrl' => $publicLink ? $publicLinks->url($publicLink) : null,
             'qrPayment' => $invoice->status === InvoiceStatus::Issued ? $qrPayments->create($invoice, $revision) : null,
+            'availableLabels' => $labels->active()->whereNotIn('id', $invoice->labels->pluck('id'))->values(),
             ...$issueOptions,
         ]);
     }
@@ -170,13 +177,27 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function duplicate(string $uuid, InvoiceReader $reader, InvoiceDuplicator $duplicator): RedirectResponse
+    public function duplicateForm(string $uuid, InvoiceReader $reader, InvoiceFormOptions $options): View
+    {
+        $source = $reader->find($uuid);
+        Gate::authorize('duplicate', $source);
+        $originalClientUuid = (string) $source->issuedRevision?->customerSnapshot?->source_client_uuid;
+
+        return view('business.invoices.duplicate', [
+            'source' => $source,
+            'originalClient' => $options->activeClient($originalClientUuid),
+            'clientTypes' => ClientType::options(),
+            'countries' => CompanySettingOptions::COUNTRIES,
+        ]);
+    }
+
+    public function duplicate(DuplicateInvoiceRequest $request, string $uuid, InvoiceReader $reader, InvoiceDuplicator $duplicator): RedirectResponse
     {
         $source = $reader->find($uuid);
         Gate::authorize('duplicate', $source);
 
         try {
-            $draft = $duplicator->duplicate($source);
+            $draft = $duplicator->duplicate($source, $request->validated('client_uuid'));
         } catch (ValidationException) {
             return redirect()->route('invoices.show', $source->uuid)
                 ->with('error', 'Fakturu nelze bezpečně duplikovat. Ověřte dostupnost odběratele, bankovního účtu a sazeb DPH.');
@@ -184,6 +205,16 @@ class InvoiceController extends Controller
 
         return redirect()->route('invoices.edit', $draft->uuid)
             ->with('status', 'Byl vytvořen nový koncept podle původní faktury. Před uložením zkontrolujte data a částky.');
+    }
+
+    public function quickPreview(string $uuid, InvoiceReader $reader, InvoicePaymentReader $paymentReader): View
+    {
+        $invoice = $reader->find($uuid);
+        Gate::authorize('view', $invoice);
+        $revision = $invoice->status->hasIssuedDocument() ? $invoice->issuedRevision : $invoice->currentRevision;
+        $paymentSummary = $invoice->status->hasIssuedDocument() ? $paymentReader->summary($invoice) : null;
+
+        return view('business.invoices.quick-preview', compact('invoice', 'revision', 'paymentSummary'));
     }
 
     public function issuedEditWarning(string $uuid, InvoiceReader $reader): View

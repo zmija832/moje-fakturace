@@ -24,6 +24,7 @@ class InvoiceIndexRequest extends FormRequest
             'visibility' => ['nullable', Rule::in(['active', 'drafts', 'unpaid', 'paid', 'cancelled', 'archived', 'all'])],
             'status' => ['nullable', Rule::in(['all', ...array_column(InvoiceStatus::cases(), 'value')])],
             'client_uuid' => ['nullable', 'uuid'],
+            'label_uuid' => ['nullable', 'uuid'],
             'currency' => ['nullable', Rule::in(['all', ...array_keys(CompanySettingOptions::CURRENCIES)])],
             'issued_from' => ['nullable', 'date_format:Y-m-d'],
             'issued_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:issued_from'],

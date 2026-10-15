@@ -41,6 +41,7 @@
     @elseif(!$isCancelled)
         <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Historie vystaveného dokladu je neměnná.</strong> Původní revize a snapshoty nelze přepsat; případná admin oprava vytvoří novou immutable revizi při zachování čísla faktury.</div>
     @endif
+    <x-invoices.labels :invoice="$invoice" :available-labels="$availableLabels" />
     <x-invoices.detail :invoice="$invoice" :revision="$revision" />
     @if(!$isDraft)
         <x-invoices.qr-payment :qr="$qrPayment" />

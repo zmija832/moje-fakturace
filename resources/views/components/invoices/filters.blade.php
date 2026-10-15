@@ -1,10 +1,11 @@
-@props(['filters', 'clients'])
+@props(['filters', 'clients', 'labels' => []])
 @php
     $activeFilterCount = collect([
         filled($filters['search'] ?? null),
         isset($filters['visibility']) && $filters['visibility'] !== 'active',
         isset($filters['status']) && $filters['status'] !== 'all',
         filled($filters['client_uuid'] ?? null),
+        filled($filters['label_uuid'] ?? null),
         isset($filters['currency']) && $filters['currency'] !== 'all',
         isset($filters['payment_status']) && $filters['payment_status'] !== 'all',
         filled($filters['issued_from'] ?? null),
@@ -25,6 +26,7 @@
         <div><label for="visibility">Zobrazení</label><select id="visibility" name="visibility">@foreach(['active'=>'Aktivní','drafts'=>'Koncepty','unpaid'=>'Neuhrazené','paid'=>'Uhrazené','cancelled'=>'Stornované','archived'=>'Archivované','all'=>'Vše'] as $value=>$label)<option value="{{ $value }}" @selected(($filters['visibility'] ?? 'active') === $value)>{{ $label }}</option>@endforeach</select></div>
         <div><label for="status">Typ stavu</label><select id="status" name="status"><option value="all">Všechny</option>@foreach(\App\Enums\InvoiceStatus::cases() as $status)<option value="{{ $status->value }}" @selected(($filters['status'] ?? '') === $status->value)>{{ $status->label() }}</option>@endforeach</select></div>
         <div><label for="client_uuid">Klient</label><select id="client_uuid" name="client_uuid"><option value="">Všichni klienti</option>@foreach($clients as $client)<option value="{{ $client->uuid }}" @selected(($filters['client_uuid'] ?? '') === $client->uuid)>{{ $client->display_name }}</option>@endforeach</select></div>
+        <div><label for="label_uuid">Štítek</label><select id="label_uuid" name="label_uuid"><option value="">Všechny štítky</option>@foreach($labels as $label)<option value="{{ $label->uuid }}" @selected(($filters['label_uuid'] ?? '') === $label->uuid)>{{ $label->name }}</option>@endforeach</select></div>
         <div><label for="currency">Měna</label><select id="currency" name="currency"><option value="all">Všechny</option>@foreach(['CZK','EUR'] as $currency)<option value="{{ $currency }}" @selected(($filters['currency'] ?? '') === $currency)>{{ \App\Domain\Invoices\InvoiceDecimal::currencyLabel($currency) }}</option>@endforeach</select></div>
         <div><label for="payment_status">Stav úhrady</label><select id="payment_status" name="payment_status"><option value="all">Všechny</option>@foreach(\App\Enums\InvoicePaymentStatus::cases() as $status)<option value="{{ $status->value }}" @selected(($filters['payment_status'] ?? '') === $status->value)>{{ $status->label() }}</option>@endforeach</select></div>
         @foreach(['issued_from'=>'Vystavení od','issued_to'=>'Vystavení do','due_from'=>'Splatnost od','due_to'=>'Splatnost do'] as $field=>$label)

@@ -15,6 +15,7 @@
                 ['route' => 'invoices.index', 'active' => 'invoices.*', 'label' => 'Faktury'],
                 ['route' => 'clients.index', 'active' => 'clients.*', 'label' => 'Klienti'],
                 ['route' => 'invoice-catalog.index', 'active' => 'invoice-catalog.*', 'label' => 'Položky'],
+                ['route' => 'invoice-labels.index', 'active' => 'invoice-labels.*', 'label' => 'Štítky faktur'],
                 ['route' => 'recurring.index', 'active' => 'recurring.*', 'label' => 'Pravidelné fakturace'],
                 ['route' => 'exports.index', 'active' => 'exports.*', 'label' => 'Export'],
                 ['route' => 'company-settings.edit', 'active' => 'company-settings.*', 'label' => 'Nastavení subjektu'],

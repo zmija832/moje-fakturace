@@ -102,10 +102,7 @@
         @endcan
 
         @can('duplicate', $invoice)
-            <form method="POST" action="{{ route('invoices.duplicate', $invoice->uuid) }}">
-                @csrf
-                <button class="button-secondary" type="submit">Duplikovat fakturu</button>
-            </form>
+            <a class="button-secondary" href="{{ route('invoices.duplicate-form', $invoice->uuid) }}">Duplikovat fakturu</a>
         @endcan
 
         @if(!$isCancelled)

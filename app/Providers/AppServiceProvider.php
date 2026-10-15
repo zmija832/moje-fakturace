@@ -17,6 +17,7 @@ use App\Models\Business\DocumentSequence;
 use App\Models\Business\Invoice;
 use App\Models\Business\InvoiceAutomationSetting;
 use App\Models\Business\InvoiceCatalogItem;
+use App\Models\Business\InvoiceLabel;
 use App\Models\Business\RecurringInvoiceTemplate;
 use App\Models\Business\VatRate;
 use App\Policies\Business\BankAccountPolicy;
@@ -26,6 +27,7 @@ use App\Policies\Business\CompanySettingPolicy;
 use App\Policies\Business\DocumentSequencePolicy;
 use App\Policies\Business\InvoiceAutomationSettingPolicy;
 use App\Policies\Business\InvoiceCatalogItemPolicy;
+use App\Policies\Business\InvoiceLabelPolicy;
 use App\Policies\Business\InvoicePolicy;
 use App\Policies\Business\RecurringInvoiceTemplatePolicy;
 use App\Policies\Business\VatRatePolicy;
@@ -63,6 +65,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(RecurringInvoiceTemplate::class, RecurringInvoiceTemplatePolicy::class);
         Gate::policy(InvoiceAutomationSetting::class, InvoiceAutomationSettingPolicy::class);
         Gate::policy(InvoiceCatalogItem::class, InvoiceCatalogItemPolicy::class);
+        Gate::policy(InvoiceLabel::class, InvoiceLabelPolicy::class);
 
         View::composer('components.layouts.app', function ($view): void {
             $user = auth()->user();

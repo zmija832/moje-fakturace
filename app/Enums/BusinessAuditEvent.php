@@ -30,6 +30,10 @@ enum BusinessAuditEvent: string
     case InvoiceCatalogItemUpdated = 'invoice_catalog_item.updated';
     case InvoiceCatalogItemActivated = 'invoice_catalog_item.activated';
     case InvoiceCatalogItemDeactivated = 'invoice_catalog_item.deactivated';
+    case InvoiceLabelCreated = 'invoice_label.created';
+    case InvoiceLabelUpdated = 'invoice_label.updated';
+    case InvoiceLabelAttached = 'invoice.label_attached';
+    case InvoiceLabelDetached = 'invoice.label_detached';
     case DocumentSequenceCreated = 'document_sequence.created';
     case DocumentSequenceUpdated = 'document_sequence.updated';
     case DocumentSequenceActivated = 'document_sequence.activated';
@@ -109,6 +113,10 @@ enum BusinessAuditEvent: string
             self::InvoiceCatalogItemUpdated => 'Upravena položka katalogu',
             self::InvoiceCatalogItemActivated => 'Aktivována položka katalogu',
             self::InvoiceCatalogItemDeactivated => 'Deaktivována položka katalogu',
+            self::InvoiceLabelCreated => 'Vytvořen štítek faktury',
+            self::InvoiceLabelUpdated => 'Upraven štítek faktury',
+            self::InvoiceLabelAttached => 'Přiřazen štítek faktuře',
+            self::InvoiceLabelDetached => 'Odebrán štítek z faktury',
             self::DocumentSequenceCreated => 'Vytvořena číselná řada',
             self::DocumentSequenceUpdated => 'Upravena číselná řada',
             self::DocumentSequenceActivated => 'Aktivována číselná řada',

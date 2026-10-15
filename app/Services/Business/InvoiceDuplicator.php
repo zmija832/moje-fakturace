@@ -17,7 +17,7 @@ class InvoiceDuplicator
         private readonly InvoiceVatResolver $vatResolver,
     ) {}
 
-    public function duplicate(Invoice $source): Invoice
+    public function duplicate(Invoice $source, ?string $clientUuid = null): Invoice
     {
         if ($source->status !== InvoiceStatus::Issued || $source->issuedRevision === null) {
             throw ValidationException::withMessages([
@@ -27,9 +27,11 @@ class InvoiceDuplicator
 
         $revision = $source->issuedRevision;
         $revision->loadMissing(['customerSnapshot', 'bankAccountSnapshot', 'items.vatSnapshot']);
-        $client = Client::query()
-            ->where('uuid', $revision->customerSnapshot->source_client_uuid)
-            ->first();
+        $clientQuery = Client::query()->where('uuid', $clientUuid ?? $revision->customerSnapshot->source_client_uuid);
+        if ($clientUuid !== null) {
+            $clientQuery->whereNull('archived_at')->where('is_active', true);
+        }
+        $client = $clientQuery->first();
         if ($client === null) {
             throw ValidationException::withMessages([
                 'customer' => 'Původní odběratel již není dostupný. Vytvořte nový koncept ručně.',

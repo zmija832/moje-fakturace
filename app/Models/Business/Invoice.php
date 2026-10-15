@@ -12,6 +12,7 @@ use App\Enums\InvoiceStatus;
 use App\Models\Concerns\HasServerGeneratedUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -108,6 +109,11 @@ class Invoice extends BusinessModel
     public function publicLinks(): HasMany
     {
         return $this->hasMany(InvoicePublicLink::class)->latest('id');
+    }
+
+    public function labels(): BelongsToMany
+    {
+        return $this->belongsToMany(InvoiceLabel::class)->withTimestamps()->orderBy('name');
     }
 
     public function customerViewedPublicLink(): ?InvoicePublicLink

@@ -12,6 +12,7 @@ enum BusinessAuditableType: string
     case BankTransaction = 'bank_transaction';
     case Client = 'client';
     case InvoiceCatalogItem = 'invoice_catalog_item';
+    case InvoiceLabel = 'invoice_label';
     case DocumentSequence = 'document_sequence';
     case DocumentSequenceDefault = 'document_sequence_default';
     case DocumentNumberAllocation = 'document_number_allocation';
@@ -36,6 +37,7 @@ enum BusinessAuditableType: string
             self::BankTransaction => 'Bankovní platba',
             self::Client => 'Klient',
             self::InvoiceCatalogItem => 'Položka katalogu',
+            self::InvoiceLabel => 'Štítek faktury',
             self::DocumentSequence => 'Číselná řada',
             self::DocumentSequenceDefault => 'Výchozí číselná řada',
             self::DocumentNumberAllocation => 'Přidělené číslo',

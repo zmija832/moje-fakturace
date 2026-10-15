@@ -10,6 +10,7 @@ use App\Enums\BusinessAuditEvent;
 use App\Enums\ClientType;
 use App\Models\Business\Client;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -69,6 +70,28 @@ class ClientService
             ->orderBy('id')
             ->paginate(20)
             ->withQueryString();
+    }
+
+    /** @return Collection<int, Client> */
+    public function searchActive(string $search = '', int $limit = 20): Collection
+    {
+        $query = Client::query()
+            ->whereNull('archived_at')
+            ->where('is_active', true);
+        $search = trim(mb_substr($search, 0, 100));
+
+        if ($search !== '') {
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $pattern = '%'.$escaped.'%';
+            $query->where(function ($query) use ($pattern): void {
+                foreach (['display_name', 'company_name', 'first_name', 'last_name', 'registration_number', 'email'] as $index => $column) {
+                    $method = $index === 0 ? 'where' : 'orWhere';
+                    $query->{$method}($column, 'like', $pattern);
+                }
+            });
+        }
+
+        return $query->orderBy('display_name')->orderBy('id')->limit($limit)->get();
     }
 
     public function newForForm(): Client

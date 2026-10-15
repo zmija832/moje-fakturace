@@ -72,7 +72,8 @@ class InvoicesHttpTest extends TestCase
             ->assertDontSee('>Webfaktura<', false)
             ->assertDontSee('>Duplikovat<', false)
             ->assertDontSee('>Archivovat<', false);
-        $this->assertLessThanOrEqual(10, count(DB::connection('business_1')->getQueryLog()));
+        // Labels add two fixed queries (available filter options + eager-loaded invoice labels), never one per row.
+        $this->assertLessThanOrEqual(12, count(DB::connection('business_1')->getQueryLog()));
         DB::connection('business_1')->disableQueryLog();
 
         app(ActiveBusinessContext::class)->set($business);

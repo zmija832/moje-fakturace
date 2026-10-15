@@ -6,6 +6,7 @@ use App\Domain\CompanySettings\CompanySettingOptions;
 use App\Enums\ClientType;
 use App\Enums\DefaultPaymentMethod;
 use App\Http\Requests\ClientIndexRequest;
+use App\Http\Requests\ClientSearchRequest;
 use App\Http\Requests\ManageClientRequest;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
@@ -19,6 +20,18 @@ use Illuminate\View\View;
 
 class ClientController extends Controller
 {
+    public function search(ClientSearchRequest $request, ClientService $service): JsonResponse
+    {
+        return response()->json(['clients' => $service->searchActive((string) $request->validated('q', ''))->map(
+            fn (Client $client): array => [
+                'uuid' => $client->uuid,
+                'display_name' => $client->display_name,
+                'registration_number' => $client->registration_number,
+                'email' => $client->email,
+            ],
+        )->values()]);
+    }
+
     public function index(ClientIndexRequest $request, ClientService $service): View
     {
         $filters = $request->validated();
@@ -52,6 +65,7 @@ class ClientController extends Controller
                 'uuid' => $client->uuid,
                 'display_name' => $client->display_name,
                 'registration_number' => $client->registration_number,
+                'email' => $client->email,
                 'default_currency' => $client->default_currency,
                 'default_due_days' => $client->default_due_days,
                 'default_payment_method' => $client->default_payment_method,
