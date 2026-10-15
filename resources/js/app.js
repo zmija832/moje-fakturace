@@ -23,6 +23,7 @@ async function lookupClientInAres(url, csrf, ico) {
 }
 
 Alpine.data('aresClientForm', (config) => ({
+    clientType: config.clientType ?? 'company',
     loading: false, message: '', warning: '', error: '',
     async lookup() {
         if (this.loading) return;

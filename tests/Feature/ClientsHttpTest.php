@@ -432,11 +432,19 @@ class ClientsHttpTest extends TestCase
         }
 
         [$user, $business] = $this->userWithBusiness('admin', BusinessConnection::Business1);
-        $this->actingAs($user)->withSession($this->businessSession($business))
+        $response = $this->actingAs($user)->withSession($this->businessSession($business))
             ->get(route('clients.create'))->assertOk()->assertSee('name="_token"', false)
             ->assertSee('Dodací adresa')->assertSee('Výchozí nastavení fakturace')
+            ->assertSee('Začněte IČO')
             ->assertSee('Načíst z ARES')
+            ->assertSee('data-ares-registration-field', false)
+            ->assertSee('x-show="clientType === &#039;company&#039;"', false)
             ->assertSee('aresClientForm', false);
+        $this->assertSame(1, substr_count($response->getContent(), 'data-ares-registration-field'));
+        $this->assertLessThan(
+            strpos($response->getContent(), 'company_name'),
+            strpos($response->getContent(), 'data-ares-registration-field'),
+        );
     }
 
     /** @return array{User, Business} */

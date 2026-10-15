@@ -58,7 +58,7 @@
                     <div class="flex flex-wrap items-end gap-3">
                         <div class="min-w-64 flex-1">
                             <label for="duplicate-client-search">Hledat klienta</label>
-                            <input id="duplicate-client-search" x-ref="clientSearch" type="search" x-model="query" @input.debounce.250ms="search" @focus="openPicker" autocomplete="off" placeholder="Název, jméno, IČO nebo e-mail">
+                            <input id="duplicate-client-search" x-ref="clientSearch" type="search" x-model="query" @input.debounce.250ms="search" @focus="openPicker" autocomplete="off" placeholder="Hledat mezi všemi klienty podle názvu, IČO nebo e-mailu…">
                         </div>
                         @if($canCreateClient)
                             <button type="button" class="button-secondary" @click="openQuickClient">Nový klient</button>
@@ -79,6 +79,9 @@
                         <p x-show="!loading && clients.length === 0" class="p-4 text-sm text-slate-500">Žádný aktivní klient neodpovídá hledání.</p>
                         <p x-show="loading" class="p-4 text-sm text-slate-500">Načítám…</p>
                     </div>
+                    <p x-show="!loading && query.trim() === '' && clients.length === 20" class="text-xs text-slate-500">
+                        Zobrazeno prvních 20 klientů. Další klienty vyhledejte výše.
+                    </p>
                     @error('selected_client_uuid')<p class="field-error">{{ $message }}</p>@enderror
                 </div>
                 @error('client_mode')<p class="field-error">{{ $message }}</p>@enderror

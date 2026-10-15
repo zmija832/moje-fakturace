@@ -42,6 +42,14 @@ class InvoiceStageEExperienceTest extends TestCase
         app(ActiveBusinessContext::class)->set($business);
         [$source] = $this->createIssuedInvoice();
         $alphabetical = $this->client('Abecední odběratel', '10101010', 'abeceda@example.test');
+        $middleClients = [];
+        for ($index = 1; $index <= 25; $index++) {
+            $middleClients[] = $this->client(
+                sprintf('Meziklient %02d', $index),
+                sprintf('70%06d', $index),
+                sprintf('meziklient%02d@example.test', $index),
+            );
+        }
         $selected = $this->client('Zvolený odběratel', '11223344', 'zvoleny@example.test');
         $inactive = $this->client('Neaktivní odběratel', '99887766', 'inactive@example.test', false);
         $this->client('Archivovaný odběratel', '88776655', 'archived@example.test')->forceFill(['archived_at' => now()])->save();
@@ -57,28 +65,56 @@ class InvoiceStageEExperienceTest extends TestCase
         app(ActiveBusinessContext::class)->clear();
 
         $this->actingAs($admin)->withSession($this->deliveryBusinessSession($business));
-        $this->get(route('invoices.duplicate-form', $source->uuid))->assertOk()
+        $duplicatePage = $this->get(route('invoices.duplicate-form', $source->uuid))->assertOk()
             ->assertSee('Klient nové faktury')
             ->assertSee('Ponechat původního klienta')
             ->assertSee('value="original"', false)
             ->assertSee('Vybrat jiného klienta')
             ->assertSee('Nový klient')
+            ->assertSee('Hledat mezi všemi klienty podle názvu, IČO nebo e-mailu…')
+            ->assertSee('Zobrazeno prvních 20 klientů. Další klienty vyhledejte výše.')
+            ->assertSee("query.trim() === '' && clients.length === 20", false)
             ->assertSee('Souhrn duplikované faktury')
             ->assertSee($source->document_number)
             ->assertSee('Bezpečná služba')
-            ->assertSee('100 Kč');
+            ->assertSee('100 Kč')
+            ->assertSee('data-ares-registration-field', false)
+            ->assertSee("x-show=\"quickClientType === 'company'\"", false);
+        $this->assertLessThan(
+            strpos($duplicatePage->getContent(), 'quick-client-company-name'),
+            strpos($duplicatePage->getContent(), 'quick-client-registration-number'),
+        );
         $this->getJson(route('clients.search', ['q' => '11223344']))->assertOk()
             ->assertJsonCount(1, 'clients')->assertJsonPath('clients.0.uuid', $selected->uuid);
         $this->getJson(route('clients.search', ['q' => 'Zvolený']))->assertOk()
             ->assertJsonPath('clients.0.uuid', $selected->uuid);
+        $this->getJson(route('clients.search', ['q' => 'zvoleny@example.test']))->assertOk()
+            ->assertJsonCount(1, 'clients')->assertJsonPath('clients.0.uuid', $selected->uuid);
+        $orderedSearch = $this->getJson(route('clients.search', ['q' => 'Meziklient']))->assertOk()
+            ->assertJsonCount(20, 'clients')
+            ->json('clients');
+        $this->assertSame(
+            collect($middleClients)->take(20)->pluck('uuid')->all(),
+            array_column($orderedSearch, 'uuid'),
+        );
         $this->getJson(route('clients.search', ['q' => 'inactive@example.test']))->assertOk()
             ->assertJsonCount(0, 'clients');
         $this->getJson(route('clients.search', ['q' => 'archived@example.test']))->assertOk()
             ->assertJsonCount(0, 'clients');
         $this->getJson(route('clients.search', ['q' => 'foreign@example.test']))->assertOk()
             ->assertJsonCount(0, 'clients');
-        $this->getJson(route('clients.search'))->assertOk()
-            ->assertJsonPath('clients.0.uuid', $alphabetical->uuid);
+        $defaultClients = $this->getJson(route('clients.search'))->assertOk()
+            ->assertJsonCount(20, 'clients')
+            ->assertJsonPath('clients.0.uuid', $alphabetical->uuid)
+            ->json('clients');
+        $this->assertNotContains($selected->uuid, array_column($defaultClients, 'uuid'));
+
+        $this->post(route('invoices.duplicate', $source->uuid), [
+            'client_mode' => 'selected',
+            'selected_client_uuid' => $selected->uuid,
+        ])->assertRedirect();
+        $searchedDuplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
+        $this->assertSame($selected->uuid, $searchedDuplicate->currentRevision->customerSnapshot->source_client_uuid);
 
         $created = $this->postJson(route('clients.store'), [
             'type' => 'company', 'company_name' => 'Nový klient z duplikace',
@@ -91,7 +127,9 @@ class InvoiceStageEExperienceTest extends TestCase
             'selected_client_uuid' => $created['uuid'],
         ])
             ->assertRedirect();
-        $duplicate = Invoice::query()->where('uuid', '!=', $source->uuid)->sole();
+        $duplicate = Invoice::query()
+            ->whereNotIn('uuid', [$source->uuid, $searchedDuplicate->uuid])
+            ->sole();
         $this->assertSame($created['uuid'], $duplicate->currentRevision->customerSnapshot->source_client_uuid);
         $this->assertCount(0, $duplicate->labels);
         $this->assertCount(0, $duplicate->payments);
