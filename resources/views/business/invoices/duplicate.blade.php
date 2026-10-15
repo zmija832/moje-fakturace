@@ -69,19 +69,16 @@
                         <p class="mt-1 font-semibold" x-text="selected?.display_name"></p>
                         <p class="text-sm text-slate-600" x-text="clientMeta(selected)"></p>
                     </div>
-                    <div x-show="open" class="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                        <template x-for="client in clients" :key="client.uuid">
+                    <div x-show="open && query.trim() !== ''" class="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <template x-for="client in availableClients()" :key="client.uuid">
                             <button type="button" class="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-0 hover:bg-slate-50" @click="select(client)">
                                 <span class="block font-semibold" x-text="client.display_name"></span>
                                 <span class="block text-xs text-slate-500" x-text="clientMeta(client)"></span>
                             </button>
                         </template>
-                        <p x-show="!loading && clients.length === 0" class="p-4 text-sm text-slate-500">Žádný aktivní klient neodpovídá hledání.</p>
+                        <p x-show="!loading && query.trim() !== '' && availableClients().length === 0" class="p-4 text-sm text-slate-500">Žádný aktivní klient neodpovídá hledání.</p>
                         <p x-show="loading" class="p-4 text-sm text-slate-500">Načítám…</p>
                     </div>
-                    <p x-show="!loading && query.trim() === '' && clients.length === 20" class="text-xs text-slate-500">
-                        Zobrazeno prvních 20 klientů. Další klienty vyhledejte výše.
-                    </p>
                     @error('selected_client_uuid')<p class="field-error">{{ $message }}</p>@enderror
                 </div>
                 @error('client_mode')<p class="field-error">{{ $message }}</p>@enderror

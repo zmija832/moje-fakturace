@@ -618,23 +618,36 @@ Alpine.data('duplicateClientPicker', (config) => ({
         if (!client) return '';
         return [client.registration_number ? `IČO ${client.registration_number}` : '', client.email ?? ''].filter(Boolean).join(' · ');
     },
+    availableClients() {
+        return this.clients.filter((client) => client.uuid !== this.selected?.uuid);
+    },
     openPicker() {
         this.clientMode = 'selected';
-        this.open = true;
-        this.search();
+        this.open = this.query.trim() !== '';
         this.$nextTick(() => this.$refs.clientSearch?.focus());
     },
     select(client) {
+        this.request += 1;
         this.clientMode = 'selected';
         this.selected = client;
-        this.query = client.display_name;
+        this.query = '';
+        this.clients = [];
         this.open = false;
     },
     async search() {
         const request = ++this.request;
+        const search = this.query.trim();
+        if (search === '') {
+            this.clients = [];
+            this.open = false;
+            this.loading = false;
+            return;
+        }
+
+        this.open = true;
         this.loading = true;
         const url = new URL(config.searchUrl, window.location.origin);
-        if (this.query.trim()) url.searchParams.set('q', this.query.trim());
+        url.searchParams.set('q', search);
         try {
             const response = await fetch(url, { headers: { Accept: 'application/json' } });
             const data = await response.json().catch(() => ({}));

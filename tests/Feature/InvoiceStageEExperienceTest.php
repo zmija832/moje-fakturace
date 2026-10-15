@@ -41,7 +41,7 @@ class InvoiceStageEExperienceTest extends TestCase
         [$admin, $business] = $this->deliveryMembership();
         app(ActiveBusinessContext::class)->set($business);
         [$source] = $this->createIssuedInvoice();
-        $alphabetical = $this->client('Abecední odběratel', '10101010', 'abeceda@example.test');
+        $this->client('Abecední odběratel', '10101010', 'abeceda@example.test');
         $middleClients = [];
         for ($index = 1; $index <= 25; $index++) {
             $middleClients[] = $this->client(
@@ -72,8 +72,9 @@ class InvoiceStageEExperienceTest extends TestCase
             ->assertSee('Vybrat jiného klienta')
             ->assertSee('Nový klient')
             ->assertSee('Hledat mezi všemi klienty podle názvu, IČO nebo e-mailu…')
-            ->assertSee('Zobrazeno prvních 20 klientů. Další klienty vyhledejte výše.')
-            ->assertSee("query.trim() === '' && clients.length === 20", false)
+            ->assertDontSee('Zobrazeno prvních 20 klientů')
+            ->assertSee('x-for="client in availableClients()"', false)
+            ->assertSee("open && query.trim() !== ''", false)
             ->assertSee('Souhrn duplikované faktury')
             ->assertSee($source->document_number)
             ->assertSee('Bezpečná služba')
@@ -103,11 +104,16 @@ class InvoiceStageEExperienceTest extends TestCase
             ->assertJsonCount(0, 'clients');
         $this->getJson(route('clients.search', ['q' => 'foreign@example.test']))->assertOk()
             ->assertJsonCount(0, 'clients');
-        $defaultClients = $this->getJson(route('clients.search'))->assertOk()
-            ->assertJsonCount(20, 'clients')
-            ->assertJsonPath('clients.0.uuid', $alphabetical->uuid)
-            ->json('clients');
-        $this->assertNotContains($selected->uuid, array_column($defaultClients, 'uuid'));
+        $javascript = file_get_contents(resource_path('js/app.js'));
+        $this->assertStringContainsString("if (search === '')", $javascript);
+        $this->assertStringContainsString('this.clients = [];', $javascript);
+        $this->assertStringContainsString('return this.clients.filter((client) => client.uuid !== this.selected?.uuid);', $javascript);
+        $openPicker = Str::between($javascript, 'openPicker() {', 'select(client) {');
+        $this->assertStringNotContainsString('this.search()', $openPicker);
+        $selectClient = Str::between($javascript, 'select(client) {', 'async search() {');
+        $this->assertStringContainsString("this.query = '';", $selectClient);
+        $this->assertStringContainsString('this.clients = [];', $selectClient);
+        $this->assertStringContainsString('this.request += 1;', $selectClient);
 
         $this->post(route('invoices.duplicate', $source->uuid), [
             'client_mode' => 'selected',
